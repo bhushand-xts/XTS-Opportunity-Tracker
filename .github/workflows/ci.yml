@@ -28,9 +28,6 @@ on:
 permissions:
   contents: read
 
-env:
-  NODE_VERSION: '20'
-
 jobs:
   changes:
     name: Detect changed areas
@@ -263,12 +260,13 @@ jobs:
             --jq '.[0].number' 2>/dev/null || echo "")
 
           if [ -z "$EXISTING_PR" ]; then
-            # Create new PR
+            # Create new PR with reviewers
             gh pr create \
               --base OT-Integration \
               --head "$BRANCH_NAME" \
               --title "Promote $BRANCH_NAME to Integration" \
-              --body "Auto-generated PR to promote changes to OT-Integration branch."
+              --body "Auto-generated PR to promote changes to OT-Integration branch." \
+              --reviewer bhushand-xts,govinddhawale14
             echo "Created new PR for $BRANCH_NAME"
           else
             # PR already exists, just inform
