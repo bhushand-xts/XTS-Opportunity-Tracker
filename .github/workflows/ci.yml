@@ -28,8 +28,8 @@ on:
 permissions:
   contents: read
 
-env:
-  NODE_VERSION: '20'
+# env:
+  #NODE_VERSION: '20'
 
 jobs:
   changes:
