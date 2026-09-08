@@ -236,3 +236,41 @@ jobs:
       - name: No migrations in this changeset
         if: steps.detect.outputs.present == 'false'
         run: echo "No migration files changed -- skipping."
+
+  auto-pr-to-integration:
+    name: Create PR to OT-Integration
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/fix/') || startsWith(github.ref, 'refs/heads/hotfix/'))
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create or update PR to Integration
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+
+          # Check if PR already exists
+          EXISTING_PR=$(gh pr list \
+            --base OT-Integration \
+            --head "$BRANCH_NAME" \
+            --json number \
+            --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -z "$EXISTING_PR" ]; then
+            # Create new PR
+            gh pr create \
+              --base OT-Integration \
+              --head "$BRANCH_NAME" \
+              --title "Promote $BRANCH_NAME to Integration" \
+              --body "Auto-generated PR to promote changes to OT-Integration branch."
+            echo "Created new PR for $BRANCH_NAME"
+          else
+            # PR already exists, just inform
+            echo "PR #$EXISTING_PR already exists for $BRANCH_NAME"
+          fi
