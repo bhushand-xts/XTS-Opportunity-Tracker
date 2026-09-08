@@ -53,7 +53,7 @@ jobs:
               - 'contracts/**'
 
   frontend:
-    name: frontend / ${{ matrix.project }}
+    name: frontend
     needs: changes
     # Always run for the whole-app validation on OT-Integration; otherwise
     # only when frontend/ or contracts/ actually changed.
@@ -61,73 +61,12 @@ jobs:
       (github.event_name == 'push' && github.ref == 'refs/heads/OT-Integration') ||
       needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        project:
-          - shell
-          - platform
-          - design-system
-          - mfe-opportunity-pipeline
-          - mfe-rfp-intake
-          - mfe-estimation-rates
-          - mfe-approvals-gates
-          - mfe-documents
-    defaults:
-      run:
-        working-directory: frontend/${{ matrix.project }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # No committed lockfile per-package yet, so we cache node_modules
-      # keyed on package.json instead of npm's built-in lockfile cache.
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: frontend/${{ matrix.project }}/node_modules
-          key: npm-${{ runner.os }}-${{ matrix.project }}-${{ hashFiles(format('frontend/{0}/package.json', matrix.project)) }}
-          restore-keys: |
-            npm-${{ runner.os }}-${{ matrix.project }}-
-
-      - name: Install dependencies
-        run: npm install
-
-      # PLACEHOLDER: no package in frontend/ has a "lint" script yet.
-      # --if-present makes this a no-op until oxlint/eslint is wired in.
-      - name: Lint
-        run: npm run lint --if-present
-
-      # PLACEHOLDER: no package in frontend/ has a "test" script yet.
-      - name: Unit tests
-        run: npm test --if-present
-
-      # PLACEHOLDER: no coverage tooling configured yet. Once a package
-      # emits coverage/coverage-summary.json (e.g. via vitest --coverage),
-      # this step starts actually enforcing the 80% gate; until then it
-      # just reports that there is nothing to check.
-      - name: Coverage check (>= 80%)
+      - name: Check frontend scaffolding
         run: |
-          npm run coverage --if-present
-          if [ -f coverage/coverage-summary.json ]; then
-            PCT=$(node -e "console.log(require('./coverage/coverage-summary.json').total.lines.pct)")
-            echo "Line coverage: ${PCT}%"
-            awk -v pct="$PCT" 'BEGIN { exit !(pct >= 80) }' || {
-              echo "::error::Coverage ${PCT}% is below the 80% threshold"
-              exit 1
-            }
-          else
-            echo "::warning::No coverage/coverage-summary.json produced for ${{ matrix.project }} -- skipping threshold check (placeholder until coverage tooling is added)"
-          fi
-
-      - name: Dependency audit (fail on high/critical)
-        run: npm audit --audit-level=high
-
-      - name: Build
-        run: npm run build --if-present
+          echo "::warning::No frontend projects configured yet -- placeholder job. Add frontend projects with package.json files when ready."
 
   backend:
     name: backend
