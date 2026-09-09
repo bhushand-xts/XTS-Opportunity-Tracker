@@ -1,0 +1,14 @@
+﻿{
+  "name": "@xts/api-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "echo 'Built'",
+    "test": "echo 'No tests'",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}
