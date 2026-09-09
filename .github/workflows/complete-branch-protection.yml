@@ -19,7 +19,7 @@ name: Story-Wise Branch Flow - Integration to QA to Production
 #         ├─ (auto-create PR to dev_parikshit)
 #         ├─ (QA approves with qa-approved label)
 #         ├─ (auto-merge to dev_parikshit)
-#         └─→ main (auto-sync) Updated everything 11111
+#         └─→ main (auto-sync) Updated everything 11111222
 #
 # KEY RULES:
 #  1. Quality gate MUST PASS on PR to ot-integration (blocks if fails)
