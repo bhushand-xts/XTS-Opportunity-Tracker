@@ -238,7 +238,7 @@ jobs:
 
   setup-branch-protection:
     name: Setup OT-Integration Branch Protection
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/OT-Integration'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
