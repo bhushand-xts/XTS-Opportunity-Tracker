@@ -20,6 +20,7 @@ on:
       - 'feature/**'
       - 'fix/**'
       - 'hotfix/**'
+      - 'OT/**'
       - OT-Integration
   pull_request:
     branches:
@@ -237,7 +238,7 @@ jobs:
 
   auto-pr-to-integration:
     name: Create PR to OT-Integration
-    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/fix/') || startsWith(github.ref, 'refs/heads/hotfix/'))
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/fix/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/OT/'))
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
