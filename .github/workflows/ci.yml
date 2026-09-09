@@ -20,7 +20,7 @@ on:
       - 'feature/**'
       - 'fix/**'
       - 'hotfix/**'
-      - 'OT/**'
+      - 'OT**'
       - OT-Integration
   pull_request:
     branches:
@@ -236,9 +236,34 @@ jobs:
         if: steps.detect.outputs.present == 'false'
         run: echo "No migration files changed -- skipping."
 
+  setup-branch-protection:
+    name: Setup OT-Integration Branch Protection
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      administration: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure branch protection for OT-Integration
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/branches/OT-Integration/protection \
+            --method PUT \
+            -f required_pull_request_reviews='{"dismiss_stale_reviews":true,"require_code_owner_reviews":false,"required_approving_review_count":1}' \
+            -f required_status_checks='{"strict":false,"contexts":[]}' \
+            -f enforce_admins=false \
+            -f allow_force_pushes=false \
+            -f allow_deletions=false \
+            -f require_linear_history=false
+
+          echo "✅ Branch protection rules applied to OT-Integration"
+
   auto-pr-to-integration:
     name: Create PR to OT-Integration
-    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/fix/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/OT/'))
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/fix/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/OT'))
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
