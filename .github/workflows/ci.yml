@@ -20,7 +20,7 @@ on:
       - 'feature/**'
       - 'fix/**'
       - 'hotfix/**'
-      - 'OT/**'
+      - 'OT**'
       - OT-Integration
   pull_request:
     branches:
