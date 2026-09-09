@@ -1,1 +1,1 @@
-console.log('Test file loaded successfully.');
+console.log('Test file loaded successfully');
