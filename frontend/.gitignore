@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+.webpack/
+*.bundle.js
+*.chunk.js
+
+# Development
+.env
+.env.local
+.env.*.local
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+.eslintcache
+
+# Testing
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+.tmp/
+tmp/
+
+# Module Federation
+remoteEntry.js
+*.remoteEntry.js
+
+# Webpack dev server
+.webpack-dev-server/
+
+# Cache
+.cache/
+.eslintcache
+.prettierignore

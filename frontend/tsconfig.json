@@ -9,6 +9,8 @@
     "paths": {
       "@xts/*": ["packages/@xts/*/src"]
     },
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true
   }
 }
