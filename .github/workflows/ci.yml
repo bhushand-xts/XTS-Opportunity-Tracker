@@ -1,0 +1,299 @@
+name: CI
+
+# One workflow, two scopes:
+#
+#  - Feature CI: push to feature/**, fix/**, hotfix/** and the PR into
+#    OT-Integration. Path-filtered so a branch touching only one side
+#    doesn't build the other (contracts/ changes always build both).
+#
+#  - Integration Validation: push to OT-Integration (i.e. after a PR
+#    merges into it). Always runs the full combined app -- never
+#    path-filtered -- plus the extra whole-app checks below.
+#
+# Scope note: this workflow only validates code. It never deploys
+# anywhere. On success on OT-Integration, promote.yml picks up from here
+# (triggered by this workflow's completion).
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'fix/**'
+      - 'hotfix/**'
+      - OT-Integration
+  pull_request:
+    branches:
+      - OT-Integration
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            backend:
+              - 'backend/**'
+            contracts:
+              - 'contracts/**'
+
+  frontend:
+    name: frontend / ${{ matrix.project }}
+    needs: changes
+    # Always run for the whole-app validation on OT-Integration; otherwise
+    # only when frontend/ or contracts/ actually changed.
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/OT-Integration') ||
+      needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - shell
+          - platform
+          - design-system
+          - mfe-opportunity-pipeline
+          - mfe-rfp-intake
+          - mfe-estimation-rates
+          - mfe-approvals-gates
+          - mfe-documents
+    defaults:
+      run:
+        working-directory: frontend/${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # No committed lockfile per-package yet, so we cache node_modules
+      # keyed on package.json instead of npm's built-in lockfile cache.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/${{ matrix.project }}/node_modules
+          key: npm-${{ runner.os }}-${{ matrix.project }}-${{ hashFiles(format('frontend/{0}/package.json', matrix.project)) }}
+          restore-keys: |
+            npm-${{ runner.os }}-${{ matrix.project }}-
+
+      - name: Install dependencies
+        run: npm install
+
+      # PLACEHOLDER: no package in frontend/ has a "lint" script yet.
+      # --if-present makes this a no-op until oxlint/eslint is wired in.
+      - name: Lint
+        run: npm run lint --if-present
+
+      # PLACEHOLDER: no package in frontend/ has a "test" script yet.
+      - name: Unit tests
+        run: npm test --if-present
+
+      # PLACEHOLDER: no coverage tooling configured yet. Once a package
+      # emits coverage/coverage-summary.json (e.g. via vitest --coverage),
+      # this step starts actually enforcing the 80% gate; until then it
+      # just reports that there is nothing to check.
+      - name: Coverage check (>= 80%)
+        run: |
+          npm run coverage --if-present
+          if [ -f coverage/coverage-summary.json ]; then
+            PCT=$(node -e "console.log(require('./coverage/coverage-summary.json').total.lines.pct)")
+            echo "Line coverage: ${PCT}%"
+            awk -v pct="$PCT" 'BEGIN { exit !(pct >= 80) }' || {
+              echo "::error::Coverage ${PCT}% is below the 80% threshold"
+              exit 1
+            }
+          else
+            echo "::warning::No coverage/coverage-summary.json produced for ${{ matrix.project }} -- skipping threshold check (placeholder until coverage tooling is added)"
+          fi
+
+      - name: Dependency audit (fail on high/critical)
+        run: npm audit --audit-level=high
+
+      - name: Build
+        run: npm run build --if-present
+
+  backend:
+    name: backend
+    needs: changes
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/OT-Integration') ||
+      needs.changes.outputs.backend == 'true' || needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      # PLACEHOLDER: backend/ has no package.json or subgraph code yet.
+      # This job is scaffolded so it lights up automatically the moment
+      # real backend code (and a package.json with lint/test/build
+      # scripts) lands -- no workflow changes needed at that point.
+      - name: Check backend scaffolding
+        id: scaffold
+        run: |
+          if [ -f package.json ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::backend/package.json not found -- backend has no scaffolded code yet. Skipping lint/test/coverage/audit/build (placeholder job)."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.scaffold.outputs.found == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache node_modules
+        if: steps.scaffold.outputs.found == 'true'
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: npm-${{ runner.os }}-backend-${{ hashFiles('backend/package.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-backend-
+
+      - name: Install dependencies
+        if: steps.scaffold.outputs.found == 'true'
+        run: npm install
+
+      - name: Lint
+        if: steps.scaffold.outputs.found == 'true'
+        run: npm run lint --if-present
+
+      - name: Unit tests
+        if: steps.scaffold.outputs.found == 'true'
+        run: npm test --if-present
+
+      - name: Coverage check (>= 80%)
+        if: steps.scaffold.outputs.found == 'true'
+        run: |
+          npm run coverage --if-present
+          if [ -f coverage/coverage-summary.json ]; then
+            PCT=$(node -e "console.log(require('./coverage/coverage-summary.json').total.lines.pct)")
+            echo "Line coverage: ${PCT}%"
+            awk -v pct="$PCT" 'BEGIN { exit !(pct >= 80) }' || {
+              echo "::error::Coverage ${PCT}% is below the 80% threshold"
+              exit 1
+            }
+          else
+            echo "::warning::No coverage/coverage-summary.json produced -- skipping threshold check (placeholder until coverage tooling is added)"
+          fi
+
+      - name: Dependency audit (fail on high/critical)
+        if: steps.scaffold.outputs.found == 'true'
+        run: npm audit --audit-level=high
+
+      - name: Build
+        if: steps.scaffold.outputs.found == 'true'
+        run: npm run build --if-present
+
+  # -- Everything below only runs for Integration Validation (a push to
+  # -- OT-Integration), never for Feature CI on a short-lived branch or PR.
+
+  integration-tests:
+    name: Integration tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/OT-Integration'
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+      # PLACEHOLDER: no dedicated integration-test suite exists yet
+      # (e.g. a `backend/integration/` or root-level Playwright/Cypress
+      # project running the shell + subgraphs together). Wire the real
+      # command in here once that suite exists.
+      - name: Run integration test suite
+        run: |
+          echo "::warning::No integration test suite found yet -- placeholder step. Add the real command here once backend/contracts land."
+
+  contract-validation:
+    name: GraphQL schema & contract validation
+    if: github.event_name == 'push' && github.ref == 'refs/heads/OT-Integration'
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+      # PLACEHOLDER: contracts/ does not exist yet, and none of the eight
+      # federated subgraphs are scaffolded. Once they are, this step
+      # should compose the supergraph (e.g. `rover supergraph compose` /
+      # `@apollo/gateway` composition) against contracts/ and fail the
+      # job if composition errors.
+      - name: Validate composed supergraph
+        run: |
+          if [ -d contracts ]; then
+            echo "contracts/ found -- wire the real composition command here."
+          else
+            echo "::warning::contracts/ directory not found -- skipping schema/contract validation (placeholder)."
+          fi
+
+  mfe-integration:
+    name: MFE integration validation
+    if: github.event_name == 'push' && github.ref == 'refs/heads/OT-Integration'
+    runs-on: ubuntu-latest
+    needs: [frontend]
+    steps:
+      - uses: actions/checkout@v4
+      # PLACEHOLDER: validates that shell + all five micro-frontends
+      # resolve and load together via Module Federation. Real
+      # implementation should build every remote, point the shell's
+      # VITE_REMOTE_*_URL vars at those built remotes, and smoke-test
+      # that the shell loads each remote's entry module without error.
+      - name: Verify shell resolves all five remotes
+        run: |
+          echo "::warning::MFE integration validation not implemented yet -- placeholder step."
+
+  api-integration:
+    name: API integration validation
+    if: github.event_name == 'push' && github.ref == 'refs/heads/OT-Integration'
+    runs-on: ubuntu-latest
+    needs: [backend]
+    steps:
+      - uses: actions/checkout@v4
+      # PLACEHOLDER: exercises the gateway against all eight subgraphs
+      # end-to-end once the backend exists.
+      - name: Run API integration checks
+        run: |
+          echo "::warning::API integration validation not implemented yet -- placeholder step."
+
+  db-migration-validation:
+    name: DB / migration validation
+    if: github.event_name == 'push' && github.ref == 'refs/heads/OT-Integration'
+    runs-on: ubuntu-latest
+    needs: [backend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect migration changes
+        id: detect
+        run: |
+          if git log -1 --name-only --pretty=format: | grep -qi 'migrations/'; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      # PLACEHOLDER: no migration tooling (e.g. node-pg-migrate/Prisma)
+      # is set up yet. Once it is, this should spin up a throwaway
+      # Postgres and run migrations up/down against it.
+      - name: Validate migrations
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          echo "::warning::Migration files detected but migration validation is not implemented yet -- placeholder step."
+      - name: No migrations in this changeset
+        if: steps.detect.outputs.present == 'false'
+        run: echo "No migration files changed -- skipping."
