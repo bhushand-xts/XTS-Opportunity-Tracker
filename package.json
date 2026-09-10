@@ -1,0 +1,38 @@
+{
+  "dependencies": {
+    "@apollo/client": "^3.12.6",
+    "@apollo/server": "^4.11.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "graphql": "^16.10.0",
+    "lucide-react": "^0.468.0",
+    "pg": "^8.13.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.11"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "nodemon": "^3.1.9",
+    "typescript": "^7.0.2"
+  },
+  "name": "xts-opportunity-tracker-main",
+  "version": "1.0.0",
+  "description": "",
+  "main": "scaffold.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bhushand-xts/XTS-Opportunity-Tracker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bhushand-xts/XTS-Opportunity-Tracker/issues"
+  },
+  "homepage": "https://github.com/bhushand-xts/XTS-Opportunity-Tracker#readme"
+}

@@ -1,0 +1,10 @@
+# Restricted to this module's own operations -- typed hooks come out scoped
+# to exactly what RFP Intake & Response queries, nothing else in the supergraph.
+schema: ../../contracts/graphql-schema/composed/supergraph.graphql
+documents: "src/graphql/**/*.ts"
+generates:
+  src/types/generated.ts:
+    plugins:
+      - typescript
+      - typescript-operations
+      - typescript-react-apollo

@@ -1,0 +1,26 @@
+{
+  "name": "admin-service",
+  "version": "1.0.0",
+  "description": "Admin microservice for XTS Opportunity Tracker",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@apollo/server": "^5.0.0",
+    "@apollo/subgraph": "^2.0.0",
+    "dotenv": "^17.0.0",
+    "graphql": "^16.0.0",
+    "graphql-tag": "^2.12.7",
+    "pg": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^7.0.2"
+  }
+}

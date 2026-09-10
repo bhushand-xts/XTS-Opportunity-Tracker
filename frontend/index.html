@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Test View</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .box {
+            background: #fff;
+            padding: 20px;
+            margin-bottom: 25px;
+            border-radius: 6px;
+        }
+
+        h2 {
+            margin-top: 0;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            flex: 1;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 8px 15px;
+            border: 0;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+
+        .add {
+            background: #28a745;
+            color: white;
+        }
+
+        .edit {
+            background: #ffc107;
+        }
+
+        .delete {
+            background: #dc3545;
+            color: white;
+        }
+
+        .clear {
+            background: #6c757d;
+            color: white;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background: #eee;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- ================= MENU ================= -->
+
+<div class="box">
+
+    <h2>Menu Management</h2>
+
+    <div class="form-row">
+
+        <div class="form-group">
+            <label>Menu Name</label>
+            <input type="text" id="menuName">
+        </div>
+
+        <div class="form-group">
+            <label>Menu Key</label>
+            <input type="text" id="menuKey">
+        </div>
+
+        <div class="form-group">
+            <label>Menu Type</label>
+            <select id="menuType">
+                <option value="main">Main Menu</option>
+                <option value="sub">Sub Menu</option>
+            </select>
+        </div>
+
+    </div>
+
+
+    <div class="form-row">
+
+        <div class="form-group hidden" id="parentMenuDiv">
+            <label>Parent Menu</label>
+
+            <select id="parentMenu">
+                <option value="">Select Parent Menu</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Icon</label>
+            <input type="text" id="menuIcon">
+        </div>
+
+        <div class="form-group">
+            <label>Sort Order</label>
+            <input type="number" id="sortOrder">
+        </div>
+
+        <div class="form-group">
+            <label>Is Active</label>
+            <select id="menuIsActive">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+            </select>
+        </div>
+
+    </div>
+
+
+    <button class="add" id="addMenu">
+        Add Menu
+    </button>
+
+    <button class="clear" id="clearMenu">
+        Clear
+    </button>
+
+
+    <!-- MENU GRID -->
+
+    <table>
+
+        <thead>
+            <tr>
+                <th>Menu Name</th>
+                <th>Menu Key</th>
+                <th>Menu Type</th>
+                <th>Parent Menu</th>
+                <th>Icon</th>
+                <th>Sort Order</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+
+        <tbody id="menuGrid">
+        </tbody>
+
+    </table>
+
+</div>
+
+
+<!-- ================= PERMISSION ================= -->
+
+<div class="box">
+
+    <h2>Permission Management</h2>
+
+    <div class="form-row">
+
+        <div class="form-group">
+            <label>Permission Name</label>
+            <input type="text" id="permissionName">
+        </div>
+
+        <div class="form-group">
+            <label>Permission Key</label>
+            <input type="text" id="permissionKey">
+        </div>
+
+        <div class="form-group">
+            <label>Is Active</label>
+            <select id="permissionIsActive">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+            </select>
+        </div>
+
+    </div>
+
+
+    <button class="add" id="addPermission">
+        Add Permission
+    </button>
+
+    <button class="clear" id="clearPermission">
+        Clear
+    </button>
+
+
+    <!-- PERMISSION GRID -->
+
+    <table>
+
+        <thead>
+            <tr>
+                <th>Permission Name</th>
+                <th>Permission Key</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+
+        <tbody id="permissionGrid">
+        </tbody>
+
+    </table>
+
+</div>
+
+
+<script>
+
+const API_URL = "http://localhost:5001/graphql";
+
+let menus = [];
+let permissions = [];
+
+let editMenuId = null;
+let editPermissionId = null;
+
+
+/* ================= GRAPHQL ================= */
+
+async function graphqlRequest(query, variables = {}) {
+
+    const response = await fetch(API_URL, {
+        method: "POST",
+
+        headers: {
+            "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify({
+            query: query,
+            variables: variables
+        })
+    });
+
+    const result = await response.json();
+
+    return result.data;
+}
+
+
+/* ================= MENU TYPE ================= */
+
+document.getElementById("menuType").addEventListener(
+    "change",
+    function () {
+
+        if (this.value === "sub") {
+
+            document
+                .getElementById("parentMenuDiv")
+                .classList.remove("hidden");
+
+            loadParentMenus();
+
+        } else {
+
+            document
+                .getElementById("parentMenuDiv")
+                .classList.add("hidden");
+
+        }
+
+    }
+);
+
+
+/* ================= LOAD PARENT MENUS ================= */
+
+function loadParentMenus() {
+
+    const select =
+        document.getElementById("parentMenu");
+
+    select.innerHTML =
+        '<option value="">Select Parent Menu</option>';
+
+    menus
+        .filter(menu => !menu.parentId)
+        .forEach(menu => {
+
+            select.innerHTML += `
+                <option value="${menu.menuId}">
+                    ${menu.menuName}
+                </option>
+            `;
+
+        });
+
+}
+
+
+/* ================= ADD MENU ================= */
+
+document.getElementById("addMenu").addEventListener(
+    "click",
+    async function () {
+
+        const menuType =
+            document.getElementById("menuType").value;
+
+        const parentId =
+            menuType === "sub"
+                ? Number(
+                    document.getElementById("parentMenu").value
+                )
+                : null;
+
+        const input = {
+
+            menuName:
+                document.getElementById("menuName").value,
+
+            menuKey:
+                document.getElementById("menuKey").value,
+
+            icon:
+                document.getElementById("menuIcon").value,
+
+            parentId: parentId,
+
+            sortOrder:
+                Number(
+                    document.getElementById("sortOrder").value
+                ),
+
+            createdBy: 1
+
+        };
+
+
+        if (editMenuId) {
+
+            await updateMenu(editMenuId);
+
+        } else {
+
+            const mutation = `
+                mutation($input: CreateMenuInput!) {
+
+                    createMenu(input: $input) {
+
+                        menuId
+                        menuName
+                        menuKey
+                        icon
+                        parentId
+                        sortOrder
+                        isActive
+
+                    }
+                }
+            `;
+
+            const data =
+                await graphqlRequest(
+                    mutation,
+                    { input: input }
+                );
+
+            menus.push(data.createMenu);
+
+            renderMenus();
+
+        }
+
+        clearMenuForm();
+
+    }
+);
+
+
+/* ================= RENDER MENUS ================= */
+
+function renderMenus() {
+
+    const grid =
+        document.getElementById("menuGrid");
+
+    grid.innerHTML = "";
+
+    menus.forEach(menu => {
+
+        const parent =
+            menus.find(
+                item => item.menuId === menu.parentId
+            );
+
+        grid.innerHTML += `
+
+            <tr>
+
+                <td>${menu.menuName}</td>
+
+                <td>${menu.menuKey}</td>
+
+                <td>
+                    ${
+                        menu.parentId
+                            ? "Sub Menu"
+                            : "Main Menu"
+                    }
+                </td>
+
+                <td>
+                    ${
+                        parent
+                            ? parent.menuName
+                            : "-"
+                    }
+                </td>
+
+                <td>${menu.icon || ""}</td>
+
+                <td>${menu.sortOrder}</td>
+
+                <td>
+                    ${
+                        menu.isActive
+                            ? "Yes"
+                            : "No"
+                    }
+                </td>
+
+                <td>
+
+                    <button
+                        class="edit"
+                        onclick="editMenu(${menu.menuId})">
+                        Edit
+                    </button>
+
+                </td>
+
+            </tr>
+
+        `;
+
+    });
+
+}
+
+
+/* ================= EDIT MENU ================= */
+
+window.editMenu = function(menuId) {
+
+    const menu =
+        menus.find(
+            item => item.menuId === menuId
+        );
+
+    if (!menu) {
+        return;
+    }
+
+    editMenuId = menuId;
+
+    document.getElementById("menuName").value =
+        menu.menuName;
+
+    document.getElementById("menuKey").value =
+        menu.menuKey;
+
+    document.getElementById("menuIcon").value =
+        menu.icon || "";
+
+    document.getElementById("sortOrder").value =
+        menu.sortOrder;
+
+    document.getElementById("menuIsActive").value =
+        menu.isActive ? "true" : "false";
+
+
+    if (menu.parentId) {
+
+        document.getElementById("menuType").value =
+            "sub";
+
+        document
+            .getElementById("parentMenuDiv")
+            .classList.remove("hidden");
+
+        loadParentMenus();
+
+        document.getElementById("parentMenu").value =
+            menu.parentId;
+
+    } else {
+
+        document.getElementById("menuType").value =
+            "main";
+
+        document
+            .getElementById("parentMenuDiv")
+            .classList.add("hidden");
+
+    }
+
+};
+
+
+/* ================= UPDATE MENU ================= */
+
+async function updateMenu(menuId) {
+
+    const menuType =
+        document.getElementById("menuType").value;
+
+    const parentId =
+        menuType === "sub"
+            ? Number(
+                document.getElementById("parentMenu").value
+            )
+            : null;
+
+
+    const mutation = `
+        mutation(
+            $menuId: Int!
+            $input: UpdateMenuInput!
+        ) {
+
+            updateMenu(
+                menuId: $menuId
+                input: $input
+            ) {
+
+                menuId
+                menuName
+                menuKey
+                icon
+                parentId
+                sortOrder
+                isActive
+
+            }
+        }
+    `;
+
+
+    const input = {
+
+        menuName:
+            document.getElementById("menuName").value,
+
+        menuKey:
+            document.getElementById("menuKey").value,
+
+        icon:
+            document.getElementById("menuIcon").value,
+
+        parentId: parentId,
+
+        sortOrder:
+            Number(
+                document.getElementById("sortOrder").value
+            ),
+
+        isActive:
+            document.getElementById("menuIsActive").value
+                === "true",
+
+        updatedBy: 1
+
+    };
+
+
+    const data =
+        await graphqlRequest(
+            mutation,
+            {
+                menuId: menuId,
+                input: input
+            }
+        );
+
+
+    const index =
+        menus.findIndex(
+            menu => menu.menuId === menuId
+        );
+
+    menus[index] =
+        data.updateMenu;
+
+    renderMenus();
+
+}
+
+
+/* ================= CLEAR MENU ================= */
+
+document.getElementById("clearMenu").addEventListener(
+    "click",
+    clearMenuForm
+);
+
+function clearMenuForm() {
+
+    editMenuId = null;
+
+    document.getElementById("menuName").value = "";
+    document.getElementById("menuKey").value = "";
+    document.getElementById("menuIcon").value = "";
+    document.getElementById("sortOrder").value = "";
+
+    document.getElementById("menuType").value =
+        "main";
+
+    document.getElementById("parentMenu").value =
+        "";
+
+    document.getElementById("parentMenuDiv")
+        .classList.add("hidden");
+
+    document.getElementById("menuIsActive").value =
+        "true";
+
+}
+
+
+/* ================= ADD PERMISSION ================= */
+
+document.getElementById("addPermission").addEventListener(
+    "click",
+    async function () {
+
+        if (editPermissionId) {
+
+            await updatePermission(editPermissionId);
+
+            return;
+
+        }
+
+
+        const mutation = `
+            mutation($input: CreatePermissionInput!) {
+
+                createPermission(input: $input) {
+
+                    permissionId
+                    permissionName
+                    permissionKey
+                    isActive
+
+                }
+            }
+        `;
+
+
+        const input = {
+
+            permissionName:
+                document.getElementById(
+                    "permissionName"
+                ).value,
+
+            permissionKey:
+                document.getElementById(
+                    "permissionKey"
+                ).value,
+
+            description: "",
+
+            createdBy: 1
+
+        };
+
+
+        const data =
+            await graphqlRequest(
+                mutation,
+                { input: input }
+            );
+
+
+        permissions.push(
+            data.createPermission
+        );
+
+        renderPermissions();
+
+        clearPermissionForm();
+
+    }
+);
+
+
+/* ================= RENDER PERMISSIONS ================= */
+
+function renderPermissions() {
+
+    const grid =
+        document.getElementById(
+            "permissionGrid"
+        );
+
+    grid.innerHTML = "";
+
+    permissions.forEach(permission => {
+
+        grid.innerHTML += `
+
+            <tr>
+
+                <td>
+                    ${permission.permissionName}
+                </td>
+
+                <td>
+                    ${permission.permissionKey}
+                </td>
+
+                <td>
+                    ${
+                        permission.isActive
+                            ? "Yes"
+                            : "No"
+                    }
+                </td>
+
+                <td>
+
+                    <button
+                        class="edit"
+                        onclick="editPermission(
+                            ${permission.permissionId}
+                        )">
+                        Edit
+                    </button>
+
+                    <button
+                        class="delete"
+                        onclick="deletePermission(
+                            ${permission.permissionId}
+                        )">
+                        Delete
+                    </button>
+
+                </td>
+
+            </tr>
+
+        `;
+
+    });
+
+}
+
+
+/* ================= EDIT PERMISSION ================= */
+
+window.editPermission = function(permissionId) {
+
+    const permission =
+        permissions.find(
+            item =>
+                item.permissionId === permissionId
+        );
+
+    if (!permission) {
+        return;
+    }
+
+    editPermissionId = permissionId;
+
+    document.getElementById(
+        "permissionName"
+    ).value =
+        permission.permissionName;
+
+    document.getElementById(
+        "permissionKey"
+    ).value =
+        permission.permissionKey;
+
+    document.getElementById(
+        "permissionIsActive"
+    ).value =
+        permission.isActive
+            ? "true"
+            : "false";
+
+};
+
+
+/* ================= UPDATE PERMISSION ================= */
+
+async function updatePermission(permissionId) {
+
+    const mutation = `
+        mutation(
+            $permissionId: Int!
+            $input: UpdatePermissionInput!
+        ) {
+
+            updatePermission(
+                permissionId: $permissionId
+                input: $input
+            ) {
+
+                permissionId
+                permissionName
+                permissionKey
+                isActive
+
+            }
+        }
+    `;
+
+
+    const input = {
+
+        permissionName:
+            document.getElementById(
+                "permissionName"
+            ).value,
+
+        permissionKey:
+            document.getElementById(
+                "permissionKey"
+            ).value,
+
+        isActive:
+            document.getElementById(
+                "permissionIsActive"
+            ).value === "true",
+
+        updatedBy: 1
+
+    };
+
+
+    const data =
+        await graphqlRequest(
+            mutation,
+            {
+                permissionId: permissionId,
+                input: input
+            }
+        );
+
+
+    const index =
+        permissions.findIndex(
+            permission =>
+                permission.permissionId === permissionId
+        );
+
+    permissions[index] =
+        data.updatePermission;
+
+    renderPermissions();
+
+    clearPermissionForm();
+
+}
+
+
+/* ================= DELETE PERMISSION ================= */
+
+window.deletePermission = async function(permissionId) {
+
+    const mutation = `
+        mutation(
+            $permissionId: Int!
+            $updatedBy: Int!
+        ) {
+
+            deletePermission(
+                permissionId: $permissionId
+                updatedBy: $updatedBy
+            ) {
+
+                permissionId
+
+            }
+        }
+    `;
+
+
+    await graphqlRequest(
+        mutation,
+        {
+            permissionId: permissionId,
+            updatedBy: 1
+        }
+    );
+
+
+    permissions =
+        permissions.filter(
+            permission =>
+                permission.permissionId !== permissionId
+        );
+
+    renderPermissions();
+
+};
+
+
+/* ================= CLEAR PERMISSION ================= */
+
+document.getElementById(
+    "clearPermission"
+).addEventListener(
+    "click",
+    clearPermissionForm
+);
+
+
+function clearPermissionForm() {
+
+    editPermissionId = null;
+
+    document.getElementById(
+        "permissionName"
+    ).value = "";
+
+    document.getElementById(
+        "permissionKey"
+    ).value = "";
+
+    document.getElementById(
+        "permissionIsActive"
+    ).value = "true";
+
+}
+
+</script>
+
+</body>
+</html>
+
