@@ -1,33 +1,34 @@
 const { Client } = require("pg");
 
 const client = new Client({
-    host: "localhost",
-    port: 5432,
-    database: "admin_db",
-    user: "postgres",
-    password: "root",
-    connectionTimeoutMillis: 10000
+  host: "172.16.80.28",
+  port: 5432,
+  database: "admin_db",
+  user: "opportunityuser",
+  password: "opportunityTracker",
+  connectionTimeoutMillis: 10000,
 });
 
-client.connect()
-    .then(() => {
-        console.log("✅ PostgreSQL connected successfully");
+async function testDatabaseConnection() {
+  try {
+    await client.connect();
 
-        return client.query(`
-            SELECT current_database(), current_user
-        `);
-    })
-    .then((result) => {
-        console.log("Database details:");
-        console.log(result.rows);
+    console.log("✅ PostgreSQL connected successfully");
 
-        return client.end();
-    })
-    .then(() => {
-        console.log("✅ Connection closed");
-    })
-    .catch((error) => {
-        console.error("❌ DATABASE ERROR:");
-        console.error(error);
-        process.exit(1);
-    });
+    const result = await client.query(
+      "SELECT current_database(), current_user"
+    );
+
+    console.log("Database details:");
+    console.log(result.rows);
+
+  } catch (error) {
+    console.error("❌ DATABASE CONNECTION FAILED");
+    console.error(error.message);
+  } finally {
+    await client.end();
+    console.log("🔌 Connection closed");
+  }
+}
+
+testDatabaseConnection();

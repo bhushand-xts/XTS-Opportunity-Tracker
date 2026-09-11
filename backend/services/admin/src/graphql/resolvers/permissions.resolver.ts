@@ -1,54 +1,67 @@
 import { GraphQLError } from "graphql";
 
-import { PermissionsRepository } from "../../repositories/permissions.repository";
-import { PermissionsService } from "../../services/permissions.service";
+import {
+  PermissionsRepository
+} from "../../repositories/permissions.repository";
+
+import {
+  PermissionsService
+} from "../../services/permissions.service";
 
 import {
   CreatePermissionInput,
   UpdatePermissionInput
 } from "../../validators/permissions.validator";
 
-const repository = new PermissionsRepository();
-const service = new PermissionsService(repository);
 
-function handleError(error: unknown): never {
+const service =
+  new PermissionsService(
+    new PermissionsRepository()
+  );
+
+
+function handleError(
+  error: unknown
+): never {
 
   const message =
     error instanceof Error
       ? error.message
       : "Internal server error.";
 
-  throw new GraphQLError(message, {
-    extensions: {
-      code:
-        message.includes("not found")
+  throw new GraphQLError(
+    message,
+    {
+      extensions: {
+        code: message.includes("not found")
           ? "NOT_FOUND"
           : "BAD_USER_INPUT"
+      }
     }
-  });
+  );
 }
+
 
 export const permissionResolvers = {
 
+  // --------------------------------------------------
+  // QUERY
+  // --------------------------------------------------
+
   Query: {
 
-    permissions: async (
-      _: unknown,
-      args: {
-        isActive?: boolean;
-      }
-    ) => {
+    permissions: async () => {
 
       try {
 
-        return await service.getPermissions(
-          args.isActive
-        );
+        return await service.getPermissions();
 
       } catch (error) {
-        handleError(error);
+
+        return handleError(error);
       }
     },
+
 
     permission: async (
       _: unknown,
@@ -64,10 +77,62 @@ export const permissionResolvers = {
         );
 
       } catch (error) {
-        handleError(error);
+
+        return handleError(error);
+      }
+    },
+
+
+    menusForPermissionMapping: async () => {
+
+      try {
+
+        return await service.getMenuListForMapping();
+
+      } catch (error) {
+
+        return handleError(error);
+      }
+    },
+
+
+    menuPermissions: async (
+      _: unknown,
+      args: {
+        menuId: number;
+      }
+    ) => {
+
+      try {
+
+        return await service.getMenuPermissions(
+          args.menuId
+        );
+
+      } catch (error) {
+
+        return handleError(error);
+      }
+    },
+
+
+    menuPermissionMappings: async () => {
+
+      try {
+
+        return await service.getMenuPermissionMappings();
+
+      } catch (error) {
+
+        return handleError(error);
       }
     }
   },
+
+
+  // --------------------------------------------------
+  // MUTATION
+  // --------------------------------------------------
 
   Mutation: {
 
@@ -85,9 +150,11 @@ export const permissionResolvers = {
         );
 
       } catch (error) {
-        handleError(error);
+
+        return handleError(error);
       }
     },
+
 
     updatePermission: async (
       _: unknown,
@@ -105,27 +172,58 @@ export const permissionResolvers = {
         );
 
       } catch (error) {
-        handleError(error);
+
+        return handleError(error);
       }
     },
 
-    deletePermission: async (
+
+    togglePermissionStatus: async (
       _: unknown,
       args: {
         permissionId: number;
+        isActive: boolean;
         updatedBy: number;
       }
     ) => {
 
       try {
 
-        return await service.deletePermission(
+        return await service.togglePermissionStatus(
           args.permissionId,
+          args.isActive,
           args.updatedBy
         );
 
       } catch (error) {
-        handleError(error);
+
+        return handleError(error);
+      }
+    },
+
+
+    saveMenuPermissions: async (
+      _: unknown,
+      args: {
+        input: {
+          menuId: number;
+          permissionIds: number[];
+          updatedBy: number;
+        };
+      }
+    ) => {
+
+      try {
+
+        return await service.saveMenuPermissions(
+          args.input.menuId,
+          args.input.permissionIds,
+          args.input.updatedBy
+        );
+
+      } catch (error) {
+
+        return handleError(error);
       }
     }
   }

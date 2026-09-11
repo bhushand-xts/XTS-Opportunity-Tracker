@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Admin Test View</title>
+    <title>Opportunity Tracker - Admin Test</title>
 
     <style>
         body {
@@ -22,59 +22,82 @@
             margin-top: 0;
         }
 
+        h3 {
+            margin-top: 0;
+        }
+
         .form-row {
             display: flex;
             gap: 15px;
             margin-bottom: 15px;
+            flex-wrap: wrap;
         }
 
         .form-group {
-            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 220px;
         }
 
         label {
-            display: block;
             margin-bottom: 5px;
             font-weight: bold;
         }
 
         input,
-        select {
-            width: 100%;
+        select,
+        textarea {
             padding: 8px;
-            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        textarea {
+            resize: vertical;
         }
 
         button {
             padding: 8px 15px;
-            border: 0;
+            border: none;
+            border-radius: 4px;
             cursor: pointer;
-            margin-right: 5px;
         }
 
-        .add {
+        .btn-primary {
+            background: #007bff;
+            color: #fff;
+        }
+
+        .btn-success {
             background: #28a745;
-            color: white;
+            color: #fff;
         }
 
-        .edit {
-            background: #ffc107;
-        }
-
-        .delete {
-            background: #dc3545;
-            color: white;
-        }
-
-        .clear {
+        .btn-secondary {
             background: #6c757d;
-            color: white;
+            color: #fff;
+        }
+
+        .btn-warning {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: #fff;
+        }
+
+        .btn-link {
+            background: transparent;
+            color: #007bff;
+            padding-left: 0;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            margin-top: 15px;
         }
 
         th,
@@ -85,22 +108,73 @@
         }
 
         th {
-            background: #eee;
+            background: #f1f1f1;
+        }
+
+        .status-active {
+            color: green;
+            font-weight: bold;
+        }
+
+        .status-inactive {
+            color: red;
+            font-weight: bold;
         }
 
         .hidden {
             display: none;
+        }
+
+        .mapping-permissions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .permission-tag {
+            background: #e9ecef;
+            padding: 5px 8px;
+            border-radius: 4px;
+        }
+
+        .message {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .add-permission-box {
+            margin-top: 15px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            background: #fafafa;
+            border-radius: 5px;
         }
     </style>
 </head>
 
 <body>
 
-<!-- ================= MENU ================= -->
+<!-- ========================================================= -->
+<!-- MENU MANAGEMENT -->
+<!-- ========================================================= -->
 
 <div class="box">
 
     <h2>Menu Management</h2>
+
+    <input type="hidden" id="menuId">
 
     <div class="form-row">
 
@@ -115,57 +189,42 @@
         </div>
 
         <div class="form-group">
-            <label>Menu Type</label>
-            <select id="menuType">
-                <option value="main">Main Menu</option>
-                <option value="sub">Sub Menu</option>
-            </select>
-        </div>
-
-    </div>
-
-
-    <div class="form-row">
-
-        <div class="form-group hidden" id="parentMenuDiv">
-            <label>Parent Menu</label>
-
-            <select id="parentMenu">
-                <option value="">Select Parent Menu</option>
-            </select>
-        </div>
-
-        <div class="form-group">
             <label>Icon</label>
             <input type="text" id="menuIcon">
         </div>
 
         <div class="form-group">
-            <label>Sort Order</label>
-            <input type="number" id="sortOrder">
+            <label>Parent Menu</label>
+            <select id="parentMenu">
+                <option value="">Main Menu</option>
+            </select>
         </div>
 
         <div class="form-group">
-            <label>Is Active</label>
-            <select id="menuIsActive">
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-            </select>
+            <label>Sort Order</label>
+            <input type="number" id="sortOrder" value="1">
         </div>
 
     </div>
 
-
-    <button class="add" id="addMenu">
-        Add Menu
+    <button
+        type="button"
+        class="btn-primary"
+        id="btnSaveMenu">
+        Save Menu
     </button>
 
-    <button class="clear" id="clearMenu">
+    <button
+        type="button"
+        class="btn-secondary"
+        id="btnClearMenu">
         Clear
     </button>
 
-
-    <!-- MENU GRID -->
+    <div
+        id="menuMessage"
+        class="message">
+    </div>
 
     <table>
 
@@ -173,9 +232,8 @@
             <tr>
                 <th>Menu Name</th>
                 <th>Menu Key</th>
-                <th>Menu Type</th>
-                <th>Parent Menu</th>
                 <th>Icon</th>
+                <th>Parent</th>
                 <th>Sort Order</th>
                 <th>Status</th>
                 <th>Action</th>
@@ -190,58 +248,170 @@
 </div>
 
 
-<!-- ================= PERMISSION ================= -->
+<!-- ========================================================= -->
+<!-- MENU - PERMISSION MAPPING -->
+<!-- ========================================================= -->
 
 <div class="box">
 
-    <h2>Permission Management</h2>
+    <h2>Menu-Permission Mapping</h2>
+
+    <input type="hidden" id="mappingEditMode" value="0">
 
     <div class="form-row">
 
         <div class="form-group">
-            <label>Permission Name</label>
-            <input type="text" id="permissionName">
-        </div>
+            <label>Menu</label>
 
-        <div class="form-group">
-            <label>Permission Key</label>
-            <input type="text" id="permissionKey">
-        </div>
-
-        <div class="form-group">
-            <label>Is Active</label>
-            <select id="permissionIsActive">
-                <option value="true">Yes</option>
-                <option value="false">No</option>
+            <select id="mappingMenu">
+                <option value="">Select Menu</option>
             </select>
+        </div>
+
+        <div class="form-group">
+
+            <label>Permissions</label>
+
+            <select
+                id="mappingPermissions"
+                multiple
+                size="6"
+                style="min-width:300px;">
+            </select>
+
         </div>
 
     </div>
 
 
-    <button class="add" id="addPermission">
-        Add Permission
+    <!-- ===================================================== -->
+    <!-- ADD NEW PERMISSION OPTION -->
+    <!-- ===================================================== -->
+
+    <div>
+
+        <button
+            type="button"
+            class="btn-link"
+            id="btnShowAddPermission">
+            + Add New Permission
+        </button>
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- ADD NEW PERMISSION FORM -->
+    <!-- HIDDEN INITIALLY -->
+    <!-- ===================================================== -->
+
+    <div
+        id="addPermissionSection"
+        class="add-permission-box hidden">
+
+        <h3>Add New Permission</h3>
+
+        <div class="form-row">
+
+            <div class="form-group">
+
+                <label>Permission Name</label>
+
+                <input
+                    type="text"
+                    id="newPermissionName">
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>Permission Key</label>
+
+                <input
+                    type="text"
+                    id="newPermissionKey">
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>Description</label>
+
+                <textarea
+                    id="newPermissionDescription"
+                    rows="2">
+                </textarea>
+
+            </div>
+
+        </div>
+
+
+        <button
+            type="button"
+            class="btn-success"
+            id="btnAddPermission">
+            Add Permission
+        </button>
+
+
+        <button
+            type="button"
+            class="btn-secondary"
+            id="btnCancelAddPermission">
+            Cancel
+        </button>
+
+    </div>
+
+
+    <br>
+
+
+    <button
+        type="button"
+        class="btn-primary"
+        id="btnSaveMapping">
+        Save Mapping
     </button>
 
-    <button class="clear" id="clearPermission">
+    <button
+        type="button"
+        class="btn-secondary"
+        id="btnClearMapping">
         Clear
     </button>
 
 
-    <!-- PERMISSION GRID -->
+    <div
+        id="mappingMessage"
+        class="message">
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- MAPPED MENUS GRID -->
+    <!-- ===================================================== -->
+
+    <h3 style="margin-top:30px;">
+        Mapped Menus
+    </h3>
 
     <table>
 
         <thead>
+
             <tr>
-                <th>Permission Name</th>
-                <th>Permission Key</th>
-                <th>Status</th>
+                <th>Menu Name</th>
+                <th>Permissions</th>
                 <th>Action</th>
             </tr>
+
         </thead>
 
-        <tbody id="permissionGrid">
+        <tbody id="mappingGrid">
         </tbody>
 
     </table>
@@ -251,20 +421,17 @@
 
 <script>
 
-const API_URL = "http://localhost:5001/graphql";
-
-let menus = [];
-let permissions = [];
-
-let editMenuId = null;
-let editPermissionId = null;
+const GRAPHQL_URL = "http://localhost:5001/graphql";
 
 
-/* ================= GRAPHQL ================= */
+// ============================================================
+// GRAPHQL REQUEST
+// ============================================================
 
 async function graphqlRequest(query, variables = {}) {
 
-    const response = await fetch(API_URL, {
+    const response = await fetch(GRAPHQL_URL, {
+
         method: "POST",
 
         headers: {
@@ -272,118 +439,67 @@ async function graphqlRequest(query, variables = {}) {
         },
 
         body: JSON.stringify({
-            query: query,
-            variables: variables
+            query,
+            variables
         })
+
     });
 
     const result = await response.json();
+
+    if (result.errors) {
+        throw new Error(
+            result.errors[0].message
+        );
+    }
 
     return result.data;
 }
 
 
-/* ================= MENU TYPE ================= */
+// ============================================================
+// MESSAGE
+// ============================================================
 
-document.getElementById("menuType").addEventListener(
-    "change",
-    function () {
+function showMessage(
+    elementId,
+    message,
+    success = true
+) {
 
-        if (this.value === "sub") {
+    const element =
+        document.getElementById(elementId);
 
-            document
-                .getElementById("parentMenuDiv")
-                .classList.remove("hidden");
+    element.textContent = message;
 
-            loadParentMenus();
+    element.className =
+        "message " +
+        (success
+            ? "success-message"
+            : "error-message");
 
-        } else {
+    element.style.display = "block";
 
-            document
-                .getElementById("parentMenuDiv")
-                .classList.add("hidden");
+    setTimeout(() => {
 
-        }
+        element.style.display = "none";
 
-    }
-);
-
-
-/* ================= LOAD PARENT MENUS ================= */
-
-function loadParentMenus() {
-
-    const select =
-        document.getElementById("parentMenu");
-
-    select.innerHTML =
-        '<option value="">Select Parent Menu</option>';
-
-    menus
-        .filter(menu => !menu.parentId)
-        .forEach(menu => {
-
-            select.innerHTML += `
-                <option value="${menu.menuId}">
-                    ${menu.menuName}
-                </option>
-            `;
-
-        });
-
+    }, 3000);
 }
 
 
-/* ================= ADD MENU ================= */
+// ============================================================
+// MENU MANAGEMENT
+// ============================================================
 
-document.getElementById("addMenu").addEventListener(
-    "click",
-    async function () {
+async function loadMenus() {
 
-        const menuType =
-            document.getElementById("menuType").value;
+    try {
 
-        const parentId =
-            menuType === "sub"
-                ? Number(
-                    document.getElementById("parentMenu").value
-                )
-                : null;
-
-        const input = {
-
-            menuName:
-                document.getElementById("menuName").value,
-
-            menuKey:
-                document.getElementById("menuKey").value,
-
-            icon:
-                document.getElementById("menuIcon").value,
-
-            parentId: parentId,
-
-            sortOrder:
-                Number(
-                    document.getElementById("sortOrder").value
-                ),
-
-            createdBy: 1
-
-        };
-
-
-        if (editMenuId) {
-
-            await updateMenu(editMenuId);
-
-        } else {
-
-            const mutation = `
-                mutation($input: CreateMenuInput!) {
-
-                    createMenu(input: $input) {
-
+        const data =
+            await graphqlRequest(`
+                query {
+                    menus {
                         menuId
                         menuName
                         menuKey
@@ -391,587 +507,1200 @@ document.getElementById("addMenu").addEventListener(
                         parentId
                         sortOrder
                         isActive
-
                     }
                 }
-            `;
+            `);
 
-            const data =
-                await graphqlRequest(
-                    mutation,
-                    { input: input }
-                );
+        renderMenus(data.menus);
 
-            menus.push(data.createMenu);
+        loadParentMenus(data.menus);
 
-            renderMenus();
+        loadMappingMenus();
 
-        }
+    } catch (error) {
 
-        clearMenuForm();
-
+        showMessage(
+            "menuMessage",
+            error.message,
+            false
+        );
     }
-);
+}
 
 
-/* ================= RENDER MENUS ================= */
+// ============================================================
+// PARENT MENU DROPDOWN
+// ============================================================
 
-function renderMenus() {
+function loadParentMenus(menus) {
 
-    const grid =
+    const select =
+        document.getElementById("parentMenu");
+
+    select.innerHTML =
+        '<option value="">Main Menu</option>';
+
+    menus
+        .filter(menu => menu.isActive)
+        .forEach(menu => {
+
+            if (menu.parentId === null) {
+
+                const option =
+                    document.createElement("option");
+
+                option.value = menu.menuId;
+
+                option.textContent =
+                    menu.menuName;
+
+                select.appendChild(option);
+            }
+
+        });
+}
+
+
+// ============================================================
+// RENDER MENU GRID
+// ============================================================
+
+function renderMenus(menus) {
+
+    const tbody =
         document.getElementById("menuGrid");
 
-    grid.innerHTML = "";
+    tbody.innerHTML = "";
 
     menus.forEach(menu => {
 
         const parent =
             menus.find(
-                item => item.menuId === menu.parentId
+                item =>
+                    item.menuId === menu.parentId
             );
 
-        grid.innerHTML += `
+        const row =
+            document.createElement("tr");
 
-            <tr>
+        row.innerHTML = `
 
-                <td>${menu.menuName}</td>
+            <td>${menu.menuName}</td>
 
-                <td>${menu.menuKey}</td>
+            <td>${menu.menuKey}</td>
 
-                <td>
-                    ${
-                        menu.parentId
-                            ? "Sub Menu"
-                            : "Main Menu"
-                    }
-                </td>
+            <td>${menu.icon || ""}</td>
 
-                <td>
-                    ${
-                        parent
-                            ? parent.menuName
-                            : "-"
-                    }
-                </td>
+            <td>
+                ${parent ? parent.menuName : "Main Menu"}
+            </td>
 
-                <td>${menu.icon || ""}</td>
+            <td>${menu.sortOrder}</td>
 
-                <td>${menu.sortOrder}</td>
-
-                <td>
+            <td>
+                <span class="${
+                    menu.isActive
+                        ? "status-active"
+                        : "status-inactive"
+                }">
                     ${
                         menu.isActive
-                            ? "Yes"
-                            : "No"
+                            ? "Active"
+                            : "Inactive"
                     }
-                </td>
+                </span>
+            </td>
 
-                <td>
+            <td>
 
-                    <button
-                        class="edit"
-                        onclick="editMenu(${menu.menuId})">
-                        Edit
-                    </button>
+                <button
+                    type="button"
+                    class="btn-warning btn-edit-menu"
+                    data-id="${menu.menuId}">
+                    Edit
+                </button>
 
-                </td>
+                <button
+                    type="button"
+                    class="${
+                        menu.isActive
+                            ? "btn-danger"
+                            : "btn-success"
+                    } btn-toggle-menu"
+                    data-id="${menu.menuId}"
+                    data-status="${menu.isActive}">
+                    ${
+                        menu.isActive
+                            ? "Deactivate"
+                            : "Activate"
+                    }
+                </button>
 
-            </tr>
-
+            </td>
         `;
 
-    });
+        tbody.appendChild(row);
 
+    });
 }
 
 
-/* ================= EDIT MENU ================= */
+// ============================================================
+// EDIT MENU
+// ============================================================
 
-window.editMenu = function(menuId) {
+document.addEventListener(
+    "click",
+    function (event) {
 
-    const menu =
-        menus.find(
-            item => item.menuId === menuId
-        );
-
-    if (!menu) {
-        return;
-    }
-
-    editMenuId = menuId;
-
-    document.getElementById("menuName").value =
-        menu.menuName;
-
-    document.getElementById("menuKey").value =
-        menu.menuKey;
-
-    document.getElementById("menuIcon").value =
-        menu.icon || "";
-
-    document.getElementById("sortOrder").value =
-        menu.sortOrder;
-
-    document.getElementById("menuIsActive").value =
-        menu.isActive ? "true" : "false";
-
-
-    if (menu.parentId) {
-
-        document.getElementById("menuType").value =
-            "sub";
-
-        document
-            .getElementById("parentMenuDiv")
-            .classList.remove("hidden");
-
-        loadParentMenus();
-
-        document.getElementById("parentMenu").value =
-            menu.parentId;
-
-    } else {
-
-        document.getElementById("menuType").value =
-            "main";
-
-        document
-            .getElementById("parentMenuDiv")
-            .classList.add("hidden");
-
-    }
-
-};
-
-
-/* ================= UPDATE MENU ================= */
-
-async function updateMenu(menuId) {
-
-    const menuType =
-        document.getElementById("menuType").value;
-
-    const parentId =
-        menuType === "sub"
-            ? Number(
-                document.getElementById("parentMenu").value
+        if (
+            event.target.classList.contains(
+                "btn-edit-menu"
             )
-            : null;
-
-
-    const mutation = `
-        mutation(
-            $menuId: Int!
-            $input: UpdateMenuInput!
         ) {
 
-            updateMenu(
-                menuId: $menuId
-                input: $input
-            ) {
-
-                menuId
-                menuName
-                menuKey
-                icon
-                parentId
-                sortOrder
-                isActive
-
-            }
+            editMenu(
+                Number(
+                    event.target.dataset.id
+                )
+            );
         }
-    `;
 
 
-    const input = {
+        if (
+            event.target.classList.contains(
+                "btn-toggle-menu"
+            )
+        ) {
 
-        menuName:
-            document.getElementById("menuName").value,
+            const menuId =
+                Number(
+                    event.target.dataset.id
+                );
 
-        menuKey:
-            document.getElementById("menuKey").value,
+            const currentStatus =
+                event.target.dataset.status === "true";
 
-        icon:
-            document.getElementById("menuIcon").value,
-
-        parentId: parentId,
-
-        sortOrder:
-            Number(
-                document.getElementById("sortOrder").value
-            ),
-
-        isActive:
-            document.getElementById("menuIsActive").value
-                === "true",
-
-        updatedBy: 1
-
-    };
+            toggleMenuStatus(
+                menuId,
+                !currentStatus
+            );
+        }
 
 
-    const data =
-        await graphqlRequest(
-            mutation,
-            {
-                menuId: menuId,
-                input: input
-            }
+        if (
+            event.target.classList.contains(
+                "btn-edit-mapping"
+            )
+        ) {
+
+            editMapping(
+                Number(
+                    event.target.dataset.id
+                )
+            );
+        }
+
+    }
+);
+
+
+async function editMenu(menuId) {
+
+    try {
+
+        const data =
+            await graphqlRequest(`
+                query {
+                    menu(menuId: ${menuId}) {
+                        menuId
+                        menuName
+                        menuKey
+                        icon
+                        parentId
+                        sortOrder
+                    }
+                }
+            `);
+
+        const menu =
+            data.menu;
+
+        if (!menu) {
+            return;
+        }
+
+        document.getElementById("menuId").value =
+            menu.menuId;
+
+        document.getElementById("menuName").value =
+            menu.menuName;
+
+        document.getElementById("menuKey").value =
+            menu.menuKey;
+
+        document.getElementById("menuIcon").value =
+            menu.icon || "";
+
+        document.getElementById("sortOrder").value =
+            menu.sortOrder;
+
+        document.getElementById("parentMenu").value =
+            menu.parentId || "";
+
+        document.getElementById("btnSaveMenu").textContent =
+            "Update Menu";
+
+    } catch (error) {
+
+        showMessage(
+            "menuMessage",
+            error.message,
+            false
         );
-
-
-    const index =
-        menus.findIndex(
-            menu => menu.menuId === menuId
-        );
-
-    menus[index] =
-        data.updateMenu;
-
-    renderMenus();
-
+    }
 }
 
 
-/* ================= CLEAR MENU ================= */
+// ============================================================
+// SAVE / UPDATE MENU
+// ============================================================
 
-document.getElementById("clearMenu").addEventListener(
+document.getElementById(
+    "btnSaveMenu"
+).addEventListener(
+    "click",
+    saveMenu
+);
+
+
+async function saveMenu() {
+
+    try {
+
+        const menuId =
+            document.getElementById("menuId").value;
+
+        const menuName =
+            document.getElementById("menuName").value;
+
+        const menuKey =
+            document.getElementById("menuKey").value;
+
+        const icon =
+            document.getElementById("menuIcon").value;
+
+        const parentValue =
+            document.getElementById("parentMenu").value;
+
+        const sortOrder =
+            Number(
+                document.getElementById("sortOrder").value
+            );
+
+
+        if (!menuId) {
+
+            await graphqlRequest(
+                `
+                mutation CreateMenu(
+                    $input: CreateMenuInput!
+                ) {
+                    createMenu(input: $input) {
+                        menuId
+                    }
+                }
+                `,
+                {
+                    input: {
+                        menuName,
+                        menuKey,
+                        icon: icon || null,
+                        parentId:
+                            parentValue
+                                ? Number(parentValue)
+                                : null,
+                        sortOrder,
+                        createdBy: 1
+                    }
+                }
+            );
+
+            showMessage(
+                "menuMessage",
+                "Menu created successfully."
+            );
+
+        } else {
+
+            await graphqlRequest(
+                `
+                mutation UpdateMenu(
+                    $menuId: Int!,
+                    $input: UpdateMenuInput!
+                ) {
+                    updateMenu(
+                        menuId: $menuId,
+                        input: $input
+                    ) {
+                        menuId
+                    }
+                }
+                `,
+                {
+                    menuId: Number(menuId),
+
+                    input: {
+                        menuName,
+                        menuKey,
+                        icon: icon || null,
+                        parentId:
+                            parentValue
+                                ? Number(parentValue)
+                                : null,
+                        sortOrder,
+                        updatedBy: 1
+                    }
+                }
+            );
+
+            showMessage(
+                "menuMessage",
+                "Menu updated successfully."
+            );
+        }
+
+        clearMenuForm();
+
+        await loadMenus();
+
+    } catch (error) {
+
+        showMessage(
+            "menuMessage",
+            error.message,
+            false
+        );
+    }
+}
+
+
+// ============================================================
+// TOGGLE MENU STATUS
+// ============================================================
+
+async function toggleMenuStatus(
+    menuId,
+    isActive
+) {
+
+    try {
+
+        await graphqlRequest(
+            `
+            mutation ToggleMenuStatus(
+                $menuId: Int!,
+                $isActive: Boolean!,
+                $updatedBy: Int!
+            ) {
+                toggleMenuStatus(
+                    menuId: $menuId,
+                    isActive: $isActive,
+                    updatedBy: $updatedBy
+                ) {
+                    menuId
+                    isActive
+                }
+            }
+            `,
+            {
+                menuId,
+                isActive,
+                updatedBy: 1
+            }
+        );
+
+        showMessage(
+            "menuMessage",
+            "Menu status updated successfully."
+        );
+
+        await loadMenus();
+
+    } catch (error) {
+
+        showMessage(
+            "menuMessage",
+            error.message,
+            false
+        );
+    }
+}
+
+
+// ============================================================
+// CLEAR MENU
+// ============================================================
+
+document.getElementById(
+    "btnClearMenu"
+).addEventListener(
     "click",
     clearMenuForm
 );
 
+
 function clearMenuForm() {
 
-    editMenuId = null;
+    document.getElementById("menuId").value = "";
 
     document.getElementById("menuName").value = "";
+
     document.getElementById("menuKey").value = "";
+
     document.getElementById("menuIcon").value = "";
-    document.getElementById("sortOrder").value = "";
 
-    document.getElementById("menuType").value =
-        "main";
+    document.getElementById("parentMenu").value = "";
 
-    document.getElementById("parentMenu").value =
-        "";
+    document.getElementById("sortOrder").value = "1";
 
-    document.getElementById("parentMenuDiv")
-        .classList.add("hidden");
+    document.getElementById("btnSaveMenu").textContent =
+        "Save Menu";
+}
 
-    document.getElementById("menuIsActive").value =
-        "true";
+
+// ============================================================
+// MAPPING - LOAD MENUS
+// ============================================================
+
+async function loadMappingMenus() {
+
+    try {
+
+        const data =
+            await graphqlRequest(`
+                query {
+                    menusForPermissionMapping {
+                        menuId
+                        menuName
+                    }
+                }
+            `);
+
+        const select =
+            document.getElementById(
+                "mappingMenu"
+            );
+
+        const currentValue =
+            select.value;
+
+        select.innerHTML =
+            '<option value="">Select Menu</option>';
+
+        data.menusForPermissionMapping.forEach(
+            menu => {
+
+                const option =
+                    document.createElement("option");
+
+                option.value =
+                    menu.menuId;
+
+                option.textContent =
+                    menu.menuName;
+
+                select.appendChild(option);
+
+            }
+        );
+
+        if (currentValue) {
+            select.value = currentValue;
+        }
+
+    } catch (error) {
+
+        showMessage(
+            "mappingMessage",
+            error.message,
+            false
+        );
+    }
+}
+
+
+// ============================================================
+// MAPPING - LOAD PERMISSIONS
+// ============================================================
+
+async function loadMappingPermissions() {
+
+    try {
+
+        const data =
+            await graphqlRequest(`
+                query {
+                    permissions {
+                        permissionId
+                        permissionName
+                        permissionKey
+                        isActive
+                    }
+                }
+            `);
+
+        const select =
+            document.getElementById(
+                "mappingPermissions"
+            );
+
+        select.innerHTML = "";
+
+        data.permissions
+            .filter(
+                permission =>
+                    permission.isActive
+            )
+            .forEach(permission => {
+
+                const option =
+                    document.createElement(
+                        "option"
+                    );
+
+                option.value =
+                    permission.permissionId;
+
+                option.textContent =
+                    permission.permissionName +
+                    " (" +
+                    permission.permissionKey +
+                    ")";
+
+                select.appendChild(option);
+
+            });
+
+    } catch (error) {
+
+        showMessage(
+            "mappingMessage",
+            error.message,
+            false
+        );
+    }
+}
+
+
+// ============================================================
+// MENU CHANGE - LOAD CURRENT MAPPING
+// ============================================================
+
+document.getElementById(
+    "mappingMenu"
+).addEventListener(
+    "change",
+    loadSelectedPermissions
+);
+
+
+async function loadSelectedPermissions() {
+
+    const menuId =
+        Number(
+            document.getElementById(
+                "mappingMenu"
+            ).value
+        );
+
+    if (!menuId) {
+
+        document.querySelectorAll(
+            "#mappingPermissions option"
+        ).forEach(option => {
+
+            option.selected = false;
+
+        });
+
+        return;
+    }
+
+    try {
+
+        const data =
+            await graphqlRequest(`
+                query {
+                    menuPermissions(
+                        menuId: ${menuId}
+                    ) {
+                        permissionId
+                    }
+                }
+            `);
+
+        const selectedIds =
+            data.menuPermissions.map(
+                permission =>
+                    Number(
+                        permission.permissionId
+                    )
+            );
+
+        document.querySelectorAll(
+            "#mappingPermissions option"
+        ).forEach(option => {
+
+            option.selected =
+                selectedIds.includes(
+                    Number(option.value)
+                );
+
+        });
+
+    } catch (error) {
+
+        showMessage(
+            "mappingMessage",
+            error.message,
+            false
+        );
+    }
+}
+
+
+// ============================================================
+// SHOW ADD NEW PERMISSION
+// ============================================================
+
+document.getElementById(
+    "btnShowAddPermission"
+).addEventListener(
+    "click",
+    function () {
+
+        document.getElementById(
+            "addPermissionSection"
+        ).classList.remove("hidden");
+
+        document.getElementById(
+            "btnShowAddPermission"
+        ).classList.add("hidden");
+
+        document.getElementById(
+            "newPermissionName"
+        ).focus();
+
+    }
+);
+
+
+// ============================================================
+// CANCEL ADD NEW PERMISSION
+// ============================================================
+
+document.getElementById(
+    "btnCancelAddPermission"
+).addEventListener(
+    "click",
+    function () {
+
+        clearNewPermissionForm();
+
+        document.getElementById(
+            "addPermissionSection"
+        ).classList.add("hidden");
+
+        document.getElementById(
+            "btnShowAddPermission"
+        ).classList.remove("hidden");
+
+    }
+);
+
+
+// ============================================================
+// CLEAR NEW PERMISSION FORM
+// ============================================================
+
+function clearNewPermissionForm() {
+
+    document.getElementById(
+        "newPermissionName"
+    ).value = "";
+
+    document.getElementById(
+        "newPermissionKey"
+    ).value = "";
+
+    document.getElementById(
+        "newPermissionDescription"
+    ).value = "";
 
 }
 
 
-/* ================= ADD PERMISSION ================= */
+// ============================================================
+// ADD NEW PERMISSION
+// ============================================================
 
-document.getElementById("addPermission").addEventListener(
+document.getElementById(
+    "btnAddPermission"
+).addEventListener(
     "click",
-    async function () {
-
-        if (editPermissionId) {
-
-            await updatePermission(editPermissionId);
-
-            return;
-
-        }
+    addNewPermission
+);
 
 
-        const mutation = `
-            mutation($input: CreatePermissionInput!) {
+async function addNewPermission() {
 
-                createPermission(input: $input) {
+    try {
 
-                    permissionId
-                    permissionName
-                    permissionKey
-                    isActive
-
-                }
-            }
-        `;
-
-
-        const input = {
-
-            permissionName:
+        /*
+         * Capture current selections BEFORE
+         * refreshing the permission dropdown.
+         */
+        const existingPermissionIds =
+            Array.from(
                 document.getElementById(
-                    "permissionName"
-                ).value,
+                    "mappingPermissions"
+                ).selectedOptions
+            ).map(
+                option =>
+                    Number(option.value)
+            );
 
-            permissionKey:
-                document.getElementById(
-                    "permissionKey"
-                ).value,
 
-            description: "",
+        const permissionName =
+            document.getElementById(
+                "newPermissionName"
+            ).value.trim();
 
-            createdBy: 1
+        const permissionKey =
+            document.getElementById(
+                "newPermissionKey"
+            ).value.trim();
 
-        };
+        const description =
+            document.getElementById(
+                "newPermissionDescription"
+            ).value.trim();
 
 
         const data =
             await graphqlRequest(
-                mutation,
-                { input: input }
+                `
+                mutation CreatePermission(
+                    $input: CreatePermissionInput!
+                ) {
+                    createPermission(
+                        input: $input
+                    ) {
+                        permissionId
+                        permissionName
+                        permissionKey
+                    }
+                }
+                `,
+                {
+                    input: {
+                        permissionName,
+                        permissionKey,
+                        description:
+                            description || null,
+                        createdBy: 1
+                    }
+                }
             );
 
 
-        permissions.push(
-            data.createPermission
+        const newPermission =
+            data.createPermission;
+
+
+        /*
+         * Refresh dropdown after creating
+         * the permission in the backend.
+         */
+        await loadMappingPermissions();
+
+
+        /*
+         * Keep previously selected permissions
+         * and select the newly created permission.
+         */
+        const permissionSelect =
+            document.getElementById(
+                "mappingPermissions"
+            );
+
+        Array.from(
+            permissionSelect.options
+        ).forEach(option => {
+
+            const permissionId =
+                Number(option.value);
+
+            option.selected =
+                existingPermissionIds.includes(
+                    permissionId
+                ) ||
+                permissionId ===
+                    Number(
+                        newPermission.permissionId
+                    );
+
+        });
+
+
+        clearNewPermissionForm();
+
+
+        document.getElementById(
+            "addPermissionSection"
+        ).classList.add("hidden");
+
+        document.getElementById(
+            "btnShowAddPermission"
+        ).classList.remove("hidden");
+
+
+        showMessage(
+            "mappingMessage",
+            "Permission added successfully. It is selected in the mapping."
         );
 
-        renderPermissions();
 
-        clearPermissionForm();
+    } catch (error) {
 
+        showMessage(
+            "mappingMessage",
+            error.message,
+            false
+        );
     }
+}
+
+
+// ============================================================
+// SAVE MENU PERMISSIONS
+// ============================================================
+
+document.getElementById(
+    "btnSaveMapping"
+).addEventListener(
+    "click",
+    saveMenuPermissions
 );
 
 
-/* ================= RENDER PERMISSIONS ================= */
+async function saveMenuPermissions() {
 
-function renderPermissions() {
+    try {
 
-    const grid =
-        document.getElementById(
-            "permissionGrid"
+        const menuId =
+            Number(
+                document.getElementById(
+                    "mappingMenu"
+                ).value
+            );
+
+
+        const permissionIds =
+            Array.from(
+                document.getElementById(
+                    "mappingPermissions"
+                ).selectedOptions
+            ).map(
+                option =>
+                    Number(option.value)
+            );
+
+
+        await graphqlRequest(
+            `
+            mutation SaveMenuPermissions(
+                $input: MenuPermissionMappingInput!
+            ) {
+
+                saveMenuPermissions(
+                    input: $input
+                ) {
+                    permissionId
+                    permissionName
+                    permissionKey
+                }
+
+            }
+            `,
+            {
+                input: {
+                    menuId,
+                    permissionIds,
+                    updatedBy: 1
+                }
+            }
         );
 
-    grid.innerHTML = "";
 
-    permissions.forEach(permission => {
+        showMessage(
+            "mappingMessage",
+            "Menu permissions saved successfully."
+        );
 
-        grid.innerHTML += `
 
-            <tr>
+        await loadMappingGrid();
 
-                <td>
-                    ${permission.permissionName}
-                </td>
+    } catch (error) {
 
-                <td>
-                    ${permission.permissionKey}
-                </td>
+        showMessage(
+            "mappingMessage",
+            error.message,
+            false
+        );
+    }
+}
 
-                <td>
-                    ${
-                        permission.isActive
-                            ? "Yes"
-                            : "No"
+
+// ============================================================
+// LOAD MAPPING GRID
+// ============================================================
+
+async function loadMappingGrid() {
+
+    try {
+
+        const data =
+            await graphqlRequest(`
+                query {
+                    menuPermissionMappings {
+                        id
+                        menuId
+                        permissionId
+                        menuName
+                        permissionName
+                        permissionKey
                     }
-                </td>
+                }
+            `);
 
-                <td>
 
-                    <button
-                        class="edit"
-                        onclick="editPermission(
-                            ${permission.permissionId}
-                        )">
-                        Edit
-                    </button>
+        const tbody =
+            document.getElementById(
+                "mappingGrid"
+            );
 
-                    <button
-                        class="delete"
-                        onclick="deletePermission(
-                            ${permission.permissionId}
-                        )">
-                        Delete
-                    </button>
+        tbody.innerHTML = "";
 
-                </td>
 
-            </tr>
+        /*
+         * Group mappings by menu.
+         *
+         * Because the backend returns only
+         * existing mappings, unmapped menus
+         * will not appear in this grid.
+         */
+        const groupedMenus = {};
 
-        `;
+
+        data.menuPermissionMappings.forEach(
+            mapping => {
+
+                if (!groupedMenus[mapping.menuId]) {
+
+                    groupedMenus[mapping.menuId] = {
+
+                        menuId:
+                            mapping.menuId,
+
+                        menuName:
+                            mapping.menuName,
+
+                        permissions: []
+
+                    };
+
+                }
+
+
+                groupedMenus[
+                    mapping.menuId
+                ].permissions.push({
+
+                    permissionId:
+                        mapping.permissionId,
+
+                    permissionName:
+                        mapping.permissionName,
+
+                    permissionKey:
+                        mapping.permissionKey
+
+                });
+
+            }
+        );
+
+
+        Object.values(groupedMenus)
+            .forEach(menu => {
+
+                const row =
+                    document.createElement("tr");
+
+
+                const permissionHtml =
+                    menu.permissions
+                        .map(permission => {
+
+                            return `
+                                <span
+                                    class="permission-tag">
+                                    ${permission.permissionName}
+                                </span>
+                            `;
+
+                        })
+                        .join(" ");
+
+
+                row.innerHTML = `
+
+                    <td>
+                        ${menu.menuName}
+                    </td>
+
+                    <td>
+                        <div
+                            class="mapping-permissions">
+                            ${permissionHtml}
+                        </div>
+                    </td>
+
+                    <td>
+
+                        <button
+                            type="button"
+                            class="btn-warning btn-edit-mapping"
+                            data-id="${menu.menuId}">
+                            Edit
+                        </button>
+
+                    </td>
+
+                `;
+
+
+                tbody.appendChild(row);
+
+            });
+
+
+    } catch (error) {
+
+        showMessage(
+            "mappingMessage",
+            error.message,
+            false
+        );
+    }
+}
+
+
+// ============================================================
+// EDIT MAPPING
+// ============================================================
+
+async function editMapping(menuId) {
+
+    try {
+
+        document.getElementById(
+            "mappingMenu"
+        ).value = menuId;
+
+
+        await loadSelectedPermissions();
+
+
+        document.getElementById(
+            "mappingMenu"
+        ).scrollIntoView({
+            behavior: "smooth"
+        });
+
+
+    } catch (error) {
+
+        showMessage(
+            "mappingMessage",
+            error.message,
+            false
+        );
+    }
+}
+
+
+// ============================================================
+// CLEAR MAPPING
+// ============================================================
+
+document.getElementById(
+    "btnClearMapping"
+).addEventListener(
+    "click",
+    clearMapping
+);
+
+
+function clearMapping() {
+
+    document.getElementById(
+        "mappingMenu"
+    ).value = "";
+
+
+    document.querySelectorAll(
+        "#mappingPermissions option"
+    ).forEach(option => {
+
+        option.selected = false;
 
     });
 
-}
 
+    clearNewPermissionForm();
 
-/* ================= EDIT PERMISSION ================= */
-
-window.editPermission = function(permissionId) {
-
-    const permission =
-        permissions.find(
-            item =>
-                item.permissionId === permissionId
-        );
-
-    if (!permission) {
-        return;
-    }
-
-    editPermissionId = permissionId;
 
     document.getElementById(
-        "permissionName"
-    ).value =
-        permission.permissionName;
+        "addPermissionSection"
+    ).classList.add("hidden");
+
 
     document.getElementById(
-        "permissionKey"
-    ).value =
-        permission.permissionKey;
-
-    document.getElementById(
-        "permissionIsActive"
-    ).value =
-        permission.isActive
-            ? "true"
-            : "false";
-
-};
-
-
-/* ================= UPDATE PERMISSION ================= */
-
-async function updatePermission(permissionId) {
-
-    const mutation = `
-        mutation(
-            $permissionId: Int!
-            $input: UpdatePermissionInput!
-        ) {
-
-            updatePermission(
-                permissionId: $permissionId
-                input: $input
-            ) {
-
-                permissionId
-                permissionName
-                permissionKey
-                isActive
-
-            }
-        }
-    `;
-
-
-    const input = {
-
-        permissionName:
-            document.getElementById(
-                "permissionName"
-            ).value,
-
-        permissionKey:
-            document.getElementById(
-                "permissionKey"
-            ).value,
-
-        isActive:
-            document.getElementById(
-                "permissionIsActive"
-            ).value === "true",
-
-        updatedBy: 1
-
-    };
-
-
-    const data =
-        await graphqlRequest(
-            mutation,
-            {
-                permissionId: permissionId,
-                input: input
-            }
-        );
-
-
-    const index =
-        permissions.findIndex(
-            permission =>
-                permission.permissionId === permissionId
-        );
-
-    permissions[index] =
-        data.updatePermission;
-
-    renderPermissions();
-
-    clearPermissionForm();
+        "btnShowAddPermission"
+    ).classList.remove("hidden");
 
 }
 
 
-/* ================= DELETE PERMISSION ================= */
+// ============================================================
+// INITIALIZE
+// ============================================================
 
-window.deletePermission = async function(permissionId) {
+async function initialize() {
 
-    const mutation = `
-        mutation(
-            $permissionId: Int!
-            $updatedBy: Int!
-        ) {
+    await loadMappingPermissions();
 
-            deletePermission(
-                permissionId: $permissionId
-                updatedBy: $updatedBy
-            ) {
+    await loadMenus();
 
-                permissionId
-
-            }
-        }
-    `;
-
-
-    await graphqlRequest(
-        mutation,
-        {
-            permissionId: permissionId,
-            updatedBy: 1
-        }
-    );
-
-
-    permissions =
-        permissions.filter(
-            permission =>
-                permission.permissionId !== permissionId
-        );
-
-    renderPermissions();
-
-};
-
-
-/* ================= CLEAR PERMISSION ================= */
-
-document.getElementById(
-    "clearPermission"
-).addEventListener(
-    "click",
-    clearPermissionForm
-);
-
-
-function clearPermissionForm() {
-
-    editPermissionId = null;
-
-    document.getElementById(
-        "permissionName"
-    ).value = "";
-
-    document.getElementById(
-        "permissionKey"
-    ).value = "";
-
-    document.getElementById(
-        "permissionIsActive"
-    ).value = "true";
+    await loadMappingGrid();
 
 }
+
+
+initialize();
 
 </script>
 

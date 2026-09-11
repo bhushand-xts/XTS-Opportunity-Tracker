@@ -59,7 +59,9 @@ export class MenusRepository {
     return result.rows;
   }
 
-  async findById(menuId: number): Promise<MenuRecord | null> {
+  async findById(
+    menuId: number
+  ): Promise<MenuRecord | null> {
 
     const result = await query<MenuRecord>(
       `
@@ -84,7 +86,9 @@ export class MenusRepository {
     return result.rows[0] || null;
   }
 
-  async findByKey(menuKey: string): Promise<MenuRecord | null> {
+  async findByKey(
+    menuKey: string
+  ): Promise<MenuRecord | null> {
 
     const result = await query<MenuRecord>(
       `
@@ -109,7 +113,9 @@ export class MenusRepository {
     return result.rows[0] || null;
   }
 
-  async hasActiveChildren(menuId: number): Promise<boolean> {
+  async hasActiveChildren(
+    menuId: number
+  ): Promise<boolean> {
 
     const result = await query<{ count: string }>(
       `
@@ -124,7 +130,9 @@ export class MenusRepository {
     return Number(result.rows[0].count) > 0;
   }
 
-  async create(input: CreateMenuInput): Promise<MenuRecord> {
+  async create(
+    input: CreateMenuInput
+  ): Promise<MenuRecord> {
 
     try {
       const result = await query<MenuRecord>(
@@ -208,10 +216,9 @@ export class MenusRepository {
           ELSE parent_id
         END,
         sort_order = COALESCE($7, sort_order),
-        is_active = COALESCE($8, is_active),
         updated_dt = CURRENT_TIMESTAMP,
-        updated_by = $9
-      WHERE menu_id = $10
+        updated_by = $8
+      WHERE menu_id = $9
       RETURNING
         menu_id AS "menuId",
         menu_name AS "menuName",
@@ -236,7 +243,6 @@ export class MenusRepository {
         input.parentId ?? null,
 
         input.sortOrder ?? null,
-        input.isActive ?? null,
         input.updatedBy,
         menuId
       ]
@@ -249,39 +255,44 @@ export class MenusRepository {
     return result.rows[0];
   }
 
-  // async softDelete(
-  //   menuId: number,
-  //   updatedBy: number
-  // ): Promise<MenuRecord> {
+  async updateStatus(
+    menuId: number,
+    isActive: boolean,
+    updatedBy: number
+  ): Promise<MenuRecord> {
 
-  //   const result = await query<MenuRecord>(
-  //     `
-  //     UPDATE mst_menus
-  //     SET
-  //       is_active = FALSE,
-  //       updated_dt = CURRENT_TIMESTAMP,
-  //       updated_by = $2
-  //     WHERE menu_id = $1
-  //     RETURNING
-  //       menu_id AS "menuId",
-  //       menu_name AS "menuName",
-  //       menu_key AS "menuKey",
-  //       icon,
-  //       parent_id AS "parentId",
-  //       sort_order AS "sortOrder",
-  //       created_dt AS "createdDt",
-  //       created_by AS "createdBy",
-  //       updated_dt AS "updatedDt",
-  //       updated_by AS "updatedBy",
-  //       is_active AS "isActive"
-  //     `,
-  //     [menuId, updatedBy]
-  //   );
+    const result = await query<MenuRecord>(
+      `
+      UPDATE mst_menus
+      SET
+        is_active = $1,
+        updated_dt = CURRENT_TIMESTAMP,
+        updated_by = $2
+      WHERE menu_id = $3
+      RETURNING
+        menu_id AS "menuId",
+        menu_name AS "menuName",
+        menu_key AS "menuKey",
+        icon,
+        parent_id AS "parentId",
+        sort_order AS "sortOrder",
+        created_dt AS "createdDt",
+        created_by AS "createdBy",
+        updated_dt AS "updatedDt",
+        updated_by AS "updatedBy",
+        is_active AS "isActive"
+      `,
+      [
+        isActive,
+        updatedBy,
+        menuId
+      ]
+    );
 
-  //   if (!result.rows[0]) {
-  //     throw new Error("Menu not found.");
-  //   }
+    if (!result.rows[0]) {
+      throw new Error("Menu not found.");
+    }
 
-  //   return result.rows[0];
-  // }
+    return result.rows[0];
+  }
 }

@@ -17,17 +17,14 @@ export class MenusService {
   ) {}
 
   async getMenus(
-    isActive?: boolean,
     asTree: boolean = false
   ): Promise<MenuRecord[]> {
 
-    const menus = await this.repository.findAll(isActive);
+    const menus = await this.repository.findAll();
 
-    if (!asTree) {
-      return menus;
-    }
-
-    return this.buildTree(menus);
+    return asTree
+      ? this.buildTree(menus)
+      : menus;
   }
 
   async getMenu(
@@ -42,9 +39,10 @@ export class MenusService {
 
     const allMenus = await this.repository.findAll();
 
-    const tree = this.buildTree(allMenus);
-
-    return this.findInTree(tree, menuId);
+    return this.findInTree(
+      this.buildTree(allMenus),
+      menuId
+    );
   }
 
   async createMenu(
@@ -152,41 +150,34 @@ export class MenusService {
     );
   }
 
-  // async deleteMenu(
-  //   menuId: number,
-  //   updatedBy: number
-  // ): Promise<MenuRecord> {
+  async toggleMenuStatus(
+    menuId: number,
+    isActive: boolean,
+    updatedBy: number
+  ): Promise<MenuRecord> {
 
-  //   const existing = await this.repository.findById(menuId);
+    const menu = await this.repository.findById(menuId);
 
-  //   if (!existing) {
-  //     throw new Error("Menu not found.");
-  //   }
+    if (!menu) {
+      throw new Error("Menu not found.");
+    }
 
-  //   const hasChildren =
-  //     await this.repository.hasActiveChildren(menuId);
-
-  //   if (hasChildren) {
-  //     throw new Error(
-  //       "Cannot deactivate a menu that has active child menus."
-  //     );
-  //   }
-
-  //   return this.repository.softDelete(
-  //     menuId,
-  //     updatedBy
-  //   );
-  // }
+    return this.repository.updateStatus(
+      menuId,
+      isActive,
+      updatedBy
+    );
+  }
 
   private buildTree(
     menus: MenuRecord[]
   ): MenuRecord[] {
 
-    const map = new Map<number, MenuRecord>();
-    const roots: MenuRecord[] = [];
+    const menuMap = new Map<number, MenuRecord>();
+    const rootMenus: MenuRecord[] = [];
 
     for (const menu of menus) {
-      map.set(menu.menuId, {
+      menuMap.set(menu.menuId, {
         ...menu,
         children: []
       });
@@ -194,24 +185,22 @@ export class MenusService {
 
     for (const menu of menus) {
 
-      const current = map.get(menu.menuId)!;
+      const currentMenu = menuMap.get(menu.menuId)!;
 
       if (
         menu.parentId !== null &&
-        map.has(menu.parentId)
+        menuMap.has(menu.parentId)
       ) {
-
-        map
+        menuMap
           .get(menu.parentId)!
           .children!
-          .push(current);
-
+          .push(currentMenu);
       } else {
-        roots.push(current);
+        rootMenus.push(currentMenu);
       }
     }
 
-    return roots;
+    return rootMenus;
   }
 
   private findInTree(
@@ -225,8 +214,7 @@ export class MenusService {
         return menu;
       }
 
-      if (menu.children) {
-
+      if (menu.children?.length) {
         const result = this.findInTree(
           menu.children,
           menuId
@@ -243,11 +231,10 @@ export class MenusService {
 
   private async validateNoCircularReference(
     menuId: number,
-    proposedParentId: number
+    parentId: number
   ): Promise<void> {
 
-    let currentParentId: number | null =
-      proposedParentId;
+    let currentParentId: number | null = parentId;
 
     while (currentParentId !== null) {
 
@@ -257,10 +244,9 @@ export class MenusService {
         );
       }
 
-      const parent =
-        await this.repository.findById(
-          currentParentId
-        );
+      const parent = await this.repository.findById(
+        currentParentId
+      );
 
       if (!parent) {
         break;

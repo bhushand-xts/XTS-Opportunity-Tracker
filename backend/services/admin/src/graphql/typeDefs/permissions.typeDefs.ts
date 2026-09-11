@@ -12,6 +12,24 @@ export const permissionTypeDefs = `#graphql
     isActive: Boolean!
   }
 
+  type MenuForPermissionMapping {
+    menuId: Int!
+    menuName: String!
+  }
+
+  type MenuPermissionMapping {
+    id: Int!
+    menuId: Int!
+    permissionId: Int!
+    menuName: String!
+    permissionName: String!
+    permissionKey: String!
+    createdDt: String!
+    createdBy: Int!
+    updatedDt: String
+    updatedBy: Int
+  }
+
   input CreatePermissionInput {
     permissionName: String!
     permissionKey: String!
@@ -23,18 +41,32 @@ export const permissionTypeDefs = `#graphql
     permissionName: String
     permissionKey: String
     description: String
-    isActive: Boolean
+    updatedBy: Int!
+  }
+
+  input MenuPermissionMappingInput {
+    menuId: Int!
+    permissionIds: [Int!]!
     updatedBy: Int!
   }
 
   extend type Query {
-    permissions(
-      isActive: Boolean
-    ): [Permission!]!
+
+    permissions: [Permission!]!
 
     permission(
       permissionId: Int!
     ): Permission
+
+    menusForPermissionMapping:
+      [MenuForPermissionMapping!]!
+
+    menuPermissions(
+      menuId: Int!
+    ): [Permission!]!
+
+    menuPermissionMappings:
+      [MenuPermissionMapping!]!
   }
 
   extend type Mutation {
@@ -48,9 +80,14 @@ export const permissionTypeDefs = `#graphql
       input: UpdatePermissionInput!
     ): Permission!
 
-    deletePermission(
+    togglePermissionStatus(
       permissionId: Int!
+      isActive: Boolean!
       updatedBy: Int!
     ): Permission!
+
+    saveMenuPermissions(
+      input: MenuPermissionMappingInput!
+    ): [Permission!]!
   }
 `;

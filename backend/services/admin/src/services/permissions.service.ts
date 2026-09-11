@@ -1,13 +1,15 @@
 import {
   PermissionsRepository,
-  PermissionRecord
+  PermissionRecord,
+  MenuPermissionMappingRecord
 } from "../repositories/permissions.repository";
 
 import {
   CreatePermissionInput,
   UpdatePermissionInput,
   validateCreatePermission,
-  validateUpdatePermission
+  validateUpdatePermission,
+  validateMenuPermissionMapping
 } from "../validators/permissions.validator";
 
 export class PermissionsService {
@@ -16,19 +18,26 @@ export class PermissionsService {
     private readonly repository: PermissionsRepository
   ) {}
 
-  async getPermissions(
-    isActive?: boolean
-  ): Promise<PermissionRecord[]> {
 
-    return this.repository.findAll(isActive);
+  // --------------------------------------------------
+  // PERMISSION MANAGEMENT
+  // --------------------------------------------------
+
+  async getPermissions(): Promise<PermissionRecord[]> {
+
+    return this.repository.findAll();
   }
+
 
   async getPermission(
     permissionId: number
   ): Promise<PermissionRecord | null> {
 
-    return this.repository.findById(permissionId);
+    return this.repository.findById(
+      permissionId
+    );
   }
+
 
   async createPermission(
     input: CreatePermissionInput
@@ -42,6 +51,7 @@ export class PermissionsService {
       );
 
     if (existing) {
+
       throw new Error(
         "A permission with this permission key already exists."
       );
@@ -49,6 +59,7 @@ export class PermissionsService {
 
     return this.repository.create(input);
   }
+
 
   async updatePermission(
     permissionId: number,
@@ -58,15 +69,21 @@ export class PermissionsService {
     validateUpdatePermission(input);
 
     const existing =
-      await this.repository.findById(permissionId);
+      await this.repository.findById(
+        permissionId
+      );
 
     if (!existing) {
-      throw new Error("Permission not found.");
+
+      throw new Error(
+        "Permission not found."
+      );
     }
 
     if (
       input.permissionKey !== undefined &&
-      input.permissionKey.trim() !== existing.permissionKey
+      input.permissionKey.trim() !==
+        existing.permissionKey
     ) {
 
       const duplicate =
@@ -78,6 +95,7 @@ export class PermissionsService {
         duplicate &&
         duplicate.permissionId !== permissionId
       ) {
+
         throw new Error(
           "A permission with this permission key already exists."
         );
@@ -90,21 +108,119 @@ export class PermissionsService {
     );
   }
 
-  async deletePermission(
+
+  async togglePermissionStatus(
     permissionId: number,
+    isActive: boolean,
     updatedBy: number
   ): Promise<PermissionRecord> {
 
-    const existing =
-      await this.repository.findById(permissionId);
+    const permission =
+      await this.repository.findById(
+        permissionId
+      );
 
-    if (!existing) {
-      throw new Error("Permission not found.");
+    if (!permission) {
+
+      throw new Error(
+        "Permission not found."
+      );
     }
 
-    return this.repository.softDelete(
+    return this.repository.updateStatus(
       permissionId,
+      isActive,
       updatedBy
+    );
+  }
+
+
+  // --------------------------------------------------
+  // MENU-PERMISSION MAPPING
+  // --------------------------------------------------
+
+  async getMenuListForMapping() {
+
+    return this.repository.getMenuListForMapping();
+  }
+
+
+  async getMenuPermissions(
+    menuId: number
+  ): Promise<PermissionRecord[]> {
+
+    const menuExists =
+      await this.repository.menuExists(
+        menuId
+      );
+
+    if (!menuExists) {
+
+      throw new Error(
+        "Menu not found."
+      );
+    }
+
+    return this.repository.getMenuPermissions(
+      menuId
+    );
+  }
+
+
+  async getMenuPermissionMappings():
+    Promise<MenuPermissionMappingRecord[]> {
+
+    return this.repository.getMenuPermissionMappings();
+  }
+
+
+  async saveMenuPermissions(
+    menuId: number,
+    permissionIds: number[],
+    updatedBy: number
+  ): Promise<PermissionRecord[]> {
+
+    validateMenuPermissionMapping(
+      menuId,
+      permissionIds,
+      updatedBy
+    );
+
+    const menuExists =
+      await this.repository.menuExists(
+        menuId
+      );
+
+    if (!menuExists) {
+
+      throw new Error(
+        "Menu not found."
+      );
+    }
+
+    for (const permissionId of permissionIds) {
+
+      const permissionExists =
+        await this.repository.permissionExists(
+          permissionId
+        );
+
+      if (!permissionExists) {
+
+        throw new Error(
+          "Permission not found."
+        );
+      }
+    }
+
+    await this.repository.saveMenuPermissions(
+      menuId,
+      permissionIds,
+      updatedBy
+    );
+
+    return this.repository.getMenuPermissions(
+      menuId
     );
   }
 }

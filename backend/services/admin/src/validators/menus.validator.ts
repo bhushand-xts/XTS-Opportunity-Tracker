@@ -13,7 +13,6 @@ export interface UpdateMenuInput {
   icon?: string | null;
   parentId?: number | null;
   sortOrder?: number;
-  isActive?: boolean;
   updatedBy: number;
 }
 
@@ -44,10 +43,7 @@ export function validateUpdateMenu(input: UpdateMenuInput): void {
     throw new Error("Menu key cannot be empty.");
   }
 
-  if (
-    input.sortOrder !== undefined &&
-    input.sortOrder < 0
-  ) {
+  if (input.sortOrder !== undefined && input.sortOrder < 0) {
     throw new Error("Sort order must be greater than or equal to 0.");
   }
 

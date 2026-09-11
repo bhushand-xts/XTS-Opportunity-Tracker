@@ -30,31 +30,27 @@ export const menuTypeDefs = `#graphql
     icon: String
     parentId: Int
     sortOrder: Int
-    isActive: Boolean
     updatedBy: Int!
   }
 
   extend type Query {
-    menus(
-      isActive: Boolean
-      asTree: Boolean = false
-    ): [Menu!]!
+    menus(asTree: Boolean = false): [Menu!]!
 
-    menu(
-      menuId: Int!
-    ): Menu
+    menu(menuId: Int!): Menu
   }
 
   extend type Mutation {
-
-    createMenu(
-      input: CreateMenuInput!
-    ): Menu!
+    createMenu(input: CreateMenuInput!): Menu!
 
     updateMenu(
       menuId: Int!
       input: UpdateMenuInput!
     ): Menu!
 
+    toggleMenuStatus(
+      menuId: Int!
+      isActive: Boolean!
+      updatedBy: Int!
+    ): Menu!
   }
 `;

@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "graphql": "16.10.0"
+    "@apollo/subgraph": "^2.14.4",
+    "graphql": "16.10.0",
+    "pg": "^8.23.0"
   },
   "scripts": {
     "install:all": "npm install && cd gateway && npm install && cd ../services/user && npm install && cd ../account && npm install && cd ../opportunity && npm install && cd ../estimation && npm install && cd ../approval && npm install && cd ../rfp && npm install && cd ../document && npm install && cd ../notification && npm install && cd ../reporting-audit && npm install && cd ../admin && npm install"
   },
   "devDependencies": {
+    "@types/pg": "^8.23.1",
     "typescript": "^7.0.2"
   }
 }
