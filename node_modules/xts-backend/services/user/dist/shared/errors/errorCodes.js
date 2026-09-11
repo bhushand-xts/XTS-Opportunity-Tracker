@@ -1,0 +1,9 @@
+"use strict";
+module.exports = {
+    NOT_FOUND: 'NOT_FOUND',
+    VALIDATION_FAILED: 'VALIDATION_FAILED',
+    FORBIDDEN: 'FORBIDDEN',
+    UNAUTHENTICATED: 'UNAUTHENTICATED',
+    CONFLICT: 'CONFLICT',
+};
+//# sourceMappingURL=errorCodes.js.map

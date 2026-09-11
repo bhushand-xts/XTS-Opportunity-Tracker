@@ -1,0 +1,12 @@
+npm create vite@5.4.11 frontend -- --template react  //this error is because create-vite does not have a 5.4.11 release
+npm.cmd create vite@latest frontend -- --template react // use 
+npm.cmd install react@18.3.1 react-dom@18.3.1 vite@5.4.11
+npm.cmd install -D @vitejs/plugin-react@4.3.4
+npm.cmd install @apollo/client@3.12.6 graphql@16.10.0 lucide-react@0.468.0
+npm.cmd list @apollo/client graphql lucide-react // verify
+npm.cmd init -y // create the json
+npm.cmd install express@4.21.2 @apollo/server@4.11.3 graphql@16.10.0 pg@8.13.1 dotenv@16.4.7 cors@2.8.5
+npm.cmd install --save-dev nodemon@3.1.9
+npm.cmd list express @apollo/server graphql pg dotenv cors nodemon // verify
+npm.cmd install
+npm.cmd run dev

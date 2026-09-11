@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin | Opportunity Tracker</title>
+    <style>
+      * { box-sizing: border-box; } body { margin: 0; font-family: Arial, sans-serif; color: #172033; background: #f4f7fb; }
+      header { display: flex; justify-content: space-between; align-items: center; padding: 18px max(24px, calc((100% - 1100px) / 2)); color: white; background: #172554; }
+      main { width: min(1100px, calc(100% - 32px)); margin: 32px auto; } .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 22px 0; }
+      .card, section { padding: 20px; background: white; border-radius: 12px; box-shadow: 0 2px 10px #17203312; } .number { margin: 8px 0 0; font-size: 30px; font-weight: 700; }
+      button { padding: 9px 14px; border: 0; border-radius: 7px; color: white; background: #2563eb; cursor: pointer; } table { width: 100%; border-collapse: collapse; } th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; } th { color: #64748b; font-size: 13px; } #status { color: #64748b; } @media (max-width: 650px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header><strong>Opportunity Tracker — Admin</strong><button id="logout">Log out</button></header>
+    <main>
+      <h1>Admin dashboard</h1>
+      <p id="status">Loading roles from the admin service…</p>
+      <div class="grid"><div class="card"><small>Active roles</small><p class="number" id="role-count">—</p></div><div class="card"><small>Admin service</small><p class="number" id="service-status">—</p></div><div class="card"><small>Signed in</small><p class="number">Yes</p></div></div>
+      <section><h2>Roles</h2><table><thead><tr><th>Name</th><th>Code</th><th>Status</th></tr></thead><tbody id="roles"><tr><td colspan="3">Loading…</td></tr></tbody></table></section>
+    </main>
+    <script>
+      const token = localStorage.getItem('authToken');
+      if (!token) window.location.replace('/login');
+      document.getElementById('logout').onclick = () => { localStorage.removeItem('authToken'); window.location.replace('/login'); };
+      async function loadRoles() {
+        try {
+          const response = await fetch('/admin-api/graphql', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ query: '{ rolesList { id roleName roleCode isActive } }' }) });
+          const body = await response.json();
+          if (!response.ok || body.errors) throw new Error(body.errors?.[0]?.message || 'Unable to load roles.');
+          const roles = body.data.rolesList || [];
+          document.getElementById('role-count').textContent = roles.filter(role => role.isActive).length;
+          document.getElementById('service-status').textContent = 'Online';
+          document.getElementById('status').textContent = 'Data loaded from the admin microservice.';
+          document.getElementById('roles').innerHTML = roles.length ? roles.map(role => '<tr><td>' + role.roleName + '</td><td>' + (role.roleCode || '—') + '</td><td>' + (role.isActive ? 'Active' : 'Inactive') + '</td></tr>').join('') : '<tr><td colspan="3">No roles found.</td></tr>';
+        } catch (error) { document.getElementById('status').textContent = error.message; document.getElementById('service-status').textContent = 'Offline'; document.getElementById('roles').innerHTML = '<tr><td colspan="3">Unable to reach the admin service.</td></tr>'; }
+      }
+      loadRoles();
+    </script>
+  </body>
+</html>
