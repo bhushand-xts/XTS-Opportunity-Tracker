@@ -12,18 +12,30 @@ name: Complete Branch Flow - Dev to Integration to QA
 #
 #  dev_bhushan   ──┐
 #  dev_sharon    ──┤  quality gate   auto PR     1 review    auto PR     qa-approved
-#  dev_gayatri   ──┼─ (must pass) ──────────── ot-integration ────────── dev_parikshit ✓
+#  dev_gayatri   ──┼─ (must pass) ──────────── ot-integration ────────── QA ✓
 #  dev_govind    ──┘                                                      (QA Ready)
 #
 # KEY RULES:
 #  1. Quality gate must pass on dev branch before PR to ot-integration is raised
 #  2. PR into ot-integration requires at least 1 approved review before merging
 #  3. After review approval, PR is auto-merged into ot-integration
-#  4. After merge into ot-integration, auto PR is raised to dev_parikshit (QA)
+#  4. After merge into ot-integration, auto PR is raised to QA
 #  5. QA team tests and adds label "qa-approved" to approve for deployment
-#  6. After qa-approved label, PR is auto-merged into dev_parikshit
-#  7. dev_parikshit is ready for manual deployment (no automatic client approval flow)
+#  6. After qa-approved label, PR is auto-merged into QA
+#  7. QA is ready for manual deployment (no automatic client approval flow)
 #  8. Stale PR fix: old open PRs are closed before a new one is created
+#
+# ⚠️  BRANCH PROTECTION REQUIRED FOR QA (branch)
+#
+# QA branch MUST have GitHub branch protection rules configured:
+#  1. Require pull request reviews (minimum 1 approval from QA team)
+#  2. Require status checks to pass (quality-gate-pr, shared-ci)
+#  3. Dismiss stale PR approvals when new commits are pushed
+#  4. Restrict push access (only bot/QA team allowed)
+#  5. Restrict who can merge PRs (QA team only)
+#
+# Without these rules, anyone can directly push to QA, bypassing QA approval.
+# This would auto-sync unauthorized code to main (production).
 # ═══════════════════════════════════════════════════════════════════════════════
 
 on:
@@ -34,7 +46,7 @@ on:
       - "dev_gayatri"
       - "dev_govind"
       - "ot-integration"
-      - "dev_parikshit"
+      - "QA"
 
   pull_request:
     # opened/synchronize → shared-ci + quality-gate-pr (draft enforcement)
@@ -47,7 +59,7 @@ on:
       - "dev_gayatri"
       - "dev_govind"
       - "ot-integration"
-      - "dev_parikshit"
+      - "QA"
 
   # Needed to detect when a reviewer approves a PR into ot-integration
   pull_request_review:
@@ -319,6 +331,39 @@ jobs:
             await github.rest.issues.createComment({ owner, repo, issue_number: pr, body });
 
   # ===========================================================================
+  # JOB 2A - AUTO REQUEST REVIEWERS for story-wise PR to ot-integration
+  #
+  # Runs when a PR is opened targeting ot-integration (from any story branch).
+  # Automatically requests reviews from govinddhawale14 and bhushand-xts.
+  # Either reviewer's approval will trigger auto-merge.
+  # ===========================================================================
+  auto-request-reviewers-integration:
+    name: "Auto-Request Reviewers for ot-integration"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.base_ref == 'ot-integration' &&
+      github.event.action == 'opened'
+
+    steps:
+      - name: Request reviews from designated reviewers
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.issue.number;
+
+            await github.rest.pulls.requestReviewers({
+              owner, repo,
+              pull_number: prNumber,
+              reviewers: ["govinddhawale14", "bhushand-xts"]
+            });
+
+            console.log("Review requested from govinddhawale14 and bhushand-xts for PR #" + prNumber);
+
+  # ===========================================================================
   # JOB 3 - AUTO PR: dev branch → ot-integration
   #
   # Runs only after quality-gate-dev passes.
@@ -512,10 +557,18 @@ jobs:
             }
 
   # ===========================================================================
-  # JOB 5A - AUTO MERGE integration PR when approved
+  # JOB 5A - AUTO MERGE integration PR when approved (WITHOUT pushing)
   #
   # Triggers when a reviewer APPROVES a PR whose base is ot-integration.
-  # Automatically merges the approved PR into ot-integration.
+  # Merges the approved PR into ot-integration LOCALLY (using git).
+  # Does NOT push to origin - allows developer to validate before pushing.
+  #
+  # Developer workflow:
+  #  1. PR approved by reviewer
+  #  2. Workflow merges to ot-integration (locally on GitHub runner)
+  #  3. Developer tests the merged code
+  #  4. Developer manually pushes to origin/ot-integration
+  #  5. Push triggers forward-to-qa-on-push → auto PR to QA
   # ===========================================================================
   auto-merge-integration-pr:
     name: "Auto-Merge Integration PR on Approval"
@@ -556,7 +609,370 @@ jobs:
 
             console.log("Review check passed — " + approvalCount + " approval(s).");
 
-      - name: Merge approved integration PR into ot-integration
+      - name: Checkout repository for local merge
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Merge approved integration PR into ot-integration (WITHOUT pushing)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Get PR details from GitHub context
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          HEAD_REF=${{ github.event.pull_request.head.ref }}
+          BASE_REF=${{ github.event.pull_request.base.ref }}
+
+          # Fetch both branches
+          git fetch origin ${BASE_REF} ${HEAD_REF}
+
+          # Checkout base branch (ot-integration)
+          git checkout -B ${BASE_REF} origin/${BASE_REF}
+
+          # Merge the head branch (story branch) into base
+          git merge --no-ff --no-edit origin/${HEAD_REF} \
+            -m "chore: merge ${HEAD_REF} into ${BASE_REF} (approved by reviewer)"
+
+          echo "✓ Merged ${HEAD_REF} into ${BASE_REF}"
+          echo "⏸️  MANUAL VALIDATION REQUIRED"
+          echo "⏸️  Test the code locally, then manually push to origin/${BASE_REF}"
+          echo "⏸️  This will trigger the auto PR to QA"
+
+  # ===========================================================================
+  # JOB 5B - FORWARD TO QA after validation (on push to ot-integration)
+  #
+  # Triggers when code is PUSHED to ot-integration (after manual validation).
+  # Creates a fresh PR from ot-integration → QA for QA testing.
+  #
+  # STALE PR FIX: existing open QA PRs are closed before creating a new one,
+  # ensuring QA always sees the latest validated code.
+  # ===========================================================================
+  forward-to-qa-on-push:
+    name: "Create Auto PR to QA (on ot-integration push)"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' &&
+      github.ref_name == 'ot-integration'
+
+    steps:
+      - name: Close stale QA PRs and create fresh PR to QA
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // ── STALE PR FIX ───────────────────────────────────────────
+            // Close any existing open PRs from ot-integration → QA
+            // before creating a new one. This ensures QA always gets a fresh PR.
+            const existing = await github.rest.pulls.list({
+              owner, repo,
+              head: owner + ":ot-integration",
+              base: "QA",
+              state: "open"
+            });
+
+            for (const stalePr of existing.data) {
+              await github.rest.pulls.update({
+                owner, repo,
+                pull_number: stalePr.number,
+                state: "closed"
+              });
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: stalePr.number,
+                body: "Automatically closed — a newly validated integration push has been detected.\nA fresh QA PR is being created."
+              });
+              console.log("Closed stale QA PR #" + stalePr.number);
+            }
+
+            // ── CREATE FRESH QA PR ─────────────────────────────────────
+            const body = "## QA Testing Required\n\n"
+              + "A new validated integration build is ready for manual testing.\n\n"
+              + "**To approve and release to production:**\n"
+              + "1. Pull `QA` and run manual tests\n"
+              + "2. Add the label **`qa-approved`** to this PR\n"
+              + "3. The workflow will auto-merge into `QA`\n\n"
+              + "| Field | Value |\n|---|---|\n"
+              + "| Source | ot-integration (validated) |\n"
+              + "| Trigger commit | ${{ github.sha }} |";
+
+            const result = await github.rest.pulls.create({
+              owner, repo,
+              title: "QA: ot-integration to QA (validated)",
+              body,
+              head: "ot-integration",
+              base: "QA"
+            });
+
+            await github.rest.issues.addLabels({
+              owner, repo,
+              issue_number: result.data.number,
+              labels: ["qa-testing", "awaiting-qa-approval"]
+            });
+
+            console.log("Fresh QA PR created: " + result.data.html_url);
+
+  # ===========================================================================
+  # JOB 6 - VALIDATE PR SOURCE for qa
+  #
+  # Only ot-integration is allowed to open PRs into qa.
+  # Any direct PR from another branch is closed automatically.
+  # ===========================================================================
+  validate-qa-pr-source:
+    name: "Validate PR Source - QA"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.base_ref == 'QA' &&
+      (github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened' || github.event.action == 'labeled')
+
+    steps:
+      - name: Allow only ot-integration into QA
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+
+            if (pr.head.ref === 'ot-integration') {
+              console.log("Allowed QA PR source: " + pr.head.ref);
+              return;
+            }
+
+            const message = [
+              "**PR closed automatically.**",
+              "",
+              "`QA` accepts PRs only from `ot-integration`.",
+              "",
+              "Received source branch: `" + pr.head.ref + "`"
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pr.number,
+              body: message
+            });
+
+            await github.rest.pulls.update({
+              owner,
+              repo,
+              pull_number: pr.number,
+              state: "closed"
+            });
+
+            core.setFailed("Invalid PR source for QA: " + pr.head.ref);
+
+  # ===========================================================================
+  # JOB 8 - QA APPROVAL GATE
+  # Triggers when "qa-approved" label is added to a PR into QA.
+  # Merges the PR into QA only.
+  # The later push to QA triggers the direct sync job below.
+  # ===========================================================================
+  qa-approval-gate:
+    name: "QA Approval Gate"
+    runs-on: ubuntu-latest
+    needs: validate-qa-pr-source
+    if: |
+      github.event_name == 'pull_request' &&
+      github.base_ref == 'QA' &&
+      github.head_ref == 'ot-integration' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'qa-approved' &&
+      github.base_ref == 'QA'
+
+    steps:
+      - name: Merge QA PR into QA
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              merge_method: "squash",
+              commit_title: "chore: qa-approved merge into QA"
+            });
+            console.log("Merged QA PR #" + context.issue.number);
+
+  # ===========================================================================
+  # JOB 9 - VALIDATE PR SOURCE for main
+  #
+  # Only QA is allowed to open PRs into main.
+  # Any direct PR from another branch is closed automatically.
+  # ===========================================================================
+  validate-main-pr-source:
+    name: "Validate PR Source - main"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.base_ref == 'main' &&
+      (github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened')
+
+    steps:
+      - name: Allow only QA into main
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+
+            if (pr.head.ref === 'QA') {
+              console.log("Allowed main PR source: " + pr.head.ref);
+              return;
+            }
+
+            const message = [
+              "**PR closed automatically.**",
+              "",
+              "`main` accepts PRs only from `QA`.",
+              "",
+              "Received source branch: `" + pr.head.ref + "`"
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pr.number,
+              body: message
+            });
+
+            await github.rest.pulls.update({
+              owner,
+              repo,
+              pull_number: pr.number,
+              state: "closed"
+            });
+
+            if (pr.head.ref !== 'QA') {
+              core.setFailed("Invalid PR source for main: " + pr.head.ref);
+            }
+
+  # ===========================================================================
+  # JOB 10 - CREATE RELEASE PR after QA branch update
+  #
+  # After QA is updated from ot-integration, open a separate PR from QA to main
+  # and request approval from Parikshit150890.
+  # ===========================================================================
+  create-main-pr-after-qa-sync:
+    name: "Create PR from QA to main (Parikshit150890 approval required)"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' &&
+      github.ref_name == 'QA'
+
+    steps:
+      - name: Close stale main PRs and create fresh PR to main
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const existing = await github.rest.pulls.list({
+              owner, repo,
+              head: owner + ":QA",
+              base: "main",
+              state: "open"
+            });
+
+            for (const stalePr of existing.data) {
+              await github.rest.pulls.update({
+                owner, repo,
+                pull_number: stalePr.number,
+                state: "closed"
+              });
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: stalePr.number,
+                body: "Automatically closed — a newer QA merge has happened. A fresh PR to `main` is being created."
+              });
+              console.log("Closed stale main PR #" + stalePr.number);
+            }
+
+            const body = "## Production Approval Required\n\n"
+              + "QA branch has been updated from `ot-integration`. This PR requires approval from **Parikshit150890** before merging to production.\n\n"
+              + "**Next step:** Parikshit150890 reviews and approves this PR, then it will auto-merge to `main`.\n\n"
+              + "| Field | Value |\n|---|---|\n"
+              + "| Source | QA |\n"
+              + "| Updated from | ot-integration |\n"
+              + "| Trigger commit | ${{ github.sha }} |";
+
+            const result = await github.rest.pulls.create({
+              owner, repo,
+              title: "Release: QA to main (Parikshit150890 approval required)",
+              body,
+              head: "QA",
+              base: "main"
+            });
+
+            // Request review from Parikshit150890
+            await github.rest.pulls.requestReviewers({
+              owner, repo,
+              pull_number: result.data.number,
+              reviewers: ["Parikshit150890"]
+            });
+
+            await github.rest.issues.addLabels({
+              owner, repo,
+              issue_number: result.data.number,
+              labels: ["production-release", "awaiting-parikshit-approval"]
+            });
+
+            console.log("Production release PR created: " + result.data.html_url);
+
+  # ===========================================================================
+  # JOB 11 - AUTO MERGE main PR when Parikshit150890 approves
+  #
+  # Triggers when Parikshit150890 approves a PR whose base is main.
+  # Automatically merges the approved PR into main (production).
+  # ===========================================================================
+  auto-merge-main-on-parikshit-approval:
+    name: "Auto-Merge to Production (Parikshit150890 approval)"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request_review' &&
+      github.event.review.state == 'approved' &&
+      github.event.review.user.login == 'Parikshit150890' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.merged == false
+
+    steps:
+      - name: Verify Parikshit150890 approval before merging to main
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.pull_request.number;
+
+            const reviews = await github.rest.pulls.listReviews({
+              owner, repo, pull_number: prNumber
+            });
+
+            // Check if Parikshit150890 has approved
+            const parikshitApproved = reviews.data.some(review =>
+              review.user.login === 'Parikshit150890' && review.state === 'APPROVED'
+            );
+
+            if (!parikshitApproved) {
+              core.setFailed("Merge blocked — Parikshit150890 approval not found.");
+              return;
+            }
+
+            console.log("Parikshit150890 approval verified — proceeding with merge.");
+
+      - name: Merge approved main PR into main (production)
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -592,7 +1008,7 @@ jobs:
 
             // ✓ 4. Mergeability check
             if (pr.mergeable === false) {
-              core.setFailed("PR has merge conflicts. Cannot merge.");
+              core.setFailed("PR has merge conflicts. Cannot merge to production.");
               return;
             }
 
@@ -613,335 +1029,13 @@ jobs:
               }
             }
 
-            // ✓ 5. Merge safely
+            // ✓ 5. Merge safely to production
             await github.rest.pulls.merge({
               owner,
               repo,
               pull_number: prNumber,
               merge_method: "squash",
-              commit_title: "chore: merge " + pr.head.ref + " into ot-integration (approved)"
+              commit_title: "chore: release QA to main (approved by Parikshit150890)"
             });
 
-            console.log("Merged PR #" + prNumber + " successfully");
-
-  # ===========================================================================
-  # JOB 5B - FORWARD TO QA after validation (on push to ot-integration)
-  #
-  # Triggers when code is PUSHED to ot-integration (after manual validation).
-  # Creates a fresh PR from ot-integration → dev_parikshit for QA testing.
-  #
-  # STALE PR FIX: existing open QA PRs are closed before creating a new one,
-  # ensuring QA always sees the latest validated code.
-  # ===========================================================================
-  forward-to-qa-on-push:
-    name: "Create Auto PR to QA (on ot-integration push)"
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'push' &&
-      github.ref_name == 'ot-integration'
-
-    steps:
-      - name: Close stale QA PRs and create fresh PR to dev_parikshit
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-
-            // ── STALE PR FIX ───────────────────────────────────────────
-            // Close any existing open PRs from ot-integration → dev_parikshit
-            // before creating a new one. This ensures QA always gets a fresh PR.
-            const existing = await github.rest.pulls.list({
-              owner, repo,
-              head: owner + ":ot-integration",
-              base: "dev_parikshit",
-              state: "open"
-            });
-
-            for (const stalePr of existing.data) {
-              await github.rest.pulls.update({
-                owner, repo,
-                pull_number: stalePr.number,
-                state: "closed"
-              });
-              await github.rest.issues.createComment({
-                owner, repo,
-                issue_number: stalePr.number,
-                body: "Automatically closed — a newly validated integration push has been detected.\nA fresh QA PR is being created."
-              });
-              console.log("Closed stale QA PR #" + stalePr.number);
-            }
-
-            // ── CREATE FRESH QA PR ─────────────────────────────────────
-            const body = "## QA Testing Required\n\n"
-              + "A new validated integration build is ready for manual testing.\n\n"
-              + "**To approve and release to production:**\n"
-              + "1. Pull `dev_parikshit` and run manual tests\n"
-              + "2. Add the label **`qa-approved`** to this PR\n"
-              + "3. The workflow will auto-merge into `dev_parikshit`\n\n"
-              + "| Field | Value |\n|---|---|\n"
-              + "| Source | ot-integration (validated) |\n"
-              + "| Trigger commit | ${{ github.sha }} |";
-
-            const result = await github.rest.pulls.create({
-              owner, repo,
-              title: "QA: ot-integration to dev_parikshit (validated)",
-              body,
-              head: "ot-integration",
-              base: "dev_parikshit"
-            });
-
-            await github.rest.issues.addLabels({
-              owner, repo,
-              issue_number: result.data.number,
-              labels: ["qa-testing", "awaiting-qa-approval"]
-            });
-
-            console.log("Fresh QA PR created: " + result.data.html_url);
-
-  # ===========================================================================
-  # JOB 6 - VALIDATE PR SOURCE for qa
-  #
-  # Only ot-integration is allowed to open PRs into qa.
-  # Any direct PR from another branch is closed automatically.
-  # ===========================================================================
-  validate-qa-pr-source:
-    name: "Validate PR Source - dev_parikshit"
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' &&
-      github.base_ref == 'dev_parikshit' &&
-      (github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened' || github.event.action == 'labeled')
-
-    steps:
-      - name: Allow only ot-integration into dev_parikshit
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const pr = context.payload.pull_request;
-
-            if (pr.head.ref === 'ot-integration') {
-              console.log("Allowed QA PR source: " + pr.head.ref);
-              return;
-            }
-
-            const message = [
-              "**PR closed automatically.**",
-              "",
-              "`dev_parikshit` accepts PRs only from `ot-integration`.",
-              "",
-              "Received source branch: `" + pr.head.ref + "`"
-            ].join("\n");
-
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: pr.number,
-              body: message
-            });
-
-            await github.rest.pulls.update({
-              owner,
-              repo,
-              pull_number: pr.number,
-              state: "closed"
-            });
-
-            core.setFailed("Invalid PR source for dev_parikshit: " + pr.head.ref);
-
-  # ===========================================================================
-  # JOB 8 - QA APPROVAL GATE
-  # Triggers when "qa-approved" label is added to a PR into dev_parikshit.
-  # Merges the PR into dev_parikshit only.
-  # The later push to dev_parikshit triggers the direct sync job below.
-  # ===========================================================================
-  qa-approval-gate:
-    name: "QA Approval Gate"
-    runs-on: ubuntu-latest
-    needs: validate-qa-pr-source
-    if: |
-      github.event_name == 'pull_request' &&
-      github.base_ref == 'dev_parikshit' &&
-      github.head_ref == 'ot-integration' &&
-      github.event.action == 'labeled' &&
-      github.event.label.name == 'qa-approved' &&
-      github.base_ref == 'dev_parikshit'
-
-    steps:
-      - name: Merge QA PR into dev_parikshit
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            await github.rest.pulls.merge({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-              merge_method: "squash",
-              commit_title: "chore: qa-approved merge into dev_parikshit"
-            });
-            console.log("Merged QA PR #" + context.issue.number);
-
-  # ===========================================================================
-  # JOB 9 - DIRECT QA SYNC on push to dev_parikshit
-  #
-  # Every push to dev_parikshit is synced directly into main without opening a PR.
-  # ===========================================================================
-  sync-qa-to-main-on-push:
-    name: "Sync dev_parikshit to main on Push"
-    runs-on: ubuntu-latest
-    needs: shared-ci
-    if: |
-      github.event_name == 'push' &&
-      github.ref_name == 'dev_parikshit'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Sync dev_parikshit into main directly
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git fetch origin main dev_parikshit
-
-          MAIN_SHA=$(git rev-parse origin/main)
-          PARIKSHIT_SHA=$(git rev-parse origin/dev_parikshit)
-
-          if [ "$MAIN_SHA" = "$PARIKSHIT_SHA" ]; then
-            echo "main already contains the latest dev_parikshit commit. Skipping sync."
-            exit 0
-          fi
-
-          git checkout -B main origin/main
-          git merge --no-ff --no-edit origin/dev_parikshit
-          git push origin main
-
-  # ===========================================================================
-  # JOB 10 - VALIDATE PR SOURCE for main
-  #
-  # Only dev_parikshit is allowed to open PRs into main.
-  # Any direct PR from another branch is closed automatically.
-  # ===========================================================================
-  validate-main-pr-source:
-    name: "Validate PR Source - main"
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' &&
-      github.base_ref == 'main' &&
-      (github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.action == 'reopened')
-
-    steps:
-      - name: Allow only dev_parikshit into main
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const pr = context.payload.pull_request;
-
-            if (pr.head.ref === 'dev_parikshit') {
-              console.log("Allowed main PR source: " + pr.head.ref);
-              return;
-            }
-
-            const message = [
-              "**PR closed automatically.**",
-              "",
-              "`main` accepts PRs only from `dev_parikshit`.",
-              "",
-              "Received source branch: `" + pr.head.ref + "`"
-            ].join("\n");
-
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: pr.number,
-              body: message
-            });
-
-            await github.rest.pulls.update({
-              owner,
-              repo,
-              pull_number: pr.number,
-              state: "closed"
-            });
-
-            if (pr.head.ref !== 'dev_parikshit') {
-              core.setFailed("Invalid PR source for main: " + pr.head.ref);
-            }
-
-  # ===========================================================================
-  # JOB 11 - CREATE RELEASE PR after dev_parikshit branch update
-  #
-  # After dev_parikshit is updated from ot-integration, open a separate PR from dev_parikshit to main
-  # and wait for client approval.
-  # ===========================================================================
-  create-main-pr-after-qa-sync:
-    name: "Create PR from dev_parikshit to main"
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'push' &&
-      github.ref_name == 'dev_parikshit'
-
-    steps:
-      - name: Close stale main PRs and create fresh PR to main
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-
-            const existing = await github.rest.pulls.list({
-              owner, repo,
-              head: owner + ":dev_parikshit",
-              base: "main",
-              state: "open"
-            });
-
-            for (const stalePr of existing.data) {
-              await github.rest.pulls.update({
-                owner, repo,
-                pull_number: stalePr.number,
-                state: "closed"
-              });
-              await github.rest.issues.createComment({
-                owner, repo,
-                issue_number: stalePr.number,
-                body: "Automatically closed — a newer dev_parikshit merge has happened. A fresh PR to `main` is being created."
-              });
-              console.log("Closed stale main PR #" + stalePr.number);
-            }
-
-            const body = "## Client Production Approval Required\n\n"
-              + "dev_parikshit (QA) has been updated from `ot-integration`. This separate PR is now ready for production approval.\n\n"
-              + "**Next step:** client reviews and merges this PR into `main`.\n\n"
-              + "| Field | Value |\n|---|---|\n"
-              + "| Source | dev_parikshit |\n"
-              + "| Updated from | ot-integration |\n"
-              + "| Trigger commit | ${{ github.sha }} |";
-
-            const result = await github.rest.pulls.create({
-              owner, repo,
-              title: "Client Release: dev_parikshit to main",
-              body,
-              head: "dev_parikshit",
-              base: "main"
-            });
-
-            await github.rest.issues.addLabels({
-              owner, repo,
-              issue_number: result.data.number,
-              labels: ["client-production-review"]
-            });
-
-            console.log("Client main PR created: " + result.data.html_url);
+            console.log("Merged PR #" + prNumber + " to production successfully");
