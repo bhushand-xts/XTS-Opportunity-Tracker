@@ -1,0 +1,16 @@
+﻿{
+  "name": "@xts/api-client",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "echo 'API client built'",
+    "test": "echo 'No tests'"
+  },
+  "dependencies": {
+    "@xts/api-contracts": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}
