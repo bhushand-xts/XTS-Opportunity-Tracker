@@ -1,0 +1,41 @@
+{
+  "name": "xts-opportunity-tracker-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/@xts/app-shell",
+    "packages/@xts/design-system",
+    "packages/@xts/api-contracts",
+    "packages/@xts/mfe-admin",
+    "packages/@xts/mfe-opportunity",
+    "packages/@xts/mfe-solution",
+    "packages/@xts/mfe-approval",
+    "packages/@xts/mfe-dashboard",
+    "packages/@xts/api-client"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces"
+  },
+  "devDependencies": {
+    "@module-federation/enhanced": "^2.9.0",
+    "css-loader": "^7.1.5",
+    "html-webpack-plugin": "^5.6.8",
+    "style-loader": "^4.0.0",
+    "ts-loader": "^9.6.2",
+    "typescript": "^5.3.0",
+    "webpack": "^5.110.3",
+    "webpack-cli": "^7.2.3",
+    "webpack-dev-server": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.5.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  },
+  "dependencies": {
+    "react-router-dom": "7.18.3"
+  }
+}
