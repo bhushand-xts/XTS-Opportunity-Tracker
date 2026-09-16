@@ -1,0 +1,129 @@
+name: Promote
+
+# Handles the three automated promotion steps in the branch chain. Each
+# job is gated on its own event/condition, so despite the shared file
+# they run independently:
+#
+#  1. open-pr-to-qa      -- after CI's Integration Validation succeeds on
+#                            OT-Integration, open/update the PR into QA.
+#                            No reviewers requested: the PR existing is
+#                            the authorization to proceed to QA.
+#  2. merge-qa-approved   -- when a PR into QA gets the "QA approved"
+#                            label (QA's sign-off mechanism), merge it.
+#  3. open-pr-to-main     -- after a push to QA (i.e. right after #2),
+#                            open/update the PR into main. This PR is
+#                            NEVER auto-merged -- a human must approve
+#                            and merge it by hand. This job does not
+#                            merge it and holds no bypass on main's
+#                            branch protection.
+#
+# Scope note: nothing in this workflow deploys anywhere. It only opens
+# and merges pull requests between OT-Integration, QA, and main.
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  pull_request:
+    types:
+      - labeled
+  push:
+    branches:
+      - QA
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open-pr-to-qa:
+    if: >
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'OT-Integration'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: OT-Integration
+
+      - name: Open or update PR into QA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          EXISTING=$(gh pr list --head OT-Integration --base QA --state open --json number --jq '.[0].number')
+          BODY="Opened automatically after Integration Validation passed on OT-Integration (run: ${{ github.event.workflow_run.html_url }}).
+
+          QA: deploy this branch to the QA/UAT environment by hand and test it. Add the \`QA approved\` label to this PR once sign-off is complete -- that label triggers the automatic merge into QA."
+
+          if [ -n "$EXISTING" ] && [ "$EXISTING" != "null" ]; then
+            echo "Updating existing PR #$EXISTING"
+            gh pr edit "$EXISTING" --body "$BODY"
+          else
+            echo "Creating new PR"
+            gh pr create \
+              --head OT-Integration \
+              --base QA \
+              --title "Promote OT-Integration to QA" \
+              --body "$BODY"
+          fi
+
+  ensure-qa-label:
+    if: github.event_name == 'pull_request' && github.event.action == 'labeled'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create "QA approved" --color 0E8A16 --description "QA has signed off; triggers auto-merge into QA" --force
+
+  merge-qa-approved:
+    needs: ensure-qa-label
+    if: >
+      github.event_name == 'pull_request' && github.event.action == 'labeled' &&
+      github.event.pull_request.base.ref == 'QA' && github.event.label.name == 'QA approved'
+    runs-on: ubuntu-latest
+    env:
+      # NOTE: assumed default -- confirm this matches the repo's actual
+      # merge strategy elsewhere (squash vs. merge commit) and adjust if not.
+      MERGE_METHOD: squash
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --${{ env.MERGE_METHOD }} --auto=false
+
+  open-pr-to-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/QA'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: QA
+
+      - name: Open or update PR into main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          EXISTING=$(gh pr list --head QA --base main --state open --json number --jq '.[0].number')
+          BODY="Opened automatically after QA sign-off (push to QA at ${{ github.sha }}).
+
+          Requires one human approval per branch policy before merging to main. This automation does not merge this PR and is not on main's review-bypass list -- a person must review and merge it manually."
+
+          if [ -n "$EXISTING" ] && [ "$EXISTING" != "null" ]; then
+            echo "Updating existing PR #$EXISTING"
+            gh pr edit "$EXISTING" --body "$BODY"
+          else
+            echo "Creating new PR"
+            gh pr create \
+              --head QA \
+              --base main \
+              --title "Promote QA to main" \
+              --body "$BODY"
+          fi
