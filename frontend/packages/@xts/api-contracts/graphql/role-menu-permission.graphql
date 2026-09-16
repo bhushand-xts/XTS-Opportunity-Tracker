@@ -1,0 +1,42 @@
+# Contract for the backend team — not executed by the frontend.
+# Mirrors frontend/packages/@xts/api-contracts/src/roleMenuPermission.ts and
+# the gql documents in
+# frontend/packages/@xts/mfe-admin/src/features/role-menu-permission-assignment/roleMenuPermission.queries.ts.
+# The frontend runs against a mock ApolloLink (see @xts/api-client) shaped
+# exactly like this schema until the real backend implements it.
+#
+# Unlike Menu/Permission/Role, this is not row-level create/update/delete —
+# it's one mapping document per role, saved as a whole. There is no create
+# or update mutation; saveRoleMenuPermissions always replaces every entry
+# for the given role in a single atomic operation, which is what makes
+# duplicate (role, menu) mappings structurally impossible.
+
+type RoleMenuPermission {
+  roleId: ID!
+  menuId: ID!
+  canView: Boolean!
+  canCreate: Boolean!
+  canEdit: Boolean!
+  canDelete: Boolean!
+  canExport: Boolean!
+}
+
+input RoleMenuPermissionInput {
+  menuId: ID!
+  canView: Boolean!
+  canCreate: Boolean!
+  canEdit: Boolean!
+  canDelete: Boolean!
+  canExport: Boolean!
+}
+
+type Query {
+  # Returns [] if this role has never been saved yet — not an error.
+  roleMenuPermissions(roleId: ID!): [RoleMenuPermission!]!
+}
+
+type Mutation {
+  # Server must reject (GraphQL error) when `entries` is empty — at least
+  # one menu must be selected. Replaces this role's entire mapping.
+  saveRoleMenuPermissions(roleId: ID!, entries: [RoleMenuPermissionInput!]!): [RoleMenuPermission!]!
+}

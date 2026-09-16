@@ -1,0 +1,51 @@
+# Contract for the backend team — not executed by the frontend.
+# Mirrors frontend/packages/@xts/api-contracts/src/auth.ts and the gql
+# documents in frontend/packages/@xts/design-system/src/lib/auth.queries.ts.
+# The frontend runs against a mock ApolloLink (see @xts/api-client) shaped
+# exactly like this schema until the real backend implements it.
+
+enum UserStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+type AuthUser {
+  id: ID!
+  email: String!
+  firstName: String!
+  lastName: String!
+  status: UserStatus!
+  roles: [String!]!
+}
+
+type AuthPayload {
+  token: String!
+  user: AuthUser!
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+input RegisterInput {
+  firstName: String!
+  lastName: String!
+  email: String!
+  password: String!
+}
+
+type Mutation {
+  # Server must reject (GraphQL error) on: no user with this email, or a
+  # password mismatch. Error message is shown to the user as-is, so keep it
+  # generic ("Invalid email or password.") — don't reveal which part failed.
+  login(input: LoginInput!): AuthPayload!
+
+  # Server must reject (GraphQL error) on: duplicate email (case-insensitive).
+  # New users are created with status PENDING and no roles — they gain
+  # access once an admin assigns a role (see role-menu-permission.graphql /
+  # the future User Role Assignment mutation), which should also flip
+  # status to APPROVED.
+  registerUser(input: RegisterInput!): AuthPayload!
+}

@@ -1,0 +1,33 @@
+# Contract for the backend team — not executed by the frontend.
+# Mirrors frontend/packages/@xts/api-contracts/src/role.ts and the gql
+# documents in frontend/packages/@xts/mfe-admin/src/features/role-management/role.queries.ts.
+# The frontend runs against a mock ApolloLink (see @xts/api-client) shaped
+# exactly like this schema until the real backend implements it.
+
+type Role {
+  id: ID!
+  roleName: String!
+  roleCode: String!
+  isActive: Boolean!
+  assignedUserIds: [ID!]!
+}
+
+input RoleInput {
+  roleName: String!
+  isActive: Boolean!
+}
+
+type Query {
+  roles: [Role!]!
+}
+
+type Mutation {
+  # Server must reject (GraphQL error) on: duplicate roleName
+  # (case-insensitive), and on deleteRole when assignedUserIds is non-empty
+  # (the role is actively assigned to a user — see User Role Assignment).
+  # Server generates `id` and the authoritative `roleCode` (slug of
+  # roleName, de-duplicated if needed) — not a client-entered field.
+  createRole(input: RoleInput!): Role!
+  updateRole(id: ID!, input: RoleInput!): Role!
+  deleteRole(id: ID!): ID!
+}

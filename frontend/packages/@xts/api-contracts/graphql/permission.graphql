@@ -1,0 +1,31 @@
+# Contract for the backend team — not executed by the frontend.
+# Mirrors frontend/packages/@xts/api-contracts/src/permission.ts and the gql
+# documents in frontend/packages/@xts/mfe-admin/src/features/permission-management/permission.queries.ts.
+# The frontend runs against a mock ApolloLink (see @xts/api-client) shaped
+# exactly like this schema until the real backend implements it.
+
+type Permission {
+  id: ID!
+  permissionName: String!
+  isActive: Boolean!
+  assignedRoleIds: [ID!]!
+}
+
+input PermissionInput {
+  permissionName: String!
+  isActive: Boolean!
+}
+
+type Query {
+  permissions: [Permission!]!
+}
+
+type Mutation {
+  # Server must reject (GraphQL error) on: duplicate permissionName
+  # (case-insensitive), and on deletePermission when assignedRoleIds is
+  # non-empty (the permission is actively assigned to a role — see Role
+  # Master / Role Menu Permission Assignment). Server generates `id`.
+  createPermission(input: PermissionInput!): Permission!
+  updatePermission(id: ID!, input: PermissionInput!): Permission!
+  deletePermission(id: ID!): ID!
+}

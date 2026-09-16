@@ -1,8 +1,14 @@
 ﻿{
-  "extends": "../../tsconfig.json",
+  "extends": "../../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "declaration": true
+    "declaration": true,
+    "jsx": "react-jsx",
+    // Storybook's packages (@storybook/react-vite, storybook/test) rely on
+    // package.json "exports" maps for their type entrypoints, which the
+    // shared root tsconfig's classic "node" resolution can't follow.
+    // Scoped to this package only — other packages are unaffected.
+    "moduleResolution": "bundler"
   },
   "include": ["src"]
 }

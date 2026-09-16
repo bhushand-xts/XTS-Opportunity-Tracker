@@ -1,4 +1,5 @@
 import React from "react";
+import { Button } from "@xts/design-system";
 
 interface Props {
   children: React.ReactNode;
@@ -26,22 +27,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: "40px", textAlign: "center", color: "#991b1b" }}>
+        <div className="p-10 text-center text-destructive">
           <h2>⚠️ Something went wrong</h2>
           <p>{this.state.error?.message}</p>
-          <button
-            onClick={() => window.location.reload()}
-            style={{
-              padding: "10px 20px",
-              backgroundColor: "#3b82f6",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-            }}
-          >
+          <Button className="mt-4" onClick={() => window.location.reload()}>
             Reload Page
-          </button>
+          </Button>
         </div>
       );
     }

@@ -11,6 +11,7 @@ build/
 .webpack/
 *.bundle.js
 *.chunk.js
+storybook-static/
 
 # Development
 .env

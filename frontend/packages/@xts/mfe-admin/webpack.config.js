@@ -8,6 +8,12 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, "dist"),
     filename: "[name].[contenthash].js",
+    // Must be an ABSOLUTE url with origin, not just "/" — this is a Module
+    // Federation remote, so its code also runs on OTHER pages (app-shell,
+    // at a different origin/port) that load it via remoteEntry.js. A
+    // root-relative "/" would resolve this remote's own chunk requests
+    // against whichever page is hosting it, not against this dev server.
+    publicPath: "http://localhost:3001/",
     clean: true,
   },
   devServer: {
@@ -20,6 +26,9 @@ module.exports = {
   },
   resolve: {
     extensions: [".ts", ".tsx", ".js", ".jsx"],
+    alias: {
+      "@": path.resolve(__dirname, "../design-system/src"),
+    },
   },
   module: {
     rules: [
@@ -30,7 +39,18 @@ module.exports = {
       },
       {
         test: /\.css$/,
-        use: ["style-loader", "css-loader"],
+        use: [
+          "style-loader",
+          "css-loader",
+          {
+            loader: "postcss-loader",
+            options: {
+              postcssOptions: {
+                config: path.resolve(__dirname, "../../../postcss.config.js"),
+              },
+            },
+          },
+        ],
       },
     ],
   },
@@ -44,8 +64,10 @@ module.exports = {
       shared: {
         react: { singleton: true, requiredVersion: "^18.2.0" },
         "react-dom": { singleton: true, requiredVersion: "^18.2.0" },
+        "react-router-dom": { singleton: true, requiredVersion: "^7.18.3" },
         "@xts/design-system": { singleton: true },
         "@xts/api-contracts": { singleton: true },
+        "@xts/api-client": { singleton: true },
       },
     }),
     new HtmlWebpackPlugin({

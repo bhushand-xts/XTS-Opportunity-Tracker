@@ -1,0 +1,44 @@
+# Contract for the backend team — not executed by the frontend.
+# Mirrors frontend/packages/@xts/api-contracts/src/menu.ts and the gql
+# documents in frontend/packages/@xts/mfe-admin/src/features/menu-management/menu.queries.ts.
+# The frontend runs against a mock ApolloLink (see @xts/api-client) shaped
+# exactly like this schema until the real backend implements it.
+
+enum MenuType {
+  MAIN_MENU
+  SUB_MENU
+}
+
+type Menu {
+  id: ID!
+  menuName: String!
+  menuType: MenuType!
+  parentMenuId: ID
+  icon: String
+  displayOrder: Int!
+  menuKey: String!
+  isActive: Boolean!
+}
+
+input MenuInput {
+  menuName: String!
+  menuType: MenuType!
+  parentMenuId: ID
+  icon: String
+  displayOrder: Int!
+  isActive: Boolean!
+}
+
+type Query {
+  menus: [Menu!]!
+}
+
+type Mutation {
+  # Server must reject (GraphQL error) on: duplicate menuName
+  # (case-insensitive), and on updateMenu setting a MAIN_MENU's isActive to
+  # false while any of its SUB_MENU children has isActive: true. Server
+  # generates `id` and the authoritative `menuKey` (slug of menuName,
+  # de-duplicated if needed).
+  createMenu(input: MenuInput!): Menu!
+  updateMenu(id: ID!, input: MenuInput!): Menu!
+}
