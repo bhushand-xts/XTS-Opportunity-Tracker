@@ -1,18 +1,22 @@
 import { gql } from "@apollo/client";
 
+// Fields match the real backend's Role type (roles.typeDefs.ts) exactly.
+// assignedUserIds is deliberately NOT queried here — the backend doesn't
+// define it yet (it's "populated by User Role Assignment once it exists",
+// per api-contracts/src/role.ts); it stays undefined on the real backend
+// path, which is fine since no UI currently reads it.
 const ROLE_FIELDS = gql`
   fragment RoleFields on Role {
     id
     roleName
     roleCode
     isActive
-    assignedUserIds
   }
 `;
 
 export const GET_ROLES = gql`
   query GetRoles {
-    roles {
+    rolesList {
       ...RoleFields
     }
   }
@@ -20,7 +24,7 @@ export const GET_ROLES = gql`
 `;
 
 export const CREATE_ROLE = gql`
-  mutation CreateRole($input: RoleInput!) {
+  mutation CreateRole($input: CreateRoleInput!) {
     createRole(input: $input) {
       ...RoleFields
     }
@@ -29,7 +33,7 @@ export const CREATE_ROLE = gql`
 `;
 
 export const UPDATE_ROLE = gql`
-  mutation UpdateRole($id: ID!, $input: RoleInput!) {
+  mutation UpdateRole($id: Int!, $input: UpdateRoleInput!) {
     updateRole(id: $id, input: $input) {
       ...RoleFields
     }
@@ -38,7 +42,7 @@ export const UPDATE_ROLE = gql`
 `;
 
 export const DELETE_ROLE = gql`
-  mutation DeleteRole($id: ID!) {
+  mutation DeleteRole($id: Int!) {
     deleteRole(id: $id)
   }
 `;

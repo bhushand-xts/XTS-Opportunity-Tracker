@@ -14,6 +14,9 @@ export interface AuthPayload {
   user: AuthUser;
 }
 
+// Not GraphQL `input` types — the real login/register mutations take flat
+// arguments (see auth.graphql), not a single wrapped `input` object. These
+// just type the variables passed to the mutation on the client side.
 export interface LoginInput {
   email: string;
   password: string;

@@ -21,10 +21,10 @@ export function useRoleMutations() {
 
   const [updateRoleMutation, { loading: updating }] = useMutation<
     UpdateRoleResult,
-    { id: string; input: RoleInput }
+    { id: number; input: RoleInput }
   >(UPDATE_ROLE, { refetchQueries: [GET_ROLES] });
 
-  const [deleteRoleMutation, { loading: deleting }] = useMutation<DeleteRoleResult, { id: string }>(DELETE_ROLE, {
+  const [deleteRoleMutation, { loading: deleting }] = useMutation<DeleteRoleResult, { id: number }>(DELETE_ROLE, {
     refetchQueries: [GET_ROLES],
   });
 
@@ -41,7 +41,7 @@ export function useRoleMutations() {
 
   async function updateRole(id: string, input: RoleInput): Promise<boolean> {
     try {
-      await updateRoleMutation({ variables: { id, input } });
+      await updateRoleMutation({ variables: { id: Number(id), input } });
       toast.success("Role updated successfully.");
       return true;
     } catch (error) {
@@ -52,7 +52,7 @@ export function useRoleMutations() {
 
   async function deleteRole(id: string): Promise<boolean> {
     try {
-      await deleteRoleMutation({ variables: { id } });
+      await deleteRoleMutation({ variables: { id: Number(id) } });
       toast.success("Role deleted successfully.");
       return true;
     } catch (error) {

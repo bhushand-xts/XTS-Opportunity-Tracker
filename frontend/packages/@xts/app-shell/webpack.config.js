@@ -1,5 +1,6 @@
 ﻿const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
+const Dotenv = require("dotenv-webpack");
 const { container } = require("webpack");
 
 module.exports = {
@@ -75,6 +76,16 @@ module.exports = {
     }),
     new HtmlWebpackPlugin({
       template: "./src/index.html",
+    }),
+    // `defaults` guarantees process.env.GRAPHQL_API_URL always gets replaced
+    // at build time (via .env.example's value) even when frontend/.env
+    // doesn't exist — without it, a missing .env would leave the literal
+    // text "process.env.GRAPHQL_API_URL" in the bundle, which throws
+    // "process is not defined" in the browser at runtime.
+    new Dotenv({
+      path: path.resolve(__dirname, "../../../.env"),
+      defaults: path.resolve(__dirname, "../../../.env.example"),
+      systemvars: true,
     }),
   ],
 };

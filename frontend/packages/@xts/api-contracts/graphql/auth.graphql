@@ -24,28 +24,16 @@ type AuthPayload {
   user: AuthUser!
 }
 
-input LoginInput {
-  email: String!
-  password: String!
-}
-
-input RegisterInput {
-  firstName: String!
-  lastName: String!
-  email: String!
-  password: String!
-}
-
 type Mutation {
   # Server must reject (GraphQL error) on: no user with this email, or a
   # password mismatch. Error message is shown to the user as-is, so keep it
   # generic ("Invalid email or password.") — don't reveal which part failed.
-  login(input: LoginInput!): AuthPayload!
+  login(email: String!, password: String!): AuthPayload!
 
   # Server must reject (GraphQL error) on: duplicate email (case-insensitive).
   # New users are created with status PENDING and no roles — they gain
   # access once an admin assigns a role (see role-menu-permission.graphql /
   # the future User Role Assignment mutation), which should also flip
   # status to APPROVED.
-  registerUser(input: RegisterInput!): AuthPayload!
+  register(firstName: String!, lastName: String!, email: String!, password: String!): AuthPayload!
 }

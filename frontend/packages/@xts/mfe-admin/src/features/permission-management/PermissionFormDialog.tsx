@@ -1,72 +1,37 @@
-import { useEffect } from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import type { Permission, PermissionInput } from "@xts/api-contracts";
 import {
+  Alert,
+  AlertDescription,
   Button,
-  Checkbox,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-  Input,
 } from "@xts/design-system";
-import { permissionFormSchema, type PermissionFormValues } from "./permission.schema";
+import type { PermissionListItem } from "./usePermissions";
 import { usePermissionMutations } from "./usePermissionMutations";
 
 export function PermissionFormDialog({
   open,
   onOpenChange,
   permission,
-  allPermissions,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  permission: Permission | null;
-  allPermissions: Permission[];
+  permission: PermissionListItem | null;
 }) {
   const isEdit = permission !== null;
-  const { createPermission, updatePermission, saving } = usePermissionMutations();
+  const { createPermission, updatePermission } = usePermissionMutations();
 
-  const form = useForm<PermissionFormValues>({
-    resolver: zodResolver(permissionFormSchema),
-    defaultValues: { permissionName: "", isActive: true },
-  });
-
-  useEffect(() => {
-    if (!open) return;
-    form.reset(
-      permission
-        ? { permissionName: permission.permissionName, isActive: permission.isActive }
-        : { permissionName: "", isActive: true }
-    );
-  }, [open, permission, form]);
-
-  async function onSubmit(values: PermissionFormValues) {
-    const duplicate = allPermissions.some(
-      (p) =>
-        p.id !== permission?.id &&
-        p.permissionName.trim().toLowerCase() === values.permissionName.trim().toLowerCase()
-    );
-    if (duplicate) {
-      form.setError("permissionName", { message: `A permission named "${values.permissionName}" already exists.` });
-      return;
-    }
-
-    const input: PermissionInput = {
-      permissionName: values.permissionName.trim(),
-      isActive: values.isActive,
-    };
-
-    const ok = isEdit ? await updatePermission(permission.id, input) : await createPermission(input);
+  // There is nothing meaningful to submit — the backend has no permission
+  // mutations, and the real Permissions type currently only carries `id`,
+  // so there are no fields here to edit. This stays wired to the (no-op)
+  // mutation hooks — defense in depth alongside the disabled Save button
+  // below — so any attempt to save still surfaces the "not available" toast
+  // rather than doing nothing silently.
+  async function handleSave() {
+    const ok = isEdit ? await updatePermission() : await createPermission();
     if (ok) onOpenChange(false);
   }
 
@@ -80,46 +45,21 @@ export function PermissionFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Form {...form}>
-          <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-            <FormField
-              control={form.control}
-              name="permissionName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Permission Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. menu.create" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+        <Alert>
+          <AlertDescription>
+            This feature isn&apos;t available yet — the backend hasn&apos;t implemented permission create/update. The real
+            Permissions type currently only exposes an id, so there are no fields to edit here.
+          </AlertDescription>
+        </Alert>
 
-            <FormField
-              control={form.control}
-              name="isActive"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center gap-2 space-y-0">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <FormLabel className="!mt-0">Active</FormLabel>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                Save
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+          <Button type="button" disabled onClick={handleSave}>
+            Save
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

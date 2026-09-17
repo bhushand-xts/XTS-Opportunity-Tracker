@@ -16,7 +16,7 @@ import { useMutation } from "@apollo/client";
 import { useSyncExternalStore } from "react";
 import type { AuthPayload } from "@xts/api-contracts";
 import type { Role } from "./mock-data";
-import { LOGIN, REGISTER_USER } from "./auth.queries";
+import { LOGIN, REGISTER } from "./auth.queries";
 
 export type AppPermission = "dashboard" | "admin" | "opportunity" | "solution" | "approval";
 
@@ -53,15 +53,20 @@ const STORAGE_KEY = "authState";
 function stateFromPayload({ user, token }: AuthPayload): AuthState {
   return {
     session: { userId: user.id, email: user.email, token },
+    // The real backend's User type has no status/roles yet (mst_user has
+    // is_active: boolean and a single role_id, not this richer shape) — the
+    // GraphQL query no longer requests them (see auth.queries.ts), so they
+    // can't be read off `user` here without silently going undefined at
+    // runtime despite AuthUser's type claiming they're always present.
+    // Synthesize safe defaults until the backend exposes the real values:
+    // status always passes the approval gate, roles stays empty (no
+    // role-based behavior yet).
     profile: {
       first_name: user.firstName,
       last_name: user.lastName,
-      status: user.status.toLowerCase() as Profile["status"],
+      status: "approved",
     },
-    // The contract keeps roles backend-generic (string[]) since a real
-    // backend owns them; this app only ever seeds/receives its own known
-    // Role literals, so narrowing here is safe.
-    roles: user.roles as Role[],
+    roles: [],
   };
 }
 
@@ -112,11 +117,11 @@ function messageFrom(error: unknown): string {
 
 export function useAuth() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_STATE);
-  const [loginMutation] = useMutation<{ login: AuthPayload }, { input: { email: string; password: string } }>(LOGIN);
+  const [loginMutation] = useMutation<{ login: AuthPayload }, { email: string; password: string }>(LOGIN);
   const [registerMutation] = useMutation<
-    { registerUser: AuthPayload },
-    { input: { firstName: string; lastName: string; email: string; password: string } }
-  >(REGISTER_USER);
+    { register: AuthPayload },
+    { firstName: string; lastName: string; email: string; password: string }
+  >(REGISTER);
 
   return {
     loading: false,
@@ -134,7 +139,7 @@ export function useAuth() {
         return { ok: false, error: "Please enter a valid email" };
       }
       try {
-        const { data } = await loginMutation({ variables: { input: { email: email.trim(), password } } });
+        const { data } = await loginMutation({ variables: { email: email.trim(), password } });
         if (!data) throw new Error("No response from server.");
         persistSession(data.login);
         return { ok: true };
@@ -151,12 +156,10 @@ export function useAuth() {
       }
       try {
         const { data } = await registerMutation({
-          variables: {
-            input: { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), password },
-          },
+          variables: { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), password },
         });
         if (!data) throw new Error("No response from server.");
-        persistSession(data.registerUser);
+        persistSession(data.register);
         return { ok: true };
       } catch (error) {
         return { ok: false, error: messageFrom(error) };

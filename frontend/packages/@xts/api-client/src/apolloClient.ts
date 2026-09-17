@@ -4,16 +4,19 @@ import { createMockLink } from "./mockLink";
 
 /**
  * The entire backend cutover is this one flag. Flip to `false` once the
- * backend team has a real GraphQL endpoint, and set GRAPHQL_API_URL below
- * to its actual address (e.g. "http://localhost:4000/graphql" if it runs
- * on its own origin during dev — a bare "/graphql" only works if the
- * backend is reverse-proxied under the same origin as the frontend, or if
- * webpack-dev-server's `proxy` option forwards it) — nothing in any
- * feature's useQuery/useMutation calls needs to change.
+ * backend team has a real GraphQL endpoint — nothing in any feature's
+ * useQuery/useMutation calls needs to change.
  */
-export const USE_MOCK_GRAPHQL = true;
+export const USE_MOCK_GRAPHQL = false;
 
-const GRAPHQL_API_URL = "/graphql";
+// Overridable via frontend/.env's GRAPHQL_API_URL (see frontend/.env.example)
+// — injected at build time by each app's webpack config via dotenv-webpack.
+// Defaults to the common case: gateway running locally alongside this app.
+// A bare "/graphql" only works if the backend is reverse-proxied under the
+// same origin as the frontend, or if webpack-dev-server's `proxy` option
+// forwards it — this default is an absolute URL instead, so it works
+// without either of those.
+const GRAPHQL_API_URL = process.env.GRAPHQL_API_URL || "http://localhost:4000/graphql";
 
 // Not read via @xts/design-system's auth.ts to avoid a circular package
 // dependency (design-system already depends on api-client) — "authState"

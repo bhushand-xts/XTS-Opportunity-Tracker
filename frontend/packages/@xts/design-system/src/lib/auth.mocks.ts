@@ -37,7 +37,7 @@ function toPayload(user: MockUser): AuthPayload & { __typename?: "AuthPayload" }
 }
 
 registerMockResolver("Login", (variables) => {
-  const { email, password } = variables.input as LoginInput;
+  const { email, password } = variables as unknown as LoginInput;
   const user = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
   if (!user || user.password !== password) {
     throw new Error("Invalid email or password.");
@@ -45,8 +45,8 @@ registerMockResolver("Login", (variables) => {
   return { login: toPayload(user) };
 });
 
-registerMockResolver("RegisterUser", (variables) => {
-  const input = variables.input as RegisterInput;
+registerMockResolver("Register", (variables) => {
+  const input = variables as unknown as RegisterInput;
   const clash = users.some((u) => u.email.toLowerCase() === input.email.trim().toLowerCase());
   if (clash) {
     throw new Error("An account with this email already exists.");
@@ -66,5 +66,5 @@ registerMockResolver("RegisterUser", (variables) => {
     password: input.password,
   };
   users = [...users, user];
-  return { registerUser: toPayload(user) };
+  return { register: toPayload(user) };
 });
