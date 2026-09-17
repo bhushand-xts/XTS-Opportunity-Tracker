@@ -1,0 +1,14 @@
+{
+  "name": "xts-backend",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "graphql": "16.10.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n gateway,user,opportunity,admin \"npm run dev --prefix gateway\" \"npm run dev --prefix services/user\" \"npm run dev --prefix services/opportunity\" \"npm run dev --prefix services/admin\""
+  }
+}
