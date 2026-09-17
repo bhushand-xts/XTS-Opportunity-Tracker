@@ -54,15 +54,17 @@ has its own `.env.example` in that same folder — copy it to `.env` in that
 exact folder (not the repo root, not `backend/`) and fill in `DB_PASSWORD`.
 Each service's `.env` is read from wherever `npm run dev` is invoked FROM.
 
-Run each service's own DDL once, against its own database. The team's
-shared dev Postgres server (see each `.env.example`) currently names these
-`user_db` / `admin_db` / `opportunity_db` — adjust if you're pointing at a
-different Postgres instance using the `xts_*` convention the schema.sql
-files were originally written against:
+On the team's shared dev Postgres server, user/auth tables (`mst_user`,
+`auth_session`) live inside the SAME database as admin's — there is no
+separate user database, confirmed via Adminer against the live server.
+Opportunity's database is named `opportunity_tracker`, not `opportunity_db`.
+(See each `.env.example` for the exact current names — this is what's
+actually provisioned today, not necessarily what schema.sql's own comments
+describe as the intended eventual database-per-service split.)
 
-    createdb user_db        && psql -d user_db        -f database/services/user/schema.sql
-    createdb admin_db       && psql -d admin_db       -f database/services/admin/schema.sql
-    createdb opportunity_db && psql -d opportunity_db -f database/services/opportunity/schema.sql
+    createdb admin_db          && psql -d admin_db          -f database/services/user/schema.sql
+    psql -d admin_db -f database/services/admin/schema.sql
+    createdb opportunity_tracker && psql -d opportunity_tracker -f database/services/opportunity/schema.sql
 
 (`account` and `estimation` have schema files too, but no service implements
 them yet — see gateway/src/config/services.ts, only user/admin/opportunity

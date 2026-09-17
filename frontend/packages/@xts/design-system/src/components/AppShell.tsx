@@ -269,7 +269,10 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   const [helpOpen, setHelpOpen] = useState(false);
   const pageTitle = usePageTitle();
 
-  const displayRole = roles[0] ? ROLE_LABEL[roles[0]] : "Pending access";
+  // roles is always [] against the real backend today (no role-name lookup
+  // exposed via GraphQL yet — only an unresolved role_id) — this label
+  // describes "no role name available," not an account-approval state.
+  const displayRole = roles[0] ? ROLE_LABEL[roles[0]] : "No role assigned";
   const displayName = profile ? `${profile.first_name} ${profile.last_name}` : currentUser.name;
   const initials = profile ? `${profile.first_name[0] ?? ""}${profile.last_name[0] ?? ""}`.toUpperCase() : currentUser.initials;
 
