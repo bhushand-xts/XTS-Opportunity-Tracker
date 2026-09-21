@@ -49,26 +49,16 @@ Each service is its own npm project.
 
     npm run install:all
 
-Each of `gateway/`, `services/user/`, `services/admin/`, `services/opportunity/`
-has its own `.env.example` in that same folder — copy it to `.env` in that
-exact folder (not the repo root, not `backend/`) and fill in `DB_PASSWORD`.
-Each service's `.env` is read from wherever `npm run dev` is invoked FROM.
+Then copy .env.example into each service folder as .env and set the port.
 
-On the team's shared dev Postgres server, user/auth tables (`mst_user`,
-`auth_session`) live inside the SAME database as admin's — there is no
-separate user database, confirmed via Adminer against the live server.
-Opportunity's database is named `opportunity_tracker`, not `opportunity_db`.
-(See each `.env.example` for the exact current names — this is what's
-actually provisioned today, not necessarily what schema.sql's own comments
-describe as the intended eventual database-per-service split.)
+Run each service's own DDL once, against its own database:
 
-    createdb admin_db          && psql -d admin_db          -f database/services/user/schema.sql
-    psql -d admin_db -f database/services/admin/schema.sql
-    createdb opportunity_tracker && psql -d opportunity_tracker -f database/services/opportunity/schema.sql
-
-(`account` and `estimation` have schema files too, but no service implements
-them yet — see gateway/src/config/services.ts, only user/admin/opportunity
-are wired into the gateway's composition currently.)
+    createdb xts_user       && psql -d xts_user       -f database/services/user/schema.sql
+    createdb xts_account    && psql -d xts_account    -f database/services/account/schema.sql
+    createdb xts_opportunity && psql -d xts_opportunity -f database/services/opportunity/schema.sql
+    createdb xts_estimation && psql -d xts_estimation -f database/services/estimation/schema.sql
+    createdb xts_admin      && psql -d xts_admin      -f database/services/admin/schema.sql
+    createdb xts            # shared DB for the remaining services (no schema yet)
 
 Start each service in its own terminal:
 

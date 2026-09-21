@@ -34,12 +34,16 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const service = __importStar(require("../../services/user.service"));
+const authService = __importStar(require("../../services/auth.service"));
 // Keep business logic OUT of resolvers.
 exports.default = {
     Query: {
         userList: (_, args, ctx) => service.list(args, ctx),
         usersByRoleCount: (_, args) => service.countByRole(args.roleId),
     },
-    Mutation: {},
+    Mutation: {
+        register: (_, args) => authService.register(args.firstName, args.lastName, args.email, args.password),
+        login: (_, args) => authService.login(args.email, args.password),
+    },
 };
 //# sourceMappingURL=user.resolver.js.map
