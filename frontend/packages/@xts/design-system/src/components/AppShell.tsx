@@ -7,6 +7,7 @@ import {
   CircleHelp,
   Key,
   LayoutDashboard,
+  Link2,
   List,
   Plus,
   Search,
@@ -74,6 +75,7 @@ const ADMIN_NAV: NavGroup[] = [
     items: [
       { label: "Menu Master", to: "/admin/menu-management/menu-master", icon: Table2 },
       { label: "Permission Master", to: "/admin/menu-management/permission-master", icon: Key },
+      { label: "Menu Permission Mapping", to: "/admin/menu-management/menu-permission-mapping", icon: Link2 },
     ],
   },
   {

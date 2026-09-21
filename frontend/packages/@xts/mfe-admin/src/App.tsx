@@ -6,6 +6,7 @@ import { LoginView, RegistrationPendingView, Toaster, useAuth, type LoginMode } 
 import { AdminOverview } from "./components/AdminOverview";
 import { PlaceholderPage } from "./components/PlaceholderPage";
 import { MenuMasterPage } from "./features/menu-management/MenuMasterPage";
+import { MenuPermissionMappingPage } from "./features/menu-permission-mapping/MenuPermissionMappingPage";
 import { PermissionMasterPage } from "./features/permission-management/PermissionMasterPage";
 import { RoleMasterPage } from "./features/role-management/RoleMasterPage";
 import { RoleMenuPermissionAssignmentPage } from "./features/role-menu-permission-assignment/RoleMenuPermissionAssignmentPage";
@@ -75,6 +76,7 @@ function AdminRoutes() {
       <Route index element={<AdminOverview />} />
       <Route path="menu-management/menu-master" element={<MenuMasterPage />} />
       <Route path="menu-management/permission-master" element={<PermissionMasterPage />} />
+      <Route path="menu-management/menu-permission-mapping" element={<MenuPermissionMappingPage />} />
       <Route path="user-management/role-master" element={<RoleMasterPage />} />
       <Route
         path="user-management/role-menu-permission-assignment"

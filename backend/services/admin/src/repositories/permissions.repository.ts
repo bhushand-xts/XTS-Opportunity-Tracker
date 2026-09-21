@@ -278,7 +278,7 @@ export class PermissionsRepository {
           p.updated_by AS "updatedBy",
           p.is_active AS "isActive"
 
-        FROM tbl_menu_permission mp
+        FROM tbl_menuwise_permission mp
 
         INNER JOIN mst_permissions p
           ON p.permission_id = mp.permission_id
@@ -316,7 +316,7 @@ export class PermissionsRepository {
           mp.updated_dt AS "updatedDt",
           mp.updated_by AS "updatedBy"
 
-        FROM tbl_menu_permission mp
+        FROM tbl_menuwise_permission mp
 
         INNER JOIN mst_menus m
           ON m.menu_id = mp.menu_id
@@ -388,7 +388,7 @@ export class PermissionsRepository {
 
     await query(
       `
-      DELETE FROM tbl_menu_permission
+      DELETE FROM tbl_menuwise_permission
       WHERE menu_id = $1
       `,
       [menuId]
@@ -398,7 +398,7 @@ export class PermissionsRepository {
 
       await query(
         `
-        INSERT INTO tbl_menu_permission
+        INSERT INTO tbl_menuwise_permission
         (
           menu_id,
           permission_id,
