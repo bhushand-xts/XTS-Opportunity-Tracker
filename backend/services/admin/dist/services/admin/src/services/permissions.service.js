@@ -1,42 +1,83 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.list = list;
-const repository = __importStar(require("../repositories/permissions.repository"));
-// Business rules and use-case logic for permissions.
-async function list(args, ctx) {
-    return repository.findAll();
+exports.PermissionsService = void 0;
+const permissions_validator_1 = require("../validators/permissions.validator");
+class PermissionsService {
+    constructor(repository) {
+        this.repository = repository;
+    }
+    // --------------------------------------------------
+    // PERMISSION MANAGEMENT
+    // --------------------------------------------------
+    async getPermissions() {
+        return this.repository.findAll();
+    }
+    async getPermission(permissionId) {
+        return this.repository.findById(permissionId);
+    }
+    async createPermission(input) {
+        (0, permissions_validator_1.validateCreatePermission)(input);
+        const existing = await this.repository.findByKey(input.permissionKey.trim());
+        if (existing) {
+            throw new Error("A permission with this permission key already exists.");
+        }
+        return this.repository.create(input);
+    }
+    async updatePermission(permissionId, input) {
+        (0, permissions_validator_1.validateUpdatePermission)(input);
+        const existing = await this.repository.findById(permissionId);
+        if (!existing) {
+            throw new Error("Permission not found.");
+        }
+        if (input.permissionKey !== undefined &&
+            input.permissionKey.trim() !==
+                existing.permissionKey) {
+            const duplicate = await this.repository.findByKey(input.permissionKey.trim());
+            if (duplicate &&
+                duplicate.permissionId !== permissionId) {
+                throw new Error("A permission with this permission key already exists.");
+            }
+        }
+        return this.repository.update(permissionId, input);
+    }
+    async togglePermissionStatus(permissionId, isActive, updatedBy) {
+        const permission = await this.repository.findById(permissionId);
+        if (!permission) {
+            throw new Error("Permission not found.");
+        }
+        return this.repository.updateStatus(permissionId, isActive, updatedBy);
+    }
+    // --------------------------------------------------
+    // MENU-PERMISSION MAPPING
+    // --------------------------------------------------
+    async getMenuListForMapping() {
+        return this.repository.getMenuListForMapping();
+    }
+    async getMenuPermissions(menuId) {
+        const menuExists = await this.repository.menuExists(menuId);
+        if (!menuExists) {
+            throw new Error("Menu not found.");
+        }
+        return this.repository.getMenuPermissions(menuId);
+    }
+    async getMenuPermissionMappings() {
+        return this.repository.getMenuPermissionMappings();
+    }
+    async saveMenuPermissions(menuId, permissionIds, updatedBy) {
+        (0, permissions_validator_1.validateMenuPermissionMapping)(menuId, permissionIds, updatedBy);
+        const menuExists = await this.repository.menuExists(menuId);
+        if (!menuExists) {
+            throw new Error("Menu not found.");
+        }
+        for (const permissionId of permissionIds) {
+            const permissionExists = await this.repository.permissionExists(permissionId);
+            if (!permissionExists) {
+                throw new Error("Permission not found.");
+            }
+        }
+        await this.repository.saveMenuPermissions(menuId, permissionIds, updatedBy);
+        return this.repository.getMenuPermissions(menuId);
+    }
 }
+exports.PermissionsService = PermissionsService;
 //# sourceMappingURL=permissions.service.js.map

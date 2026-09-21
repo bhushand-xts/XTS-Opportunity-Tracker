@@ -32,13 +32,15 @@ const role_permissions_resolver_1 = __importDefault(require("./graphql/resolvers
 const roles_resolver_1 = __importDefault(require("./graphql/resolvers/roles.resolver"));
 const stages_resolver_1 = __importDefault(require("./graphql/resolvers/stages.resolver"));
 const sub_stages_resolver_1 = __importDefault(require("./graphql/resolvers/sub-stages.resolver"));
+const access_typeDefs_1 = __importDefault(require("./graphql/typeDefs/access.typeDefs"));
+const access_resolver_1 = __importDefault(require("./graphql/resolvers/access.resolver"));
 // Administration — master data and access control
 const base = `
   type Query { _empty: String }
   type Mutation { _empty: String }
 `;
-const typeDefs = [base, menus_typeDefs_1.default, permissions_typeDefs_1.default, phases_typeDefs_1.default, proposal_sections_typeDefs_1.default, rate_master_typeDefs_1.default, reason_codes_typeDefs_1.default, role_menu_typeDefs_1.default, role_permissions_typeDefs_1.default, roles_typeDefs_1.default, stages_typeDefs_1.default, sub_stages_typeDefs_1.default];
-const parts = [menus_resolver_1.default, permissions_resolver_1.default, phases_resolver_1.default, proposal_sections_resolver_1.default, rate_master_resolver_1.default, reason_codes_resolver_1.default, role_menu_resolver_1.default, role_permissions_resolver_1.default, roles_resolver_1.default, stages_resolver_1.default, sub_stages_resolver_1.default];
+const typeDefs = [base, menus_typeDefs_1.default, permissions_typeDefs_1.default, phases_typeDefs_1.default, proposal_sections_typeDefs_1.default, rate_master_typeDefs_1.default, reason_codes_typeDefs_1.default, role_menu_typeDefs_1.default, role_permissions_typeDefs_1.default, roles_typeDefs_1.default, stages_typeDefs_1.default, sub_stages_typeDefs_1.default, access_typeDefs_1.default];
+const parts = [menus_resolver_1.default, permissions_resolver_1.default, phases_resolver_1.default, proposal_sections_resolver_1.default, rate_master_resolver_1.default, reason_codes_resolver_1.default, role_menu_resolver_1.default, role_permissions_resolver_1.default, roles_resolver_1.default, stages_resolver_1.default, sub_stages_resolver_1.default, access_resolver_1.default];
 const resolvers = parts.reduce((acc, p) => ({
     Query: { ...acc.Query, ...(p.Query || {}) },
     Mutation: { ...acc.Mutation, ...(p.Mutation || {}) },

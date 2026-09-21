@@ -1,44 +1,65 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
-const service = __importStar(require("../../services/menus.service"));
-// Keep business logic OUT of resolvers.
-exports.default = {
+exports.menuResolvers = void 0;
+const graphql_1 = require("graphql");
+const menus_repository_1 = require("../../repositories/menus.repository");
+const menus_service_1 = require("../../services/menus.service");
+const service = new menus_service_1.MenusService(new menus_repository_1.MenusRepository());
+function handleError(error) {
+    const message = error instanceof Error ? error.message : "Internal server error.";
+    throw new graphql_1.GraphQLError(message, {
+        extensions: {
+            code: message.includes("not found")
+                ? "NOT_FOUND"
+                : "BAD_USER_INPUT"
+        }
+    });
+}
+exports.menuResolvers = {
     Query: {
-        menusList: (_, args, ctx) => service.list(args, ctx),
+        menus: async (_, args) => {
+            try {
+                return await service.getMenus(args.asTree ?? false);
+            }
+            catch (error) {
+                return handleError(error);
+            }
+        },
+        menu: async (_, args) => {
+            try {
+                return await service.getMenu(args.menuId);
+            }
+            catch (error) {
+                return handleError(error);
+            }
+        }
     },
-    Mutation: {},
+    Mutation: {
+        createMenu: async (_, args) => {
+            try {
+                return await service.createMenu(args.input);
+            }
+            catch (error) {
+                return handleError(error);
+            }
+        },
+        updateMenu: async (_, args) => {
+            try {
+                return await service.updateMenu(args.menuId, args.input);
+            }
+            catch (error) {
+                return handleError(error);
+            }
+        },
+        toggleMenuStatus: async (_, args) => {
+            try {
+                return await service.toggleMenuStatus(args.menuId, args.isActive, args.updatedBy);
+            }
+            catch (error) {
+                return handleError(error);
+            }
+        }
+    }
 };
+exports.default = exports.menuResolvers;
 //# sourceMappingURL=menus.resolver.js.map

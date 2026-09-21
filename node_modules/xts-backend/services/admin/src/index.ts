@@ -31,6 +31,11 @@ import rolesResolvers from './graphql/resolvers/roles.resolver';
 import stagesResolvers from './graphql/resolvers/stages.resolver';
 import subStagesResolvers from './graphql/resolvers/sub-stages.resolver';
 
+
+
+import accessTypes from './graphql/typeDefs/access.typeDefs';
+import accessResolvers from './graphql/resolvers/access.resolver';
+
 // Administration — master data and access control
 
 const base = `
@@ -38,9 +43,9 @@ const base = `
   type Mutation { _empty: String }
 `;
 
-const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, roleMenuTypes, rolePermissionsTypes, rolesTypes, stagesTypes, subStagesTypes];
+const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, roleMenuTypes, rolePermissionsTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes];
 
-const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, roleMenuResolvers, rolePermissionsResolvers, rolesResolvers, stagesResolvers, subStagesResolvers];
+const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, roleMenuResolvers, rolePermissionsResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers];
 const resolvers = parts.reduce(
   (acc: any, p: any) => ({
     Query: { ...acc.Query, ...(p.Query || {}) },

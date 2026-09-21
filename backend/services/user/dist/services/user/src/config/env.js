@@ -17,6 +17,7 @@ const env = {
         password: required('DB_PASSWORD'),
         max: Number(process.env.DB_POOL_MAX || 10),
     },
+    adminServiceUrl: process.env.ADMIN_SERVICE_URL || 'http://localhost:4010/graphql',
 };
 exports.default = env;
 //# sourceMappingURL=env.js.map
