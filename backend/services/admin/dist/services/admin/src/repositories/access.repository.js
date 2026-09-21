@@ -48,14 +48,14 @@ class AccessRepository {
       `, [roleId, menuId]);
         return result;
     }
-    // Permissions available to tick for a given menu (sourced from tbl_menu_permission)
+    // Permissions available to tick for a given menu (sourced from tbl_menuwise_permission)
     async getAvailablePermissionsForMenu(menuId) {
         const result = await (0, db_1.query)(`
       SELECT
         p.permission_id AS "permissionId",
         p.permission_name AS "permissionName",
         p.permission_key AS "permissionKey"
-      FROM tbl_menu_permission mp
+      FROM tbl_menuwise_permission mp
       INNER JOIN mst_permissions p ON p.permission_id = mp.permission_id
       WHERE mp.menu_id = $1 AND mp.is_active = TRUE
       ORDER BY p.permission_name ASC
@@ -72,7 +72,7 @@ class AccessRepository {
     }
     // Only allow ticking permissions that are actually valid for this menu
     async permissionValidForMenu(menuId, permissionId) {
-        const result = await (0, db_1.query)(`SELECT 1 FROM tbl_menu_permission WHERE menu_id = $1 AND permission_id = $2 AND is_active = TRUE`, [menuId, permissionId]);
+        const result = await (0, db_1.query)(`SELECT 1 FROM tbl_menuwise_permission WHERE menu_id = $1 AND permission_id = $2 AND is_active = TRUE`, [menuId, permissionId]);
         return result.length > 0;
     }
     async addRoleMenuPermissions(roleId, menuId, permissionIds, updatedBy) {

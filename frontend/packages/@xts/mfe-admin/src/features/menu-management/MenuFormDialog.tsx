@@ -1,38 +1,113 @@
+import { useEffect } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
 import {
-  Alert,
-  AlertDescription,
   Button,
+  Checkbox,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@xts/design-system";
-import type { MenuListItem } from "./useMenus";
+import { menuFormSchema, NO_PARENT_MENU, type MenuFormValues } from "./menu.schema";
 import { useMenuMutations } from "./useMenuMutations";
+import type { Menu } from "./useMenus";
 
 export function MenuFormDialog({
   open,
   onOpenChange,
   menu,
+  allMenus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  menu: MenuListItem | null;
+  menu: Menu | null;
+  allMenus: Menu[];
 }) {
   const isEdit = menu !== null;
-  const { createMenu, updateMenu } = useMenuMutations();
+  const { createMenu, updateMenu, toggleMenuStatus, saving } = useMenuMutations();
 
-  // There is nothing meaningful to submit — the backend has no menu
-  // mutations, and the real Menu type currently only carries `id`, so there
-  // are no fields here to edit. This stays wired to the (no-op) mutation
-  // hooks — defense in depth alongside the disabled Save button below — so
-  // any attempt to save still surfaces the "not available" toast rather
-  // than doing nothing silently.
-  async function handleSave() {
-    const ok = isEdit ? await updateMenu() : await createMenu();
-    if (ok) onOpenChange(false);
+  const form = useForm<MenuFormValues>({
+    resolver: zodResolver(menuFormSchema),
+    defaultValues: {
+      menuName: "",
+      menuKey: "",
+      icon: "",
+      parentId: NO_PARENT_MENU,
+      sortOrder: 1,
+      isActive: true,
+    },
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    form.reset(
+      menu
+        ? {
+            menuName: menu.menuName,
+            menuKey: menu.menuKey,
+            icon: menu.icon ?? "",
+            parentId: menu.parentId != null ? String(menu.parentId) : NO_PARENT_MENU,
+            sortOrder: menu.sortOrder,
+            isActive: menu.isActive,
+          }
+        : { menuName: "", menuKey: "", icon: "", parentId: NO_PARENT_MENU, sortOrder: 1, isActive: true }
+    );
+  }, [open, menu, form]);
+
+  // Excludes the menu being edited from the Parent Menu options — a menu
+  // can't be its own parent. (Deeper cycle checks, e.g. picking a
+  // descendant as parent, are left to the backend since children isn't
+  // queried here — see menu.queries.ts.)
+  const parentOptions = allMenus.filter((m) => m.menuId !== menu?.menuId);
+
+  async function onSubmit(values: MenuFormValues) {
+    const parentId = values.parentId && values.parentId !== NO_PARENT_MENU ? Number(values.parentId) : null;
+    const icon = values.icon?.trim() ? values.icon.trim() : null;
+
+    if (isEdit) {
+      const updated = await updateMenu(menu.menuId, {
+        menuName: values.menuName.trim(),
+        menuKey: values.menuKey.trim(),
+        icon,
+        parentId,
+        sortOrder: values.sortOrder,
+      });
+      if (!updated) return;
+
+      // isActive isn't part of UpdateMenuInput — the backend only exposes it
+      // through the separate toggleMenuStatus mutation, so apply it here
+      // only when the checkbox actually changed the value.
+      if (values.isActive !== menu.isActive) {
+        const toggled = await toggleMenuStatus(menu.menuId, values.isActive);
+        if (!toggled) return;
+      }
+      onOpenChange(false);
+      return;
+    }
+
+    const created = await createMenu({
+      menuName: values.menuName.trim(),
+      menuKey: values.menuKey.trim(),
+      icon,
+      parentId,
+      sortOrder: values.sortOrder,
+    });
+    if (created) onOpenChange(false);
   }
 
   return (
@@ -45,21 +120,116 @@ export function MenuFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Alert>
-          <AlertDescription>
-            This feature isn&apos;t available yet — the backend hasn&apos;t implemented menu create/update. The real Menu
-            type currently only exposes an id, so there are no fields to edit here.
-          </AlertDescription>
-        </Alert>
+        <Form {...form}>
+          <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+            <FormField
+              control={form.control}
+              name="menuName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Menu Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. Dashboard" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-          <Button type="button" disabled onClick={handleSave}>
-            Save
-          </Button>
-        </DialogFooter>
+            <FormField
+              control={form.control}
+              name="menuKey"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Menu Key</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. dashboard" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="icon"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Icon</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. LayoutDashboard" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="parentId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Parent Menu</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="No parent" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value={NO_PARENT_MENU}>No parent</SelectItem>
+                      {parentOptions.map((option) => (
+                        <SelectItem key={option.menuId} value={String(option.menuId)}>
+                          {option.menuName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="sortOrder"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Sort Order</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {isEdit && (
+              <FormField
+                control={form.control}
+                name="isActive"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                    <FormLabel className="!mt-0">Active</FormLabel>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

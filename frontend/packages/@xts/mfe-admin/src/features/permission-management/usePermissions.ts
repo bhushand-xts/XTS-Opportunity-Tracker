@@ -1,21 +1,28 @@
 import { useQuery } from "@apollo/client";
-import type { Permission } from "@xts/api-contracts";
 import { GET_PERMISSIONS } from "./permission.queries";
 
-// The real backend's Permissions type only has `id` today (see
-// permission.queries.ts) — intentionally not the full `Permission` shape
-// from @xts/api-contracts.
-export type PermissionListItem = Pick<Permission, "id">;
+// Matches the real backend's Permission type (permissions.typeDefs.ts) exactly.
+export interface Permission {
+  permissionId: number;
+  permissionName: string;
+  permissionKey: string;
+  description: string | null;
+  createdDt: string;
+  createdBy: number;
+  updatedDt: string | null;
+  updatedBy: number | null;
+  isActive: boolean;
+}
 
 interface GetPermissionsResult {
-  permissionsList: PermissionListItem[];
+  permissions: Permission[];
 }
 
 export function usePermissions() {
   const { data, loading, error, refetch } = useQuery<GetPermissionsResult>(GET_PERMISSIONS);
 
   return {
-    permissions: data?.permissionsList ?? [],
+    permissions: data?.permissions ?? [],
     loading,
     error,
     refetch,

@@ -1,37 +1,36 @@
 import { gql } from "@apollo/client";
 
+// Fields match the real backend's Menu type (menus.typeDefs.ts) exactly.
+// `children` deliberately isn't queried here — it's a recursive field that
+// would let a query request unbounded depth; menus are always fetched flat
+// (asTree: false) and rendered as a flat table, same as Role Master.
 const MENU_FIELDS = gql`
   fragment MenuFields on Menu {
-    id
+    menuId
     menuName
-    menuType
-    parentMenuId
-    icon
-    displayOrder
     menuKey
+    icon
+    parentId
+    sortOrder
+    createdDt
+    createdBy
+    updatedDt
+    updatedBy
     isActive
   }
 `;
 
-// Real backend query: the backend's `menus.typeDefs.ts` is still a stub —
-// `type Menus { id: Int! }` with a bare `menusList` query — so `id` is the
-// only field that actually exists server-side today.
 export const GET_MENUS = gql`
   query GetMenus {
-    menusList {
-      id
+    menus(asTree: false) {
+      ...MenuFields
     }
   }
+  ${MENU_FIELDS}
 `;
 
-// NOTE: The backend has no create/update/delete mutations for menus at all
-// (menus resolvers export an empty `Mutation: {}`) — these don't correspond
-// to any real backend operation and are never sent (see useMenuMutations.ts,
-// which is wired to no-ops). Left here as dead code, using the full field
-// set the UI will eventually need, for whenever the backend implements menu
-// mutations.
 export const CREATE_MENU = gql`
-  mutation CreateMenu($input: MenuInput!) {
+  mutation CreateMenu($input: CreateMenuInput!) {
     createMenu(input: $input) {
       ...MenuFields
     }
@@ -40,8 +39,18 @@ export const CREATE_MENU = gql`
 `;
 
 export const UPDATE_MENU = gql`
-  mutation UpdateMenu($id: ID!, $input: MenuInput!) {
-    updateMenu(id: $id, input: $input) {
+  mutation UpdateMenu($menuId: Int!, $input: UpdateMenuInput!) {
+    updateMenu(menuId: $menuId, input: $input) {
+      ...MenuFields
+    }
+  }
+  ${MENU_FIELDS}
+`;
+
+// There is no delete mutation for menus — only a soft toggle of isActive.
+export const TOGGLE_MENU_STATUS = gql`
+  mutation ToggleMenuStatus($menuId: Int!, $isActive: Boolean!, $updatedBy: Int!) {
+    toggleMenuStatus(menuId: $menuId, isActive: $isActive, updatedBy: $updatedBy) {
       ...MenuFields
     }
   }
