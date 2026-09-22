@@ -10,8 +10,12 @@ export function RegistrationPendingView({
   onSignOut: () => void;
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-6 py-16">
-      <div className="w-full max-w-sm">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-6 py-16">
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-24 -top-24 size-96 rounded-full bg-brand-from/20 blur-3xl" />
+        <div className="absolute -bottom-24 -right-24 size-96 rounded-full bg-brand-to/20 blur-3xl" />
+      </div>
+      <div className="relative w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-4 text-center">
           <div className="grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-brand-from to-brand-to shadow-lg">
             <Clock className="size-7 text-brand-foreground" />

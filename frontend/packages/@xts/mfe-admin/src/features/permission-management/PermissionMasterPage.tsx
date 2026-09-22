@@ -1,9 +1,16 @@
 import { useState } from "react";
-import { Pencil, Plus } from "lucide-react";
+import { Key, Pencil, Plus } from "lucide-react";
 import {
   Button,
   Card,
   CardContent,
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  PageHeader,
   Switch,
   Table,
   TableBody,
@@ -11,6 +18,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSkeletonRows,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PermissionFormDialog } from "./PermissionFormDialog";
@@ -35,13 +43,16 @@ export function PermissionMasterPage() {
 
   return (
     <div className="space-y-4 p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Manage module-level access and action permissions.</p>
-        <Button onClick={openAdd}>
-          <Plus className="mr-2 size-4" />
-          Add
-        </Button>
-      </div>
+      <PageHeader
+        icon={Key}
+        description="Manage module-level access and action permissions."
+        actions={
+          <Button onClick={openAdd}>
+            <Plus className="mr-2 size-4" />
+            Add
+          </Button>
+        }
+      />
 
       <Card>
         <CardContent className="pt-6">
@@ -57,17 +68,25 @@ export function PermissionMasterPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
-                    Loading permissions…
-                  </TableCell>
-                </TableRow>
-              )}
+              {loading && <TableSkeletonRows columns={5} />}
               {!loading && permissions.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
-                    No permissions yet.
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={5} className="p-0">
+                    <Empty>
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <Key />
+                        </EmptyMedia>
+                        <EmptyTitle>No permissions yet</EmptyTitle>
+                        <EmptyDescription>Add a permission to start managing module-level access.</EmptyDescription>
+                      </EmptyHeader>
+                      <EmptyContent>
+                        <Button size="sm" onClick={openAdd}>
+                          <Plus className="mr-2 size-4" />
+                          Add Permission
+                        </Button>
+                      </EmptyContent>
+                    </Empty>
                   </TableCell>
                 </TableRow>
               )}

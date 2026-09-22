@@ -122,47 +122,65 @@ export function MenuFormDialog({
 
         <Form {...form}>
           <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-            <FormField
-              control={form.control}
-              name="menuName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Menu Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. Dashboard" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="menuName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Menu Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Dashboard" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="menuKey"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Menu Key</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. dashboard" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="menuKey"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Menu Key</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. dashboard" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
-            <FormField
-              control={form.control}
-              name="icon"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Icon</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. LayoutDashboard" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="icon"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Icon</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. LayoutDashboard" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="sortOrder"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sort Order</FormLabel>
+                    <FormControl>
+                      <Input type="number" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <FormField
               control={form.control}
@@ -185,20 +203,6 @@ export function MenuFormDialog({
                       ))}
                     </SelectContent>
                   </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="sortOrder"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Sort Order</FormLabel>
-                  <FormControl>
-                    <Input type="number" {...field} />
-                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

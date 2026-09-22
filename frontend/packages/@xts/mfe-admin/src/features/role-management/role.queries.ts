@@ -41,6 +41,10 @@ export const UPDATE_ROLE = gql`
   ${ROLE_FIELDS}
 `;
 
+// Intentionally unused — the backend's deleteRole still hard-deletes the
+// row. The UI uses updateRole with isActive: false instead (a soft
+// deactivate), so this never gets called. Left here in case the backend
+// switches to a soft delete later and this becomes safe to wire up again.
 export const DELETE_ROLE = gql`
   mutation DeleteRole($id: Int!) {
     deleteRole(id: $id)

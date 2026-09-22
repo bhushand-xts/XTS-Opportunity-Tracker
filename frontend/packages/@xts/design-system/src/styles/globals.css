@@ -24,13 +24,20 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
+    /* Re-derived from the app's own neutral palette (--muted/--primary/
+       --border) rather than shadcn's default zinc-gray sidebar recipe —
+       those used hue 0/240 (true/violet gray) while every other neutral
+       surface in the app (border, muted, secondary, accent) sits in the
+       210-214° blue-gray family matching --brand-from. The sidebar used
+       to be drawn from a visibly different gray than the rest of the UI;
+       this ties it into the same palette instead of a separate one. */
+    --sidebar-background: 210 40% 98%;
+    --sidebar-foreground: 222.2 47.4% 11.2%;
+    --sidebar-primary: 222.2 47.4% 11.2%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
     --sidebar-ring: 217.2 91.2% 59.8%;
     /* AppShell rail + pipeline-funnel tokens, ported with AppShell/DashboardContent */
     --rail: 222.2 47.4% 11.2%;

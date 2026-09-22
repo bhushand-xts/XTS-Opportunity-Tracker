@@ -96,33 +96,35 @@ export function PermissionFormDialog({
 
         <Form {...form}>
           <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-            <FormField
-              control={form.control}
-              name="permissionName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Permission Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. Menu View" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="permissionName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Permission Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Menu View" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="permissionKey"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Permission Key</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. menu.view" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="permissionKey"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Permission Key</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. menu.view" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <FormField
               control={form.control}

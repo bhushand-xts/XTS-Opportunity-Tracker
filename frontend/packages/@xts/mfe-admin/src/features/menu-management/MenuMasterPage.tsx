@@ -1,9 +1,16 @@
 import { useState } from "react";
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, Table2 } from "lucide-react";
 import {
   Button,
   Card,
   CardContent,
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  PageHeader,
   Switch,
   Table,
   TableBody,
@@ -11,6 +18,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSkeletonRows,
   useSetPageTitle,
 } from "@xts/design-system";
 import { MenuFormDialog } from "./MenuFormDialog";
@@ -35,13 +43,16 @@ export function MenuMasterPage() {
 
   return (
     <div className="space-y-4 p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Configure the application&apos;s navigation menu entries.</p>
-        <Button onClick={openAdd}>
-          <Plus className="mr-2 size-4" />
-          Add
-        </Button>
-      </div>
+      <PageHeader
+        icon={Table2}
+        description="Configure the application's navigation menu entries."
+        actions={
+          <Button onClick={openAdd}>
+            <Plus className="mr-2 size-4" />
+            Add
+          </Button>
+        }
+      />
 
       <Card>
         <CardContent className="pt-6">
@@ -58,17 +69,25 @@ export function MenuMasterPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
-                    Loading menus…
-                  </TableCell>
-                </TableRow>
-              )}
+              {loading && <TableSkeletonRows columns={6} />}
               {!loading && menus.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
-                    No menu entries yet.
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={6} className="p-0">
+                    <Empty>
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <Table2 />
+                        </EmptyMedia>
+                        <EmptyTitle>No menus yet</EmptyTitle>
+                        <EmptyDescription>Get started by adding your first navigation menu entry.</EmptyDescription>
+                      </EmptyHeader>
+                      <EmptyContent>
+                        <Button size="sm" onClick={openAdd}>
+                          <Plus className="mr-2 size-4" />
+                          Add Menu
+                        </Button>
+                      </EmptyContent>
+                    </Empty>
                   </TableCell>
                 </TableRow>
               )}

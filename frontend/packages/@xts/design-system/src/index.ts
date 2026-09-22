@@ -72,6 +72,7 @@ export * from "./components/DashboardContent";
 export * from "./components/LogActivityModal";
 export * from "./components/LoginView";
 export * from "./components/NewOpportunityDialog";
+export * from "./components/PageHeader";
 export * from "./components/RegistrationPendingView";
 
 export * from "./lib/auth";

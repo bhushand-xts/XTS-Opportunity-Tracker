@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { Skeleton } from "@/components/ui/skeleton"
 
 const Table = React.forwardRef<
   HTMLTableElement,
@@ -20,7 +21,7 @@ const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => (
-  <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />
+  <thead ref={ref} className={cn("[&_tr]:border-b [&_tr]:bg-muted/40", className)} {...props} />
 ))
 TableHeader.displayName = "TableHeader"
 
@@ -108,6 +109,26 @@ const TableCaption = React.forwardRef<
 ))
 TableCaption.displayName = "TableCaption"
 
+/** Skeleton placeholder rows for a table's loading state — `columns` should
+ * match the table's real <TableHead> count so the shimmer lines up. Widths
+ * vary per column so the row doesn't read as one uniform gray bar. */
+function TableSkeletonRows({ rows = 4, columns }: { rows?: number; columns: number }) {
+  const widths = ["70%", "45%", "60%", "35%", "55%", "40%"]
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, r) => (
+        <TableRow key={r} className="hover:bg-transparent">
+          {Array.from({ length: columns }).map((_, c) => (
+            <TableCell key={c}>
+              <Skeleton className="h-4" style={{ width: widths[c % widths.length] }} />
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </>
+  )
+}
+
 export {
   Table,
   TableHeader,
@@ -117,4 +138,5 @@ export {
   TableRow,
   TableCell,
   TableCaption,
+  TableSkeletonRows,
 }

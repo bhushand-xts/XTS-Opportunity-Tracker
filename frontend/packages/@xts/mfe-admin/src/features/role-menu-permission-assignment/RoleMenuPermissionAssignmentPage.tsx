@@ -1,14 +1,22 @@
 import { useEffect, useState } from "react";
+import { Share2 } from "lucide-react";
 import {
   Button,
   Card,
   CardContent,
   Checkbox,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  PageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
   useSetPageTitle,
 } from "@xts/design-system";
 import { useRoles } from "../role-management/useRoles";
@@ -72,7 +80,7 @@ export function RoleMenuPermissionAssignmentPage() {
 
   return (
     <div className="space-y-4 p-5">
-      <p className="text-sm text-muted-foreground">Map menus and granular permissions to a functional role.</p>
+      <PageHeader icon={Share2} description="Map menus and granular permissions to a functional role." />
 
       <Card>
         <CardContent className="space-y-4 pt-6">
@@ -112,15 +120,24 @@ export function RoleMenuPermissionAssignmentPage() {
             </div>
           </div>
 
-          {roleId && menuId && (
+          {roleId && menuId ? (
             <>
-              {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+              {loading && (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 rounded-md" />
+                  ))}
+                </div>
+              )}
 
               {!loading && (
                 <div>
                   <p className="mb-2 text-sm font-medium">Permissions</p>
                   {availablePermissions.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No permissions are configured for this menu.</p>
+                    <Empty className="py-8">
+                      <EmptyTitle>No permissions configured</EmptyTitle>
+                      <EmptyDescription>This menu has no permissions defined yet.</EmptyDescription>
+                    </Empty>
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       {availablePermissions.map((permission) => {
@@ -154,6 +171,16 @@ export function RoleMenuPermissionAssignmentPage() {
                 </Button>
               </div>
             </>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Share2 />
+                </EmptyMedia>
+                <EmptyTitle>Select a role and menu</EmptyTitle>
+                <EmptyDescription>Choose a role and menu above to view and manage its permissions.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
         </CardContent>
       </Card>

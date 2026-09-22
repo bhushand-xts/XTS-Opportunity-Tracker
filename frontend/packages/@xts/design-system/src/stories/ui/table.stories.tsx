@@ -7,6 +7,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSkeletonRows,
 } from "../../components/ui/table";
 
 const meta = {
@@ -45,6 +46,26 @@ export const Default: Story = {
             <TableCell className="text-right">{opportunity.value}</TableCell>
           </TableRow>
         ))}
+      </TableBody>
+    </Table>
+  ),
+};
+
+/** Placeholder rows for a table's loading state — used by every Admin
+ * Master screen instead of a plain "Loading…" text row. */
+export const Loading: Story = {
+  render: () => (
+    <Table className="w-[500px]">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead>Stage</TableHead>
+          <TableHead>Owner</TableHead>
+          <TableHead className="text-right">Value</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        <TableSkeletonRows columns={4} />
       </TableBody>
     </Table>
   ),

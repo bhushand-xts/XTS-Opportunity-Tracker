@@ -174,7 +174,7 @@ function AdminNavGroup({ group, pathname }: { group: NavGroup; pathname: string 
                   <Link
                     to={item.to}
                     className={cn(
-                      "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                      "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sidebar-ring",
                       active
                         ? "bg-rail-active/15 font-medium text-rail-active"
                         : "text-sidebar-foreground hover:bg-sidebar-accent",
