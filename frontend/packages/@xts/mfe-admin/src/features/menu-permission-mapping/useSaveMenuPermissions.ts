@@ -1,7 +1,11 @@
 import { useMutation } from "@apollo/client";
 import { toast } from "sonner";
 import { useAuth } from "@xts/design-system";
-import { GET_MENU_PERMISSIONS, SAVE_MENU_PERMISSIONS } from "./menuPermissionMapping.queries";
+import {
+  GET_ALL_MENU_PERMISSION_MAPPINGS,
+  GET_MENU_PERMISSIONS,
+  SAVE_MENU_PERMISSIONS,
+} from "./menuPermissionMapping.queries";
 import type { MenuPermissionMappingPermission } from "./useMenuPermissions";
 
 export interface MenuPermissionMappingInput {
@@ -44,7 +48,10 @@ export function useSaveMenuPermissions() {
     try {
       await saveMenuPermissionsMutation({
         variables: { input: { menuId, permissionIds, updatedBy } },
-        refetchQueries: [{ query: GET_MENU_PERMISSIONS, variables: { menuId } }],
+        refetchQueries: [
+          { query: GET_MENU_PERMISSIONS, variables: { menuId } },
+          { query: GET_ALL_MENU_PERMISSION_MAPPINGS },
+        ],
       });
       toast.success("Menu permissions updated successfully.");
       return true;

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { Share2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pencil, Share2 } from "lucide-react";
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -11,6 +12,7 @@ import {
   EmptyMedia,
   EmptyTitle,
   PageHeader,
+  ScrollArea,
   Select,
   SelectContent,
   SelectItem,
@@ -21,6 +23,7 @@ import {
 } from "@xts/design-system";
 import { useRoles } from "../role-management/useRoles";
 import { useMenus } from "../menu-management/useMenus";
+import { useAllRoleAccess } from "./useAllRoleAccess";
 import { useRoleMenuPermissions } from "./useRoleMenuPermissions";
 import { useSaveRoleMenuPermissions } from "./useSaveRoleMenuPermissions";
 
@@ -38,9 +41,54 @@ export function RoleMenuPermissionAssignmentPage() {
 
   const [roleId, setRoleId] = useState<string>();
   const [menuId, setMenuId] = useState<string>();
+  const editorRef = useRef<HTMLDivElement>(null);
 
   const { availablePermissions, grantedPermissionIds, loading, error } = useRoleMenuPermissions(roleId, menuId);
   const { saveRoleMenuPermissions, saving } = useSaveRoleMenuPermissions();
+
+  const activeRoleIds = useMemo(() => activeRoles.map((r) => Number(r.id)), [activeRoles]);
+  const {
+    rows: allGrants,
+    loading: grantsLoading,
+    error: grantsError,
+    refetch: refetchAllGrants,
+  } = useAllRoleAccess(activeRoleIds);
+  const roleNameById = useMemo(() => new Map(activeRoles.map((r) => [Number(r.id), r.roleName])), [activeRoles]);
+
+  // All grants, grouped Role -> Menu -> permissions, for the overview below.
+  const grantsByRoleAndMenu = useMemo(() => {
+    const byRole = new Map<
+      number,
+      { roleId: number; roleName: string; menus: Map<number, { menuId: number; menuName: string; permissions: { permissionId: number; permissionName: string; permissionKey: string }[] }> }
+    >();
+    for (const grant of allGrants) {
+      const role = byRole.get(grant.roleId) ?? {
+        roleId: grant.roleId,
+        roleName: roleNameById.get(grant.roleId) ?? `Role ${grant.roleId}`,
+        menus: new Map(),
+      };
+      const menu = role.menus.get(grant.menuId) ?? { menuId: grant.menuId, menuName: grant.menuName, permissions: [] };
+      menu.permissions.push({
+        permissionId: grant.permissionId,
+        permissionName: grant.permissionName,
+        permissionKey: grant.permissionKey,
+      });
+      role.menus.set(grant.menuId, menu);
+      byRole.set(grant.roleId, role);
+    }
+    return [...byRole.values()]
+      .map((role) => ({ ...role, menus: [...role.menus.values()].sort((a, b) => a.menuName.localeCompare(b.menuName)) }))
+      .sort((a, b) => a.roleName.localeCompare(b.roleName));
+  }, [allGrants, roleNameById]);
+
+  // Used by the overview's Edit buttons — selects the role+menu above AND
+  // scrolls the editor into view, since the overview can sit well below it
+  // once the list is long.
+  const editAssignment = (roleIdToEdit: number, menuIdToEdit: number) => {
+    setRoleId(String(roleIdToEdit));
+    setMenuId(String(menuIdToEdit));
+    editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   // The checkbox selection, seeded from the currently-granted permissions
   // whenever the role/menu selection changes or the granted set changes
@@ -76,13 +124,14 @@ export function RoleMenuPermissionAssignmentPage() {
       originalPermissionIds: grantedPermissionIds,
       selectedPermissionIds: checkedIds,
     });
+    await refetchAllGrants();
   };
 
   return (
     <div className="space-y-4 p-5">
       <PageHeader icon={Share2} description="Map menus and granular permissions to a functional role." />
 
-      <Card>
+      <Card ref={editorRef}>
         <CardContent className="space-y-4 pt-6">
           {error && <p className="text-sm text-destructive">{error.message}</p>}
 
@@ -145,7 +194,7 @@ export function RoleMenuPermissionAssignmentPage() {
                         return (
                           <label
                             key={permission.permissionId}
-                            className="flex items-center gap-2 rounded-md border p-2 text-sm"
+                            className="flex items-center gap-2 rounded-md border p-2 text-sm transition-colors hover:bg-muted/50"
                           >
                             <Checkbox
                               checked={checked}
@@ -182,6 +231,59 @@ export function RoleMenuPermissionAssignmentPage() {
               </EmptyHeader>
             </Empty>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="space-y-3 pt-6">
+          <p className="text-sm font-medium">All role-menu-permission grants</p>
+          <p className="text-xs text-muted-foreground">
+            Every role with at least one granted permission. Use Edit to jump to it above.
+          </p>
+
+          {grantsError && <p className="text-sm text-destructive">{grantsError.message}</p>}
+          {grantsLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {!grantsLoading && grantsByRoleAndMenu.length === 0 && (
+            <p className="text-sm text-muted-foreground">No roles have any granted permissions yet.</p>
+          )}
+
+          <ScrollArea className="h-[420px] pr-4">
+            <div className="space-y-4">
+              {grantsByRoleAndMenu.map((role) => (
+                <div key={role.roleId} className="space-y-2">
+                  <p className="text-sm font-semibold">{role.roleName}</p>
+                  <div className="space-y-2 pl-3">
+                    {role.menus.map((menu) => (
+                      <div
+                        key={menu.menuId}
+                        className="rounded-md border p-3 transition-colors hover:bg-muted/50"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{menu.menuName}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Edit ${role.roleName} permissions for ${menu.menuName}`}
+                            onClick={() => editAssignment(role.roleId, menu.menuId)}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {menu.permissions.map((permission) => (
+                            <Badge key={permission.permissionId} variant="secondary">
+                              {permission.permissionName}
+                              <span className="ml-1 text-muted-foreground">({permission.permissionKey})</span>
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
         </CardContent>
       </Card>
     </div>

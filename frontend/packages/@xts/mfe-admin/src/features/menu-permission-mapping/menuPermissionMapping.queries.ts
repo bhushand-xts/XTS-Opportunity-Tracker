@@ -47,3 +47,19 @@ export const SAVE_MENU_PERMISSIONS = gql`
   }
   ${MENU_PERMISSION_FIELDS}
 `;
+
+// Every mapping across every menu, names already joined in — powers the
+// overview list so additions are visible without picking each menu one by
+// one from the selector above.
+export const GET_ALL_MENU_PERMISSION_MAPPINGS = gql`
+  query GetAllMenuPermissionMappings {
+    menuPermissionMappings {
+      id
+      menuId
+      permissionId
+      menuName
+      permissionName
+      permissionKey
+    }
+  }
+`;

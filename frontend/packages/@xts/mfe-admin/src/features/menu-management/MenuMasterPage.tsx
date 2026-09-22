@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pencil, Plus, Table2 } from "lucide-react";
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -22,6 +23,7 @@ import {
   useSetPageTitle,
 } from "@xts/design-system";
 import { MenuFormDialog } from "./MenuFormDialog";
+import { buildMenuTree } from "./menu.utils";
 import { useMenuMutations } from "./useMenuMutations";
 import { useMenus, type Menu } from "./useMenus";
 
@@ -31,6 +33,11 @@ export function MenuMasterPage() {
   const { toggleMenuStatus, saving } = useMenuMutations();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMenu, setEditingMenu] = useState<Menu | null>(null);
+
+  // Hierarchy order (each parent immediately followed by its children) with
+  // a depth for indentation — a view over the existing flat menu list, not
+  // new data.
+  const treeRows = useMemo(() => buildMenuTree(menus), [menus]);
 
   const openAdd = () => {
     setEditingMenu(null);
@@ -61,6 +68,7 @@ export function MenuMasterPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Menu Name</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Menu Key</TableHead>
                 <TableHead>Icon</TableHead>
                 <TableHead>Sort Order</TableHead>
@@ -69,10 +77,10 @@ export function MenuMasterPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && <TableSkeletonRows columns={6} />}
+              {loading && <TableSkeletonRows columns={7} />}
               {!loading && menus.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="p-0">
+                  <TableCell colSpan={7} className="p-0">
                     <Empty>
                       <EmptyHeader>
                         <EmptyMedia variant="icon">
@@ -91,9 +99,19 @@ export function MenuMasterPage() {
                   </TableCell>
                 </TableRow>
               )}
-              {menus.map((menu) => (
+              {treeRows.map(({ menu, depth }) => (
                 <TableRow key={menu.menuId}>
-                  <TableCell className="font-medium">{menu.menuName}</TableCell>
+                  <TableCell className="font-medium">
+                    <span style={{ paddingLeft: `${depth * 1.5}rem` }} className="flex items-center gap-1.5">
+                      {depth > 0 && <span className="text-muted-foreground">└</span>}
+                      {menu.menuName}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={menu.parentId === null ? "default" : "outline"}>
+                      {menu.parentId === null ? "Main" : "Sub"}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{menu.menuKey}</TableCell>
                   <TableCell className="text-muted-foreground">{menu.icon ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">{menu.sortOrder}</TableCell>
