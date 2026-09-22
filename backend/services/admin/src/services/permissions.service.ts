@@ -1,6 +1,7 @@
 import {
   PermissionsRepository,
   PermissionRecord,
+  PermissionHistoryRecord,
   MenuPermissionMappingRecord
 } from "../repositories/permissions.repository";
 
@@ -34,6 +35,16 @@ export class PermissionsService {
   ): Promise<PermissionRecord | null> {
 
     return this.repository.findById(
+      permissionId
+    );
+  }
+
+
+  async getPermissionHistory(
+    permissionId: number
+  ): Promise<PermissionHistoryRecord[]> {
+
+    return this.repository.findHistory(
       permissionId
     );
   }

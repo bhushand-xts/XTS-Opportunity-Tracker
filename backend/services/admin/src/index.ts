@@ -7,14 +7,13 @@ import { expressMiddleware } from '@apollo/server/express4';
 import { buildSubgraphSchema } from '@apollo/subgraph';
 
 import env from './config/env';
+import { buildContext } from './graphql/context';
 import menusTypes from './graphql/typeDefs/menus.typeDefs';
 import permissionsTypes from './graphql/typeDefs/permissions.typeDefs';
 import phasesTypes from './graphql/typeDefs/phases.typeDefs';
 import proposalSectionsTypes from './graphql/typeDefs/proposal-sections.typeDefs';
 import rateMasterTypes from './graphql/typeDefs/rate-master.typeDefs';
 import reasonCodesTypes from './graphql/typeDefs/reason-codes.typeDefs';
-import roleMenuTypes from './graphql/typeDefs/role-menu.typeDefs';
-import rolePermissionsTypes from './graphql/typeDefs/role-permissions.typeDefs';
 import rolesTypes from './graphql/typeDefs/roles.typeDefs';
 import stagesTypes from './graphql/typeDefs/stages.typeDefs';
 
@@ -25,8 +24,6 @@ import phasesResolvers from './graphql/resolvers/phases.resolver';
 import proposalSectionsResolvers from './graphql/resolvers/proposal-sections.resolver';
 import rateMasterResolvers from './graphql/resolvers/rate-master.resolver';
 import reasonCodesResolvers from './graphql/resolvers/reason-codes.resolver';
-import roleMenuResolvers from './graphql/resolvers/role-menu.resolver';
-import rolePermissionsResolvers from './graphql/resolvers/role-permissions.resolver';
 import rolesResolvers from './graphql/resolvers/roles.resolver';
 import stagesResolvers from './graphql/resolvers/stages.resolver';
 import subStagesResolvers from './graphql/resolvers/sub-stages.resolver';
@@ -43,9 +40,9 @@ const base = `
   type Mutation { _empty: String }
 `;
 
-const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, roleMenuTypes, rolePermissionsTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes];
+const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes];
 
-const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, roleMenuResolvers, rolePermissionsResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers];
+const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers];
 const resolvers = parts.reduce(
   (acc: any, p: any) => ({
     Query: { ...acc.Query, ...(p.Query || {}) },
@@ -62,7 +59,7 @@ async function start() {
 
   const server = new ApolloServer({ schema });
   await server.start();
-  app.use('/graphql', expressMiddleware(server));
+  app.use('/graphql', expressMiddleware(server, { context: async ({ req }) => buildContext({ req }) }));
 
   app.get('/health', (req, res) => res.json({ status: 'ok', service: 'admin' }));
 

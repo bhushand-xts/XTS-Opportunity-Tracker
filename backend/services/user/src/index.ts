@@ -37,7 +37,17 @@ async function start() {
 
   const server = new ApolloServer({ schema });
   await server.start();
-  app.use('/graphql', expressMiddleware(server));
+  app.use(
+    '/graphql',
+    expressMiddleware(server, {
+      // Who is calling: the login token if the caller sent one, and the user id the
+      // gateway has already verified and passed on (`x-user-id`).
+      context: async ({ req }) => ({
+        token: req.header('authorization')?.replace(/^Bearer\s+/i, '') || undefined,
+        verifiedUserId: Number(req.header('x-user-id')) || undefined,
+      }),
+    })
+  );
 
   app.get('/login', (_req, res) =>
     res.sendFile(path.join(process.cwd(), 'src', 'public', 'login.html'))

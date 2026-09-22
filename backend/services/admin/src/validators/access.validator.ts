@@ -44,6 +44,6 @@ export function validateRoleMenuPermissionMapping(
     !Number.isInteger(updatedBy) ||
     updatedBy <= 0
   ) {
-    throw new Error("A valid updatedBy is required.");
+    throw new Error("You must be signed in to make changes.");
   }
 }

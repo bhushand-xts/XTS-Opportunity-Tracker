@@ -10,6 +10,10 @@ async function list(args: Record<string, any>, ctx: unknown) {
   return repository.findAll();
 }
 
+async function history(roleId: number) {
+  return repository.findHistory(roleId);
+}
+
 async function get(id: number) {
   const role = await repository.findById(id);
   if (!role) throw notFound('Role not found');
@@ -27,7 +31,7 @@ async function create(input: RoleInput, ctx: any) {
     if (duplicateCode) throw conflict('A role with this code already exists');
   }
 
-  const userId = ctx?.user?.id ?? null;
+  const userId = ctx?.user?.id ?? input.createdBy ?? null;
   return repository.create(input, userId);
 }
 
@@ -47,11 +51,11 @@ async function update(id: number, input: Partial<RoleInput>, ctx: any) {
     if (duplicateCode) throw conflict('A role with this code already exists');
   }
 
-  const userId = ctx?.user?.id ?? null;
+  const userId = ctx?.user?.id ?? input.updatedBy ?? null;
   return repository.update(id, input, userId);
 }
 
-async function remove(id: number) {
+async function remove(id: number, userId: number | null = null) {
   const current = await repository.findById(id);
   if (!current) throw notFound('Role not found');
 
@@ -60,8 +64,8 @@ async function remove(id: number) {
     throw conflict('This role is assigned to one or more users and cannot be deleted');
   }
 
-  await repository.remove(id);
+  await repository.remove(id, userId);
   return true;
 }
 
-export { list, get, create, update, remove };
+export { list, get, history, create, update, remove };

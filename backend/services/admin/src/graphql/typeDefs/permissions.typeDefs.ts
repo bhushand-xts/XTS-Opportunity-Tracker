@@ -12,6 +12,20 @@ export const permissionTypeDefs = `#graphql
     isActive: Boolean!
   }
 
+  # One entry of a permission's change history (mst_permissions_tracker), newest first.
+  type PermissionHistory {
+    trackerId: Int!
+    permissionId: Int!
+    permissionName: String!
+    permissionKey: String!
+    description: String
+    isActive: Boolean!
+    createdDt: String!
+    createdBy: Int
+    updatedDt: String
+    updatedBy: Int
+  }
+
   type MenuForPermissionMapping {
     menuId: Int!
     menuName: String!
@@ -34,20 +48,20 @@ export const permissionTypeDefs = `#graphql
     permissionName: String!
     permissionKey: String!
     description: String
-    createdBy: Int!
+    createdBy: Int
   }
 
   input UpdatePermissionInput {
     permissionName: String
     permissionKey: String
     description: String
-    updatedBy: Int!
+    updatedBy: Int
   }
 
   input MenuPermissionMappingInput {
     menuId: Int!
     permissionIds: [Int!]!
-    updatedBy: Int!
+    updatedBy: Int
   }
 
   extend type Query {
@@ -57,6 +71,10 @@ export const permissionTypeDefs = `#graphql
     permission(
       permissionId: Int!
     ): Permission
+
+    permissionHistory(
+      permissionId: Int!
+    ): [PermissionHistory!]!
 
     menusForPermissionMapping:
       [MenuForPermissionMapping!]!
@@ -83,7 +101,7 @@ export const permissionTypeDefs = `#graphql
     togglePermissionStatus(
       permissionId: Int!
       isActive: Boolean!
-      updatedBy: Int!
+      updatedBy: Int
     ): Permission!
 
     saveMenuPermissions(

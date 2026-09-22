@@ -51,8 +51,15 @@ async function login(email: string, password: string): Promise<AuthResult> {
   return issueSession(user);
 }
 
+// The user a login token belongs to (null when there is no token or it is not valid).
+// Tokens are stored only as a SHA-256 hash, so hash the one we were given first.
+async function userIdFromToken(token: string | undefined): Promise<number | null> {
+  if (!token) return null;
+  return users.findUserIdByTokenHash(createHash('sha256').update(token).digest('hex'));
+}
+
 async function list(args: Record<string, any>, ctx: unknown) {
   return [];
 }
 
-export { list, register, login };
+export { list, register, login, userIdFromToken };

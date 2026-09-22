@@ -1,11 +1,14 @@
+// Quick DB connectivity check. Reads the same DB_* vars as the service.
+//   cd backend/services/admin && node test-db.js
+require("dotenv").config();
 const { Client } = require("pg");
 
 const client = new Client({
-  host: "172.16.80.28",
-  port: 5432,
-  database: "admin_db",
-  user: "opportunityuser",
-  password: "opportunityTracker",
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT || 5432),
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
   connectionTimeoutMillis: 10000,
 });
 
