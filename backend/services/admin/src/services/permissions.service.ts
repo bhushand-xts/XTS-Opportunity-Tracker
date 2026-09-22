@@ -68,6 +68,18 @@ export class PermissionsService {
       );
     }
 
+    const duplicateName =
+      await this.repository.findByName(
+        input.permissionName.trim()
+      );
+
+    if (duplicateName) {
+
+      throw new Error(
+        "A permission with this name already exists."
+      );
+    }
+
     return this.repository.create(input);
   }
 
@@ -109,6 +121,27 @@ export class PermissionsService {
 
         throw new Error(
           "A permission with this permission key already exists."
+        );
+      }
+    }
+
+    if (
+      input.permissionName !== undefined &&
+      input.permissionName.trim() !== existing.permissionName
+    ) {
+
+      const duplicateName =
+        await this.repository.findByName(
+          input.permissionName.trim()
+        );
+
+      if (
+        duplicateName &&
+        duplicateName.permissionId !== permissionId
+      ) {
+
+        throw new Error(
+          "A permission with this name already exists."
         );
       }
     }

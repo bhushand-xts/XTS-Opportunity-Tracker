@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@xts/design-system";
 import { NO_PARENT, menuFormSchema, type MenuFormValues } from "./menu.schema";
-import { ICON_OPTIONS, descendantIds, slugify } from "./menu.utils";
+import { ICON_OPTIONS, descendantIds, nextSortOrder, slugify } from "./menu.utils";
 import { useMenuMutations } from "./useMenuMutations";
 
 const EMPTY: MenuFormValues = { menuName: "", menuKey: "", icon: "", parentId: NO_PARENT, sortOrder: 1 };
@@ -65,9 +65,9 @@ export function MenuFormDialog({
             parentId: menu.parentId === null ? NO_PARENT : String(menu.parentId),
             sortOrder: menu.sortOrder,
           }
-        : { ...EMPTY, sortOrder: allMenus.length + 1 }
+        : EMPTY
     );
-  }, [open, menu, allMenus.length, form]);
+  }, [open, menu, form]);
 
   // While adding, suggest the key from the name until the key is edited by hand.
   const menuName = form.watch("menuName");
@@ -76,16 +76,50 @@ export function MenuFormDialog({
     form.setValue("menuKey", slugify(menuName, "_"), { shouldDirty: false });
   }, [isEdit, menuName, form]);
 
+  // While adding, suggest the next free sort order for whichever parent is
+  // selected, until the sort order is edited by hand.
+  const parentIdValue = form.watch("parentId");
+  useEffect(() => {
+    if (isEdit || form.formState.dirtyFields.sortOrder) return;
+    const parentId = parentIdValue === NO_PARENT ? null : Number(parentIdValue);
+    form.setValue("sortOrder", nextSortOrder(allMenus, parentId), { shouldDirty: false });
+  }, [isEdit, parentIdValue, allMenus, form]);
+
   async function onSubmit(values: MenuFormValues) {
+    const name = values.menuName.trim();
     const key = values.menuKey.trim();
+    const parentId = values.parentId === NO_PARENT ? null : Number(values.parentId);
+    // Menus/submenus are only compared for duplicates against their own
+    // siblings — the same name or sort order is fine under a different parent.
+    const siblings = allMenus.filter((m) => m.menuId !== menu?.menuId && m.parentId === parentId);
+
+    if (siblings.some((m) => m.menuName.trim().toLowerCase() === name.toLowerCase())) {
+      form.setError("menuName", {
+        message:
+          parentId === null
+            ? `A menu named "${name}" already exists.`
+            : `A submenu named "${name}" already exists under this parent.`,
+      });
+      return;
+    }
+
     if (allMenus.some((m) => m.menuId !== menu?.menuId && m.menuKey === key)) {
       form.setError("menuKey", { message: `The key "${key}" is already used by another menu.` });
       return;
     }
 
-    const parentId = values.parentId === NO_PARENT ? null : Number(values.parentId);
+    if (siblings.some((m) => m.sortOrder === values.sortOrder)) {
+      form.setError("sortOrder", {
+        message:
+          parentId === null
+            ? `Sort order ${values.sortOrder} is already used by another top-level menu.`
+            : `Sort order ${values.sortOrder} is already used by another submenu under this parent.`,
+      });
+      return;
+    }
+
     const details = {
-      menuName: values.menuName.trim(),
+      menuName: name,
       menuKey: key,
       icon: values.icon ? values.icon : null,
       sortOrder: values.sortOrder,

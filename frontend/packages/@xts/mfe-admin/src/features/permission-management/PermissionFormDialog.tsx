@@ -63,17 +63,27 @@ export function PermissionFormDialog({
   }, [isEdit, permissionName, form]);
 
   async function onSubmit(values: PermissionFormValues) {
+    const name = values.permissionName.trim();
     const key = values.permissionKey.trim();
-    const clash = allPermissions.some(
+
+    const nameClash = allPermissions.some(
+      (p) => p.permissionId !== permission?.permissionId && p.permissionName.trim().toLowerCase() === name.toLowerCase()
+    );
+    if (nameClash) {
+      form.setError("permissionName", { message: `A permission named "${name}" already exists.` });
+      return;
+    }
+
+    const keyClash = allPermissions.some(
       (p) => p.permissionId !== permission?.permissionId && p.permissionKey.toLowerCase() === key.toLowerCase()
     );
-    if (clash) {
+    if (keyClash) {
       form.setError("permissionKey", { message: `The key "${key}" is already used by another permission.` });
       return;
     }
 
     const details = {
-      permissionName: values.permissionName.trim(),
+      permissionName: name,
       permissionKey: key,
       description: values.description?.trim() || null,
     };
