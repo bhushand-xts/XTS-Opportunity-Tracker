@@ -8,7 +8,6 @@ Generated from the code in `gateway/`, `services/user`, `services/admin`, `servi
 | http://localhost:4001/graphql | **User service** (direct) | 3 queries, 3 mutations |
 | http://localhost:4010/graphql | **Admin service** (direct) | 20 queries, 12 mutations |
 | http://localhost:4003/graphql | Opportunity service (direct; not in the gateway by default) | 2 queries | 
-
 Use **4000** from the frontend. Use 4001 / 4010 to test one service on its own.
 
 ## How to call
