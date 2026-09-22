@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { CornerDownRight, Pencil, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CornerDownRight, Pencil, Plus, Search } from "lucide-react";
 import type { Menu } from "@xts/api-contracts";
 import {
   Button,
   Card,
   CardContent,
+  Input,
   Switch,
   Table,
   TableBody,
@@ -29,8 +30,15 @@ export function MenuMasterPage() {
   const { setMenuActive } = useMenuMutations();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMenu, setEditingMenu] = useState<Menu | null>(null);
+  const [search, setSearch] = useState("");
 
   const nameById = new Map(menus.map((m) => [m.menuId, m.menuName]));
+
+  const visibleRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(({ menu }) => `${menu.menuName} ${menu.menuKey}`.toLowerCase().includes(q));
+  }, [rows, search]);
 
   const openAdd = () => {
     setEditingMenu(null);
@@ -46,10 +54,22 @@ export function MenuMasterPage() {
       <PageHeader
         description="Configure the application's navigation menu entries and their hierarchy."
         actions={
-          <Button onClick={openAdd}>
-            <Plus className="mr-2 size-4" />
-            Add menu
-          </Button>
+          <>
+            <div className="relative w-64">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search menu name or key"
+                aria-label="Search menus"
+                className="pl-9"
+              />
+            </div>
+            <Button onClick={openAdd}>
+              <Plus className="mr-2 size-4" />
+              Add menu
+            </Button>
+          </>
         }
       />
 
@@ -73,7 +93,10 @@ export function MenuMasterPage() {
               {!loading && !error && rows.length === 0 && (
                 <TableEmptyRow columns={COLUMNS} message="No menus yet. Add the first one." />
               )}
-              {rows.map(({ menu, depth }) => {
+              {!loading && rows.length > 0 && visibleRows.length === 0 && (
+                <TableEmptyRow columns={COLUMNS} message="No menus match your search." />
+              )}
+              {visibleRows.map(({ menu, depth }) => {
                 const Icon = resolveIcon(menu.icon);
                 return (
                   <TableRow key={menu.menuId} className={menu.isActive ? undefined : "text-muted-foreground"}>
