@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useInRouterContext } from "reac
 import { getApolloClient } from "@xts/api-client";
 import { AppShell, AuthGate, Toaster } from "@xts/design-system";
 import { AdminOverview } from "./components/AdminOverview";
+import { EstimatePhaseMasterPage } from "./features/estimate-phase-management/EstimatePhaseMasterPage";
 import { MenuMasterPage } from "./features/menu-management/MenuMasterPage";
 import { MenuPermissionMappingPage } from "./features/menu-permission-mapping/MenuPermissionMappingPage";
 import { PermissionMasterPage } from "./features/permission-management/PermissionMasterPage";
@@ -16,6 +17,7 @@ function AdminRoutes() {
   return (
     <Routes>
       <Route index element={<AdminOverview />} />
+      <Route path="estimate-management/estimate-phase-master" element={<EstimatePhaseMasterPage />} />
       <Route path="menu-management/menu-master" element={<MenuMasterPage />} />
       <Route path="menu-management/permission-master" element={<PermissionMasterPage />} />
       <Route path="menu-management/menu-permission-mapping" element={<MenuPermissionMappingPage />} />
