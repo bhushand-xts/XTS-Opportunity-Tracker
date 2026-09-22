@@ -84,7 +84,7 @@ export class AccessService {
 
     const roleExists = await this.repository.roleExists(roleId);
     if (!roleExists) {
-      throw new Error("Role not found..");
+      throw new Error("Role not found....");
     }
 
     await this.repository.removeRoleMenuPermissions(roleId, menuId, permissionIds, updatedBy);
