@@ -1,10 +1,11 @@
 import { gql } from "@apollo/client";
 
 // Only fields the real backend's User type currently defines (id, email,
-// firstName, lastName) — it has no status/roles concept yet (mst_user has
-// is_active: boolean and a single role_id, not this richer shape). See
-// auth.ts's stateFromPayload for how profile.status/roles are synthesized
-// instead of read from the response.
+// firstName, lastName, roleId) — it has no status concept yet (mst_user has
+// is_active: boolean, not this richer shape). See auth.ts's stateFromPayload
+// for how profile.status is synthesized instead of read from the response.
+// roleId identifies a row in the admin service's mst_roles — resolved to a
+// display name separately via ROLE_NAME, since it lives in another subgraph.
 const AUTH_PAYLOAD_FIELDS = gql`
   fragment AuthPayloadFields on AuthPayload {
     token
@@ -13,6 +14,7 @@ const AUTH_PAYLOAD_FIELDS = gql`
       email
       firstName
       lastName
+      roleId
     }
   }
 `;
@@ -33,4 +35,13 @@ export const REGISTER = gql`
     }
   }
   ${AUTH_PAYLOAD_FIELDS}
+`;
+
+// The signed-in user's role name, resolved from the admin service by roleId.
+export const ROLE_NAME = gql`
+  query RoleName($id: Int!) {
+    role(id: $id) {
+      roleName
+    }
+  }
 `;

@@ -113,6 +113,64 @@ export class MenusRepository {
     return result[0] || null;
   }
 
+  async findByNameAndParent(
+    menuName: string,
+    parentId: number | null
+  ): Promise<MenuRecord | null> {
+
+    const result = await query<MenuRecord>(
+      `
+      SELECT
+        menu_id AS "menuId",
+        menu_name AS "menuName",
+        menu_key AS "menuKey",
+        icon,
+        parent_id AS "parentId",
+        sort_order AS "sortOrder",
+        created_dt AS "createdDt",
+        created_by AS "createdBy",
+        updated_dt AS "updatedDt",
+        updated_by AS "updatedBy",
+        is_active AS "isActive"
+      FROM mst_menus
+      WHERE LOWER(menu_name) = LOWER($1)
+        AND parent_id IS NOT DISTINCT FROM $2
+      `,
+      [menuName, parentId]
+    );
+
+    return result[0] || null;
+  }
+
+  async findBySortOrderAndParent(
+    sortOrder: number,
+    parentId: number | null
+  ): Promise<MenuRecord | null> {
+
+    const result = await query<MenuRecord>(
+      `
+      SELECT
+        menu_id AS "menuId",
+        menu_name AS "menuName",
+        menu_key AS "menuKey",
+        icon,
+        parent_id AS "parentId",
+        sort_order AS "sortOrder",
+        created_dt AS "createdDt",
+        created_by AS "createdBy",
+        updated_dt AS "updatedDt",
+        updated_by AS "updatedBy",
+        is_active AS "isActive"
+      FROM mst_menus
+      WHERE sort_order = $1
+        AND parent_id IS NOT DISTINCT FROM $2
+      `,
+      [sortOrder, parentId]
+    );
+
+    return result[0] || null;
+  }
+
   async hasActiveChildren(
     menuId: number
   ): Promise<boolean> {

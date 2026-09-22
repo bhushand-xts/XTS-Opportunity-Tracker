@@ -6,6 +6,7 @@ export interface AuthUser {
   email: string;
   firstName: string | null;
   lastName: string | null;
+  roleId: number | null;
 }
 
 export interface AuthPayload {

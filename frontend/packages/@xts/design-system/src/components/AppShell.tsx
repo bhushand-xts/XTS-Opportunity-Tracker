@@ -47,7 +47,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ROLE_LABEL, useAuth, type AppPermission } from "@/lib/auth";
+import { useAuth, type AppPermission } from "@/lib/auth";
 import { usePageTitle } from "@/lib/pageTitle";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -277,15 +277,12 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   const location = useLocation();
   const navigate = useNavigate();
   // Who may see the app at all is decided by <AuthGate> in front of this component.
-  const { profile, roles, signOut, can } = useAuth();
+  const { profile, roleName, signOut, can } = useAuth();
   const { currentUser, search, setSearch } = useStore();
   const [helpOpen, setHelpOpen] = useState(false);
   const pageTitle = usePageTitle();
 
-  // roles is always [] against the real backend today (no role-name lookup
-  // exposed via GraphQL yet — only an unresolved role_id) — this label
-  // describes "no role name available," not an account-approval state.
-  const displayRole = roles[0] ? ROLE_LABEL[roles[0]] : "No role assigned";
+  const displayRole = roleName ?? "No role assigned";
   const displayName = profile ? `${profile.first_name} ${profile.last_name}` : currentUser.name;
   const initials = profile ? `${profile.first_name[0] ?? ""}${profile.last_name[0] ?? ""}`.toUpperCase() : currentUser.initials;
 

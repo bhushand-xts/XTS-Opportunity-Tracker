@@ -167,6 +167,24 @@ export class PermissionsRepository {
     return result[0] || null;
   }
 
+  async findByName(
+    permissionName: string
+  ): Promise<PermissionRecord | null> {
+
+    const result =
+      await query<PermissionRecord>(
+        `
+        SELECT
+          ${permissionFields}
+        FROM mst_permissions
+        WHERE LOWER(permission_name) = LOWER($1)
+        `,
+        [permissionName]
+      );
+
+    return result[0] || null;
+  }
+
   async create(
     input: CreatePermissionInput
   ): Promise<PermissionRecord> {

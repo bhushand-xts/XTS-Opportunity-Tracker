@@ -64,6 +64,13 @@ export function flattenMenus(menus: Menu[]): MenuRow[] {
   return rows;
 }
 
+/** The next free sort order for a new menu under the given parent (one past
+ * the highest sort order already used by its siblings). */
+export function nextSortOrder(menus: Menu[], parentId: number | null): number {
+  const siblings = menus.filter((m) => m.parentId === parentId);
+  return siblings.length === 0 ? 1 : Math.max(...siblings.map((m) => m.sortOrder)) + 1;
+}
+
 /** The menu itself plus every menu beneath it — none of these may become the
  * menu's new parent (the backend rejects a circular hierarchy). */
 export function descendantIds(menus: Menu[], menuId: number): Set<number> {
