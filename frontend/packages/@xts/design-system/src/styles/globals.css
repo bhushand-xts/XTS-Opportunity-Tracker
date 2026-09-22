@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Surfaces: a cool light-gray page so white cards stand out. */
+    --background: 220 23% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    /* Brand blue: buttons, focus rings, active states. White text on it is 6:1. */
+    --primary: 224 76% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 20% 94%;
+    --secondary-foreground: 222 47% 20%;
+    --muted: 220 20% 95%;
+    --muted-foreground: 218 15% 40%;
+    /* accent = a light brand tint, used for hover and selected rows. */
+    --accent: 224 100% 96%;
+    --accent-foreground: 224 76% 38%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 16% 89%;
+    --input: 220 15% 84%;
+    --ring: 224 76% 48%;
+    --radius: 0.625rem;
+    /* Sidebar: deep navy with light text. */
+    --sidebar-background: 224 47% 12%;
+    --sidebar-foreground: 220 25% 85%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 224 40% 19%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 224 35% 20%;
+    --sidebar-ring: 217 91% 60%;
+    /* AppShell rail + pipeline-funnel tokens, ported with AppShell/DashboardContent.
+       rail-active is the light blue used for the active item on the dark sidebar. */
+    --rail: 224 47% 12%;
+    --rail-foreground: 220 25% 85%;
+    --rail-active: 213 100% 76%;
+    --stage-1: 217.2 91.2% 59.8%;
+    --stage-2: 262.1 83.3% 57.8%;
+    --stage-3: 291.1 63.9% 57.5%;
+    --stage-4: 24.6 95% 53.1%;
+    --stage-5: 142.1 76.2% 36.3%;
+    /* Brand gradient — logo tiles only. Buttons use the solid primary. */
+    --brand-from: 224 76% 48%;
+    --brand-to: 262 70% 55%;
+    --brand-foreground: 0 0% 100%;
+  }
+
+  /* Opt-in dark theme (Radix "Mauve" neutral scale), available via
+     className="dark" for any screen that wants it. Not the default anymore. */
+  .dark {
+    --mauve-1: 270 6% 7%;
+    --mauve-background: 270 5% 11%;
+    --mauve-3: 270 5% 15%;
+    --mauve-4: 270 5% 19%;
+
+    --background: var(--mauve-background);
+    --foreground: 210 40% 98%;
+    --card: var(--mauve-3);
+    --card-foreground: 210 40% 98%;
+    --popover: var(--mauve-3);
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: var(--mauve-4);
+    --secondary-foreground: 210 40% 98%;
+    --muted: var(--mauve-4);
+    --muted-foreground: 270 4% 65%;
+    --accent: var(--mauve-4);
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: var(--mauve-4);
+    --input: var(--mauve-4);
+    --ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+    --rail: var(--mauve-1);
+    --rail-foreground: 270 4% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.011em;
+  }
+}
+
+@layer components {
+  /* Ported with AppShell/DashboardContent */
+  .card-surface {
+    @apply rounded-xl border bg-card text-card-foreground shadow-sm;
+  }
+}
