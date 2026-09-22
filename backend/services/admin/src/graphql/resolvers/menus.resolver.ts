@@ -1,4 +1,5 @@
 import { GraphQLError } from "graphql";
+import { actingUserId, RequestContext } from "../context";
 import { MenusRepository } from "../../repositories/menus.repository";
 import { MenusService } from "../../services/menus.service";
 import {
@@ -49,10 +50,14 @@ export const menuResolvers = {
   Mutation: {
     createMenu: async (
       _: unknown,
-      args: { input: CreateMenuInput }
+      args: { input: CreateMenuInput },
+      ctx: RequestContext
     ) => {
       try {
-        return await service.createMenu(args.input);
+        return await service.createMenu({
+          ...args.input,
+          createdBy: actingUserId(ctx, args.input.createdBy) as number
+        });
       } catch (error) {
         return handleError(error);
       }
@@ -63,12 +68,16 @@ export const menuResolvers = {
       args: {
         menuId: number;
         input: UpdateMenuInput;
-      }
+      },
+      ctx: RequestContext
     ) => {
       try {
         return await service.updateMenu(
           args.menuId,
-          args.input
+          {
+            ...args.input,
+            updatedBy: actingUserId(ctx, args.input.updatedBy) as number
+          }
         );
       } catch (error) {
         return handleError(error);
@@ -80,14 +89,15 @@ export const menuResolvers = {
       args: {
         menuId: number;
         isActive: boolean;
-        updatedBy: number;
-      }
+        updatedBy?: number;
+      },
+      ctx: RequestContext
     ) => {
       try {
         return await service.toggleMenuStatus(
           args.menuId,
           args.isActive,
-          args.updatedBy
+          actingUserId(ctx, args.updatedBy) as number
         );
       } catch (error) {
         return handleError(error);

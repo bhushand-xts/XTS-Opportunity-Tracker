@@ -11,6 +11,10 @@ const availableServices: ServiceEntry[] = [
   { name: 'admin',       url: process.env.ADMIN_URL       || 'http://localhost:4010/graphql' },
 ];
 
+// The user service answers "whose login token is this?" for every request,
+// whether or not it is one of the composed subgraphs.
+const userServiceUrl = availableServices.find((service) => service.name === 'user')!.url;
+
 // Local development can run a subset while other domain databases are not configured.
 const enabledServiceNames = new Set(
   (process.env.ENABLED_SUBGRAPHS || 'user,admin')
@@ -21,4 +25,5 @@ const enabledServiceNames = new Set(
 
 const services = availableServices.filter((service) => enabledServiceNames.has(service.name));
 
+export { userServiceUrl };
 export default services;

@@ -1,4 +1,5 @@
 import { GraphQLError } from "graphql";
+import { actingUserId, RequestContext } from "../context";
 import { AccessRepository } from "../../repositories/access.repository";
 import { AccessService } from "../../services/access.service";
 
@@ -43,14 +44,15 @@ export const accessResolvers = {
   Mutation: {
     addRoleMenuPermissions: async (
       _: unknown,
-      args: { input: { roleId: number; menuId: number; permissionIds: number[]; updatedBy: number } }
+      args: { input: { roleId: number; menuId: number; permissionIds: number[]; updatedBy?: number } },
+      ctx: RequestContext
     ) => {
       try {
         return await service.addRoleMenuPermissions(
           args.input.roleId,
           args.input.menuId,
           args.input.permissionIds,
-          args.input.updatedBy
+          actingUserId(ctx, args.input.updatedBy) as number
         );
       } catch (error) {
         return handleError(error);
@@ -59,14 +61,15 @@ export const accessResolvers = {
 
     removeRoleMenuPermissions: async (
       _: unknown,
-      args: { input: { roleId: number; menuId: number; permissionIds: number[]; updatedBy: number } }
+      args: { input: { roleId: number; menuId: number; permissionIds: number[]; updatedBy?: number } },
+      ctx: RequestContext
     ) => {
       try {
         return await service.removeRoleMenuPermissions(
           args.input.roleId,
           args.input.menuId,
           args.input.permissionIds,
-          args.input.updatedBy
+          actingUserId(ctx, args.input.updatedBy) as number
         );
       } catch (error) {
         return handleError(error);

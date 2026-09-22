@@ -1,9 +1,0 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
-
-:root {
-  --xts-font-sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
-  --xts-text-sm: 0.85rem;
-  --xts-text-base: 0.95rem;
-  --xts-text-lg: 1.1rem;
-  --xts-text-xl: 1.4rem;
-}

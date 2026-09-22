@@ -21,7 +21,7 @@ export const menuTypeDefs = `#graphql
     icon: String
     parentId: Int
     sortOrder: Int!
-    createdBy: Int!
+    createdBy: Int
   }
 
   input UpdateMenuInput {
@@ -30,7 +30,7 @@ export const menuTypeDefs = `#graphql
     icon: String
     parentId: Int
     sortOrder: Int
-    updatedBy: Int!
+    updatedBy: Int
   }
 
   extend type Query {
@@ -50,7 +50,7 @@ export const menuTypeDefs = `#graphql
     toggleMenuStatus(
       menuId: Int!
       isActive: Boolean!
-      updatedBy: Int!
+      updatedBy: Int
     ): Menu!
   }
 `;

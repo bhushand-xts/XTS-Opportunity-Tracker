@@ -24,7 +24,7 @@ export const accessTypeDefs = `#graphql
     roleId: Int!
     menuId: Int!
     permissionIds: [Int!]!
-    updatedBy: Int!
+    updatedBy: Int
   }
 
   extend type Query {

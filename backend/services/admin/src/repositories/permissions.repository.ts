@@ -1,9 +1,26 @@
-import { query } from "../config/db";
+import type { PoolClient } from "pg";
+
+import { query, transaction } from "../config/db";
 
 import {
   CreatePermissionInput,
   UpdatePermissionInput
 } from "../validators/permissions.validator";
+
+// One row of mst_permissions_tracker: a snapshot of a permission as it
+// stood after a change.
+export interface PermissionHistoryRecord {
+  trackerId: number;
+  permissionId: number;
+  permissionName: string;
+  permissionKey: string;
+  description: string | null;
+  isActive: boolean;
+  createdDt: Date;
+  createdBy: number | null;
+  updatedDt: Date | null;
+  updatedBy: number | null;
+}
 
 export interface PermissionRecord {
   permissionId: number;
@@ -42,11 +59,60 @@ const permissionFields = `
   is_active AS "isActive"
 `;
 
+// Every write to mst_permissions also writes a snapshot of the resulting row
+// to mst_permissions_tracker — always inside the caller's transaction, so the
+// record and its history are saved together or not at all.
+async function recordTracker(
+  client: PoolClient,
+  permissionId: number
+): Promise<void> {
+
+  await client.query(
+    `
+    INSERT INTO mst_permissions_tracker
+      (permission_id, permission_name, permission_key, description,
+       created_dt, created_by, updated_dt, updated_by, is_active)
+    SELECT
+      permission_id, permission_name, permission_key, description,
+      created_dt, created_by, updated_dt, updated_by, is_active
+    FROM mst_permissions
+    WHERE permission_id = $1
+    `,
+    [permissionId]
+  );
+}
+
 export class PermissionsRepository {
 
   // --------------------------------------------------
   // PERMISSION MANAGEMENT
   // --------------------------------------------------
+
+  // Newest change first.
+  async findHistory(
+    permissionId: number
+  ): Promise<PermissionHistoryRecord[]> {
+
+    return query<PermissionHistoryRecord>(
+      `
+      SELECT
+        tracker_id AS "trackerId",
+        permission_id AS "permissionId",
+        permission_name AS "permissionName",
+        permission_key AS "permissionKey",
+        description,
+        is_active AS "isActive",
+        created_dt AS "createdDt",
+        created_by AS "createdBy",
+        updated_dt AS "updatedDt",
+        updated_by AS "updatedBy"
+      FROM mst_permissions_tracker
+      WHERE permission_id = $1
+      ORDER BY tracker_id DESC
+      `,
+      [permissionId]
+    );
+  }
 
   async findAll(): Promise<PermissionRecord[]> {
 
@@ -107,39 +173,44 @@ export class PermissionsRepository {
 
     try {
 
-      const result =
-        await query<PermissionRecord>(
-          `
-          INSERT INTO mst_permissions
-          (
-            permission_name,
-            permission_key,
-            description,
-            created_dt,
-            created_by,
-            is_active
-          )
-          VALUES
-          (
-            $1,
-            $2,
-            $3,
-            CURRENT_TIMESTAMP,
-            $4,
-            TRUE
-          )
-          RETURNING
-            ${permissionFields}
-          `,
-          [
-            input.permissionName.trim(),
-            input.permissionKey.trim(),
-            input.description ?? null,
-            input.createdBy
-          ]
-        );
+      return await transaction(async (client) => {
 
-      return result[0];
+        const result =
+          await client.query<PermissionRecord>(
+            `
+            INSERT INTO mst_permissions
+            (
+              permission_name,
+              permission_key,
+              description,
+              created_dt,
+              created_by,
+              is_active
+            )
+            VALUES
+            (
+              $1,
+              $2,
+              $3,
+              CURRENT_TIMESTAMP,
+              $4,
+              TRUE
+            )
+            RETURNING
+              ${permissionFields}
+            `,
+            [
+              input.permissionName.trim(),
+              input.permissionKey.trim(),
+              input.description ?? null,
+              input.createdBy
+            ]
+          );
+
+        await recordTracker(client, result.rows[0].permissionId);
+
+        return result.rows[0];
+      });
 
     } catch (error: any) {
 
@@ -158,43 +229,48 @@ export class PermissionsRepository {
     input: UpdatePermissionInput
   ): Promise<PermissionRecord> {
 
-    const result =
-      await query<PermissionRecord>(
-        `
-        UPDATE mst_permissions
-        SET
-          permission_name = COALESCE($1, permission_name),
+    return transaction(async (client) => {
 
-          permission_key = COALESCE($2, permission_key),
+      const result =
+        await client.query<PermissionRecord>(
+          `
+          UPDATE mst_permissions
+          SET
+            permission_name = COALESCE($1, permission_name),
 
-          description = CASE
-            WHEN $3::boolean = TRUE THEN $4
-            ELSE description
-          END,
+            permission_key = COALESCE($2, permission_key),
 
-          updated_dt = CURRENT_TIMESTAMP,
-          updated_by = $5
+            description = CASE
+              WHEN $3::boolean = TRUE THEN $4
+              ELSE description
+            END,
 
-        WHERE permission_id = $6
+            updated_dt = CURRENT_TIMESTAMP,
+            updated_by = $5
 
-        RETURNING
-          ${permissionFields}
-        `,
-        [
-          input.permissionName ?? null,
-          input.permissionKey ?? null,
-          input.description !== undefined,
-          input.description ?? null,
-          input.updatedBy,
-          permissionId
-        ]
-      );
+          WHERE permission_id = $6
 
-    if (!result[0]) {
-      throw new Error("Permission not found.");
-    }
+          RETURNING
+            ${permissionFields}
+          `,
+          [
+            input.permissionName ?? null,
+            input.permissionKey ?? null,
+            input.description !== undefined,
+            input.description ?? null,
+            input.updatedBy,
+            permissionId
+          ]
+        );
 
-    return result[0];
+      if (!result.rows[0]) {
+        throw new Error("Permission not found.");
+      }
+
+      await recordTracker(client, permissionId);
+
+      return result.rows[0];
+    });
   }
 
   async updateStatus(
@@ -203,30 +279,35 @@ export class PermissionsRepository {
     updatedBy: number
   ): Promise<PermissionRecord> {
 
-    const result =
-      await query<PermissionRecord>(
-        `
-        UPDATE mst_permissions
-        SET
-          is_active = $1,
-          updated_dt = CURRENT_TIMESTAMP,
-          updated_by = $2
-        WHERE permission_id = $3
-        RETURNING
-          ${permissionFields}
-        `,
-        [
-          isActive,
-          updatedBy,
-          permissionId
-        ]
-      );
+    return transaction(async (client) => {
 
-    if (!result[0]) {
-      throw new Error("Permission not found.");
-    }
+      const result =
+        await client.query<PermissionRecord>(
+          `
+          UPDATE mst_permissions
+          SET
+            is_active = $1,
+            updated_dt = CURRENT_TIMESTAMP,
+            updated_by = $2
+          WHERE permission_id = $3
+          RETURNING
+            ${permissionFields}
+          `,
+          [
+            isActive,
+            updatedBy,
+            permissionId
+          ]
+        );
 
-    return result[0];
+      if (!result.rows[0]) {
+        throw new Error("Permission not found.");
+      }
+
+      await recordTracker(client, permissionId);
+
+      return result.rows[0];
+    });
   }
 
 
@@ -278,7 +359,7 @@ export class PermissionsRepository {
           p.updated_by AS "updatedBy",
           p.is_active AS "isActive"
 
-        FROM tbl_menu_permission mp
+        FROM tbl_menuwise_permission mp
 
         INNER JOIN mst_permissions p
           ON p.permission_id = mp.permission_id
@@ -316,7 +397,7 @@ export class PermissionsRepository {
           mp.updated_dt AS "updatedDt",
           mp.updated_by AS "updatedBy"
 
-        FROM tbl_menu_permission mp
+        FROM tbl_menuwise_permission mp
 
         INNER JOIN mst_menus m
           ON m.menu_id = mp.menu_id
@@ -379,46 +460,70 @@ export class PermissionsRepository {
   ): Promise<void> {
 
     /*
-      First remove the existing mapping
-      for this menu.
+      One transaction, so a failure part-way can never leave the menu
+      with a half-saved permission set.
 
-      Then insert the currently selected
-      permissions.
+      1. Remove the menu's existing mapping.
+      2. Insert the selected permissions.
+      3. Revoke any role grant for a permission this menu no longer allows —
+         addRoleMenuPermissions refuses such grants, so keeping old ones
+         would leave roles holding access the menu does not offer.
     */
 
-    await query(
-      `
-      DELETE FROM tbl_menu_permission
-      WHERE menu_id = $1
-      `,
-      [menuId]
-    );
+    await transaction(async (client) => {
 
-    for (const permissionId of permissionIds) {
-
-      await query(
+      await client.query(
         `
-        INSERT INTO tbl_menu_permission
-        (
-          menu_id,
-          permission_id,
-          created_dt,
-          created_by
-        )
-        VALUES
-        (
-          $1,
-          $2,
-          CURRENT_TIMESTAMP,
-          $3
-        )
+        DELETE FROM tbl_menuwise_permission
+        WHERE menu_id = $1
+        `,
+        [menuId]
+      );
+
+      for (const permissionId of permissionIds) {
+
+        await client.query(
+          `
+          INSERT INTO tbl_menuwise_permission
+          (
+            menu_id,
+            permission_id,
+            created_dt,
+            created_by
+          )
+          VALUES
+          (
+            $1,
+            $2,
+            CURRENT_TIMESTAMP,
+            $3
+          )
+          `,
+          [
+            menuId,
+            permissionId,
+            updatedBy
+          ]
+        );
+      }
+
+      await client.query(
+        `
+        UPDATE tbl_role_menu_permission
+        SET
+          is_active = FALSE,
+          updated_dt = CURRENT_TIMESTAMP,
+          updated_by = $1
+        WHERE menu_id = $2
+          AND is_active = TRUE
+          AND permission_id <> ALL($3::int[])
         `,
         [
+          updatedBy,
           menuId,
-          permissionId,
-          updatedBy
+          permissionIds
         ]
       );
-    }
+    });
   }
 }

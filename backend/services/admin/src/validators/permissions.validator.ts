@@ -17,6 +17,47 @@ export interface UpdatePermissionInput {
 // PERMISSION VALIDATION
 // --------------------------------------------------
 
+// Column sizes of mst_permissions — checking here gives a readable message
+// instead of a database "value too long" error.
+const MAX_NAME = 100;
+const MAX_KEY = 100;
+const MAX_DESCRIPTION = 500;
+
+function validateLengths(input: {
+  permissionName?: string;
+  permissionKey?: string;
+  description?: string | null;
+}): void {
+
+  if (
+    input.permissionName &&
+    input.permissionName.trim().length > MAX_NAME
+  ) {
+    throw new Error(
+      `Permission name must be at most ${MAX_NAME} characters.`
+    );
+  }
+
+  if (
+    input.permissionKey &&
+    input.permissionKey.trim().length > MAX_KEY
+  ) {
+    throw new Error(
+      `Permission key must be at most ${MAX_KEY} characters.`
+    );
+  }
+
+  if (
+    input.description &&
+    input.description.length > MAX_DESCRIPTION
+  ) {
+    throw new Error(
+      `Description must be at most ${MAX_DESCRIPTION} characters.`
+    );
+  }
+}
+
+
 export function validateCreatePermission(
   input: CreatePermissionInput
 ): void {
@@ -35,10 +76,12 @@ export function validateCreatePermission(
     );
   }
 
+  validateLengths(input);
+
   if (!input.createdBy) {
 
     throw new Error(
-      "Created by is required."
+      "You must be signed in to make changes."
     );
   }
 }
@@ -68,10 +111,12 @@ export function validateUpdatePermission(
     );
   }
 
+  validateLengths(input);
+
   if (!input.updatedBy) {
 
     throw new Error(
-      "Updated by is required."
+      "You must be signed in to make changes."
     );
   }
 }
@@ -107,7 +152,7 @@ export function validateMenuPermissionMapping(
   if (!updatedBy) {
 
     throw new Error(
-      "Updated by is required."
+      "You must be signed in to make changes."
     );
   }
 }

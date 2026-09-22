@@ -1,4 +1,5 @@
 import { GraphQLError } from "graphql";
+import { actingUserId, RequestContext } from "../context";
 
 import {
   PermissionsRepository
@@ -83,6 +84,26 @@ export const permissionResolvers = {
     },
 
 
+    permissionHistory: async (
+      _: unknown,
+      args: {
+        permissionId: number;
+      }
+    ) => {
+
+      try {
+
+        return await service.getPermissionHistory(
+          args.permissionId
+        );
+
+      } catch (error) {
+
+        return handleError(error);
+      }
+    },
+
+
     menusForPermissionMapping: async () => {
 
       try {
@@ -140,13 +161,17 @@ export const permissionResolvers = {
       _: unknown,
       args: {
         input: CreatePermissionInput;
-      }
+      },
+      ctx: RequestContext
     ) => {
 
       try {
 
         return await service.createPermission(
-          args.input
+          {
+            ...args.input,
+            createdBy: actingUserId(ctx, args.input.createdBy) as number
+          }
         );
 
       } catch (error) {
@@ -161,14 +186,18 @@ export const permissionResolvers = {
       args: {
         permissionId: number;
         input: UpdatePermissionInput;
-      }
+      },
+      ctx: RequestContext
     ) => {
 
       try {
 
         return await service.updatePermission(
           args.permissionId,
-          args.input
+          {
+            ...args.input,
+            updatedBy: actingUserId(ctx, args.input.updatedBy) as number
+          }
         );
 
       } catch (error) {
@@ -183,8 +212,9 @@ export const permissionResolvers = {
       args: {
         permissionId: number;
         isActive: boolean;
-        updatedBy: number;
-      }
+        updatedBy?: number;
+      },
+      ctx: RequestContext
     ) => {
 
       try {
@@ -192,7 +222,7 @@ export const permissionResolvers = {
         return await service.togglePermissionStatus(
           args.permissionId,
           args.isActive,
-          args.updatedBy
+          actingUserId(ctx, args.updatedBy) as number
         );
 
       } catch (error) {
@@ -208,9 +238,10 @@ export const permissionResolvers = {
         input: {
           menuId: number;
           permissionIds: number[];
-          updatedBy: number;
+          updatedBy?: number;
         };
-      }
+      },
+      ctx: RequestContext
     ) => {
 
       try {
@@ -218,7 +249,7 @@ export const permissionResolvers = {
         return await service.saveMenuPermissions(
           args.input.menuId,
           args.input.permissionIds,
-          args.input.updatedBy
+          actingUserId(ctx, args.input.updatedBy) as number
         );
 
       } catch (error) {

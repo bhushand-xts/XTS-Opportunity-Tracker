@@ -1,10 +1,9 @@
--- DDL for the `xts_user` database only.
--- Source: schema.sql (Section 6, 24-table design), user-owned tables.
+-- DDL for the user service's tables.
+-- Source: the live database (admin_db dump of 2026-09-21), where these two
+-- tables currently sit in the same database as the admin service's tables.
 --
--- Cross-service FK columns are kept as plain INTEGER (no DB-level FK,
--- since the referenced table now lives in a different service's
--- database) — referential integrity for these is enforced in the
--- application layer instead. Each dropped FK is noted inline.
+-- role_id holds a mst_roles.role_id from the admin service, with no foreign
+-- key — the roles table belongs to another service.
 
 CREATE TABLE mst_user (
   user_id SERIAL PRIMARY KEY,
@@ -12,7 +11,7 @@ CREATE TABLE mst_user (
   last_name VARCHAR(100),
   email VARCHAR(255) NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role_id INTEGER,      -- was FK -> mst_roles(role_id) in admin's DB
+  role_id INTEGER,      -- admin service's mst_roles.role_id; no foreign key
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
@@ -29,10 +28,3 @@ CREATE TABLE auth_session (
 );
 
 CREATE INDEX idx_auth_session_token_hash ON auth_session(token_hash);
-
--- =====================================================================
--- FOREIGN KEY CONSTRAINTS (intra-service only)
--- =====================================================================
-
-ALTER TABLE mst_user ADD CONSTRAINT fk_mst_user_created_by FOREIGN KEY (created_by) REFERENCES mst_user(user_id);
-ALTER TABLE mst_user ADD CONSTRAINT fk_mst_user_updated_by FOREIGN KEY (updated_by) REFERENCES mst_user(user_id);
