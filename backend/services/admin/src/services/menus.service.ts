@@ -61,6 +61,34 @@ export class MenusService {
       );
     }
 
+    const parentId = input.parentId ?? null;
+
+    const duplicateName = await this.repository.findByNameAndParent(
+      input.menuName.trim(),
+      parentId
+    );
+
+    if (duplicateName) {
+      throw new Error(
+        parentId === null
+          ? `A menu named "${input.menuName.trim()}" already exists.`
+          : `A submenu named "${input.menuName.trim()}" already exists under this parent.`
+      );
+    }
+
+    const duplicateSortOrder = await this.repository.findBySortOrderAndParent(
+      input.sortOrder,
+      parentId
+    );
+
+    if (duplicateSortOrder) {
+      throw new Error(
+        parentId === null
+          ? `Sort order ${input.sortOrder} is already used by another top-level menu.`
+          : `Sort order ${input.sortOrder} is already used by another submenu under this parent.`
+      );
+    }
+
     if (input.parentId !== null && input.parentId !== undefined) {
 
       const parent = await this.repository.findById(
@@ -141,6 +169,38 @@ export class MenusService {
       await this.validateNoCircularReference(
         menuId,
         input.parentId
+      );
+    }
+
+    // Siblings are whichever menus share the effective parent: the one being
+    // moved to, or the existing one when the parent isn't changing.
+    const effectiveParentId = input.parentId !== undefined ? input.parentId : existing.parentId;
+    const effectiveName = input.menuName !== undefined ? input.menuName.trim() : existing.menuName;
+    const effectiveSortOrder = input.sortOrder !== undefined ? input.sortOrder : existing.sortOrder;
+
+    const duplicateName = await this.repository.findByNameAndParent(
+      effectiveName,
+      effectiveParentId
+    );
+
+    if (duplicateName && duplicateName.menuId !== menuId) {
+      throw new Error(
+        effectiveParentId === null
+          ? `A menu named "${effectiveName}" already exists.`
+          : `A submenu named "${effectiveName}" already exists under this parent.`
+      );
+    }
+
+    const duplicateSortOrder = await this.repository.findBySortOrderAndParent(
+      effectiveSortOrder,
+      effectiveParentId
+    );
+
+    if (duplicateSortOrder && duplicateSortOrder.menuId !== menuId) {
+      throw new Error(
+        effectiveParentId === null
+          ? `Sort order ${effectiveSortOrder} is already used by another top-level menu.`
+          : `Sort order ${effectiveSortOrder} is already used by another submenu under this parent.`
       );
     }
 

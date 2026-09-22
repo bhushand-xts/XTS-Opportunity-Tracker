@@ -1,9 +1,16 @@
 /**
- * Auth store — session/profile/roles live here (useSyncExternalStore,
+ * Auth store — session/profile/role live here (useSyncExternalStore,
  * genuinely shared cross-MFE since @xts/design-system is a Module
  * Federation singleton), while credential checks go through GraphQL:
  * signIn/signUp call the `login` / `register` mutations of the user service
  * (auth.queries.ts) through the gateway.
+ *
+ * The signed-in user's role name isn't part of the login/register response —
+ * mst_user only carries a role_id, and the role itself (mst_roles) lives in
+ * the admin service. After persisting the session, resolveRoleName() makes a
+ * follow-up ROLE_NAME query through the same gateway (Apollo Federation
+ * routes it to the admin subgraph) and patches roleName into the stored
+ * state once it resolves.
  *
  * signInWithSso() stays a local fabrication (SSO is out of scope for this
  * work) but writes through the same persisted-state shape as everything
@@ -11,18 +18,11 @@
  */
 import { useMutation } from "@apollo/client";
 import { useSyncExternalStore } from "react";
+import { getApolloClient } from "@xts/api-client";
 import type { AuthPayload } from "@xts/api-contracts";
-import type { Role } from "./mock-data";
-import { LOGIN, REGISTER } from "./auth.queries";
+import { LOGIN, REGISTER, ROLE_NAME } from "./auth.queries";
 
 export type AppPermission = "dashboard" | "admin" | "opportunity" | "solution" | "approval";
-
-export const ROLE_LABEL: Record<Role, string> = {
-  "Sales Rep": "Sales Representative",
-  "Sales Manager": "Sales Manager",
-  "Sales Head": "Sales Head",
-  "System Admin": "System Administrator",
-};
 
 interface Profile {
   first_name: string;
@@ -39,27 +39,30 @@ interface Session {
 interface AuthState {
   session: Session | null;
   profile: Profile | null;
-  roles: Role[];
+  roleId: number | null;
+  // Null until resolveRoleName() fills it in (or if there's no role assigned).
+  roleName: string | null;
 }
 
 type AuthResult = { ok: true } | { ok: false; error: string };
 
-const EMPTY_STATE: AuthState = { session: null, profile: null, roles: [] };
+const EMPTY_STATE: AuthState = { session: null, profile: null, roleId: null, roleName: null };
 const STORAGE_KEY = "authState";
 
 function stateFromPayload({ user, token }: AuthPayload): AuthState {
   return {
     session: { userId: String(user.id), email: user.email, token },
-    // The backend's User type has no status/roles yet (mst_user has
-    // is_active: boolean and a single role_id), so they are not requested
-    // (see auth.queries.ts). Synthesize safe defaults: status always passes
-    // the approval gate, roles stays empty (no role-based behavior yet).
+    // The backend's User type has no status concept yet (mst_user has
+    // is_active: boolean, not this richer shape), so it's not requested (see
+    // auth.queries.ts). Synthesize a safe default: status always passes the
+    // approval gate.
     profile: {
       first_name: user.firstName ?? "",
       last_name: user.lastName ?? "",
       status: "approved",
     },
-    roles: [],
+    roleId: user.roleId ?? null,
+    roleName: null,
   };
 }
 
@@ -68,10 +71,22 @@ function readStoredState(): AuthState {
   const raw = window.localStorage.getItem(STORAGE_KEY);
   if (!raw) return EMPTY_STATE;
   try {
-    return JSON.parse(raw) as AuthState;
+    return normalizeState(JSON.parse(raw));
   } catch {
     return EMPTY_STATE;
   }
+}
+
+// Defends against a stored value from before roleId/roleName existed (an
+// older `roles: []` shape) — anything missing just falls back to empty.
+function normalizeState(raw: unknown): AuthState {
+  const parsed = (raw ?? {}) as Partial<AuthState>;
+  return {
+    session: parsed.session ?? null,
+    profile: parsed.profile ?? null,
+    roleId: parsed.roleId ?? null,
+    roleName: parsed.roleName ?? null,
+  };
 }
 
 let state: AuthState = readStoredState();
@@ -93,13 +108,43 @@ function persistSession(payload: AuthPayload) {
   const next = stateFromPayload(payload);
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   setState(next);
+  void resolveRoleName(next.session!.userId, next.roleId);
+}
+
+// Fetches the role name for roleId from the admin subgraph and patches it
+// into the stored state, but only if this is still the signed-in user's
+// session (a slow response shouldn't clobber a sign-out or a later sign-in).
+async function resolveRoleName(userId: string, roleId: number | null): Promise<void> {
+  if (roleId === null) return;
+  let roleName: string | null = null;
+  try {
+    const { data } = await getApolloClient().query<{ role: { roleName: string } | null }>({
+      query: ROLE_NAME,
+      variables: { id: roleId },
+      fetchPolicy: "network-only",
+    });
+    roleName = data?.role?.roleName ?? null;
+  } catch {
+    return;
+  }
+  if (!roleName || state.session?.userId !== userId) return;
+  const next: AuthState = { ...state, roleName };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  setState(next);
 }
 
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY) return;
-    setState(event.newValue ? (JSON.parse(event.newValue) as AuthState) : EMPTY_STATE);
+    setState(event.newValue ? normalizeState(JSON.parse(event.newValue)) : EMPTY_STATE);
   });
+
+  // On a fresh page load the stored session may still be missing its role
+  // name (e.g. the previous resolveRoleName() call never finished), so
+  // retry once here.
+  if (state.session && state.roleId !== null && state.roleName === null) {
+    void resolveRoleName(state.session.userId, state.roleId);
+  }
 }
 
 const ALL_PERMISSIONS: AppPermission[] = ["dashboard", "admin", "opportunity", "solution", "approval"];
@@ -130,7 +175,7 @@ export function useAuth() {
     loading: false,
     session: snapshot.session,
     profile: snapshot.profile,
-    roles: snapshot.roles,
+    roleName: snapshot.roleName,
     can(permission: AppPermission) {
       return ALL_PERMISSIONS.includes(permission);
     },
@@ -175,7 +220,8 @@ export function useAuth() {
       const next: AuthState = {
         session: { userId: "sso-demo", email: "bdixit@xtsworld.in", token: "demo-sso-token" },
         profile: { first_name: "B", last_name: "Dixit", status: "approved" },
-        roles: ["System Admin"],
+        roleId: null,
+        roleName: "System Administrator",
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       setState(next);
