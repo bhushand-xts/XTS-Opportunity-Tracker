@@ -62,5 +62,8 @@
   },
   "dependencies": {
     "react-router-dom": "7.18.3"
+  },
+  "overrides": {
+    "adm-zip": "^0.6.1"
   }
 }
