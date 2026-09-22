@@ -10,7 +10,6 @@ import {
   Link2,
   List,
   Plus,
-  Search,
   Settings,
   Share2,
   Shield,
@@ -22,7 +21,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -278,7 +276,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   const navigate = useNavigate();
   // Who may see the app at all is decided by <AuthGate> in front of this component.
   const { profile, roleName, signOut, can } = useAuth();
-  const { currentUser, search, setSearch } = useStore();
+  const { currentUser } = useStore();
   const [helpOpen, setHelpOpen] = useState(false);
   const pageTitle = usePageTitle();
 
@@ -293,16 +291,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
         <SidebarInset>
           <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b bg-card px-5">
             <h1 className="shrink-0 text-[15px] font-semibold tracking-tight">{pageTitle}</h1>
-            <div className="relative mx-auto w-full max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search opportunities, customers, contacts"
-                className="h-9 rounded-full pl-9 text-[13px]"
-              />
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1 ml-auto">
               {actions}
               {/* Points at the dashboard until the Opportunity MFE has a real route to land on */}
               <Button asChild size="icon" className="size-9 rounded-full" aria-label="New opportunity">

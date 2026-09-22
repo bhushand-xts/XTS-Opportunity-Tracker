@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { History, Pencil, Plus, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { History, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import type { Role } from "@xts/api-contracts";
 import {
   AlertDialog,
@@ -14,6 +14,7 @@ import {
   Button,
   Card,
   CardContent,
+  Input,
   Table,
   TableBody,
   TableCell,
@@ -39,6 +40,13 @@ export function RoleMasterPage() {
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [deletingRole, setDeletingRole] = useState<Role | null>(null);
   const [historyRole, setHistoryRole] = useState<Role | null>(null);
+  const [search, setSearch] = useState("");
+
+  const visibleRoles = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return roles;
+    return roles.filter((r) => `${r.roleName} ${r.roleCode ?? ""}`.toLowerCase().includes(q));
+  }, [roles, search]);
 
   const openAdd = () => {
     setEditingRole(null);
@@ -59,10 +67,22 @@ export function RoleMasterPage() {
       <PageHeader
         description="Create and manage functional user roles."
         actions={
-          <Button onClick={openAdd}>
-            <Plus className="mr-2 size-4" />
-            Add role
-          </Button>
+          <>
+            <div className="relative w-64">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search role name or code"
+                aria-label="Search roles"
+                className="pl-9"
+              />
+            </div>
+            <Button onClick={openAdd}>
+              <Plus className="mr-2 size-4" />
+              Add role
+            </Button>
+          </>
         }
       />
 
@@ -85,7 +105,10 @@ export function RoleMasterPage() {
               {!loading && !error && roles.length === 0 && (
                 <TableEmptyRow columns={COLUMNS} message="No roles yet. Add the first one." />
               )}
-              {roles.map((role) => (
+              {!loading && roles.length > 0 && visibleRoles.length === 0 && (
+                <TableEmptyRow columns={COLUMNS} message="No roles match your search." />
+              )}
+              {visibleRoles.map((role) => (
                 <TableRow key={role.id}>
                   <TableCell className="font-medium">{role.roleName}</TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">{role.roleCode ?? "—"}</TableCell>

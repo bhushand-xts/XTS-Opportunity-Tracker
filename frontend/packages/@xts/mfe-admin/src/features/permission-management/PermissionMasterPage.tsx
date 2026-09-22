@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { History, Pencil, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { History, Pencil, Plus, Search } from "lucide-react";
 import type { Permission } from "@xts/api-contracts";
 import {
   Button,
   Card,
   CardContent,
+  Input,
   Switch,
   Table,
   TableBody,
@@ -30,6 +31,13 @@ export function PermissionMasterPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPermission, setEditingPermission] = useState<Permission | null>(null);
   const [historyPermission, setHistoryPermission] = useState<Permission | null>(null);
+  const [search, setSearch] = useState("");
+
+  const visiblePermissions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return permissions;
+    return permissions.filter((p) => `${p.permissionName} ${p.permissionKey}`.toLowerCase().includes(q));
+  }, [permissions, search]);
 
   const openAdd = () => {
     setEditingPermission(null);
@@ -45,10 +53,22 @@ export function PermissionMasterPage() {
       <PageHeader
         description="Manage the actions that can be granted on a menu, such as view, create or export."
         actions={
-          <Button onClick={openAdd}>
-            <Plus className="mr-2 size-4" />
-            Add permission
-          </Button>
+          <>
+            <div className="relative w-64">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search permission name or key"
+                aria-label="Search permissions"
+                className="pl-9"
+              />
+            </div>
+            <Button onClick={openAdd}>
+              <Plus className="mr-2 size-4" />
+              Add permission
+            </Button>
+          </>
         }
       />
 
@@ -71,7 +91,10 @@ export function PermissionMasterPage() {
               {!loading && !error && permissions.length === 0 && (
                 <TableEmptyRow columns={COLUMNS} message="No permissions yet. Add the first one." />
               )}
-              {permissions.map((permission) => (
+              {!loading && permissions.length > 0 && visiblePermissions.length === 0 && (
+                <TableEmptyRow columns={COLUMNS} message="No permissions match your search." />
+              )}
+              {visiblePermissions.map((permission) => (
                 <TableRow
                   key={permission.permissionId}
                   className={permission.isActive ? undefined : "text-muted-foreground"}
