@@ -76,11 +76,18 @@ export function EstimatePhaseFormDialog({
       return;
     }
 
+    const orderText = values.displayOrder?.trim() ?? "";
+    const order = orderText ? Number(orderText) : null;
+    if (order !== null && others.some((p) => p.displayOrder === order)) {
+      form.setError("displayOrder", { message: `Display order ${order} is already used by another estimate phase.` });
+      return;
+    }
+
     const input: EstimationPhaseInput = {
       phaseName: values.phaseName.trim(),
       phaseCode: code || null,
       description: values.description?.trim() || null,
-      displayOrder: values.displayOrder?.trim() ? Number(values.displayOrder.trim()) : null,
+      displayOrder: order,
       isActive: values.isActive,
     };
 

@@ -30,6 +30,11 @@ async function create(input: PhaseInput, ctx: any) {
     if (duplicateCode) throw conflict('An estimate phase with this code already exists');
   }
 
+  if (input.displayOrder != null) {
+    const duplicateOrder = await repository.findByDisplayOrder(input.displayOrder);
+    if (duplicateOrder) throw conflict('An estimate phase with this display order already exists');
+  }
+
   const userId = ctx?.user?.id ?? input.createdBy ?? null;
   return repository.create(input, userId);
 }
@@ -48,6 +53,11 @@ async function update(id: number, input: Partial<PhaseInput>, ctx: any) {
   if (input.phaseCode) {
     const duplicateCode = await repository.findByCode(input.phaseCode, id);
     if (duplicateCode) throw conflict('An estimate phase with this code already exists');
+  }
+
+  if (input.displayOrder != null) {
+    const duplicateOrder = await repository.findByDisplayOrder(input.displayOrder, id);
+    if (duplicateOrder) throw conflict('An estimate phase with this display order already exists');
   }
 
   const userId = ctx?.user?.id ?? input.updatedBy ?? null;

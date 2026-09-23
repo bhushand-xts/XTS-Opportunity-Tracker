@@ -83,6 +83,18 @@ async function findByCode(phaseCode: string, excludeId?: number): Promise<Phase 
   return rows[0] || null;
 }
 
+async function findByDisplayOrder(displayOrder: number, excludeId?: number): Promise<Phase | null> {
+  const rows = excludeId
+    ? await query<Phase>(
+        `SELECT ${SELECT_COLUMNS} FROM mst_estimation_phases WHERE display_order = $1 AND phase_id <> $2`,
+        [displayOrder, excludeId]
+      )
+    : await query<Phase>(`SELECT ${SELECT_COLUMNS} FROM mst_estimation_phases WHERE display_order = $1`, [
+        displayOrder,
+      ]);
+  return rows[0] || null;
+}
+
 export interface PhaseInput {
   phaseName: string;
   phaseCode?: string | null;
@@ -205,4 +217,4 @@ async function remove(id: number, userId: number | null): Promise<void> {
   });
 }
 
-export { findAll, findById, findByName, findByCode, findHistory, create, update, remove };
+export { findAll, findById, findByName, findByCode, findByDisplayOrder, findHistory, create, update, remove };
