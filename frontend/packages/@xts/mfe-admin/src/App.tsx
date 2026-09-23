@@ -7,6 +7,7 @@ import { EstimatePhaseMasterPage } from "./features/estimate-phase-management/Es
 import { MenuMasterPage } from "./features/menu-management/MenuMasterPage";
 import { MenuPermissionMappingPage } from "./features/menu-permission-mapping/MenuPermissionMappingPage";
 import { PermissionMasterPage } from "./features/permission-management/PermissionMasterPage";
+import { RfpQuestionMasterPage } from "./features/rfp-question-management/RfpQuestionMasterPage";
 import { RoleMasterPage } from "./features/role-management/RoleMasterPage";
 import { RoleMenuPermissionAssignmentPage } from "./features/role-menu-permission-assignment/RoleMenuPermissionAssignmentPage";
 import { UserRoleAssignmentPage } from "./features/user-role-assignment/UserRoleAssignmentPage";
@@ -21,6 +22,7 @@ function AdminRoutes() {
       <Route path="menu-management/menu-master" element={<MenuMasterPage />} />
       <Route path="menu-management/permission-master" element={<PermissionMasterPage />} />
       <Route path="menu-management/menu-permission-mapping" element={<MenuPermissionMappingPage />} />
+      <Route path="rfp-management/generic-rfp-question-master" element={<RfpQuestionMasterPage />} />
       <Route path="user-management/role-master" element={<RoleMasterPage />} />
       <Route
         path="user-management/role-menu-permission-assignment"

@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CircleHelp,
   ClipboardList,
+  FileQuestion,
   Key,
   LayoutDashboard,
   Link2,
@@ -104,9 +105,7 @@ function NotificationsPanel() {
       <SheetTrigger asChild>
         <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
           <Bell className="size-[18px]" />
-          {unread > 0 && (
-            <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />
-          )}
+          {unread > 0 && <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />}
         </Button>
       </SheetTrigger>
       <SheetContent className="w-[380px] p-0">
@@ -160,21 +159,24 @@ function MidSidebarToggle() {
   );
 }
 
-function AdminNavGroup({ group, pathname }: { group: NavGroup; pathname: string }) {
-  const hasActiveItem = group.items.some((item) => pathname === item.to);
-  // Open on its own when you land on one of its pages (from a link, a
-  // redirect or a reload), but stay under your control afterwards.
-  const [open, setOpen] = useState(hasActiveItem);
-  useEffect(() => {
-    if (hasActiveItem) setOpen(true);
-  }, [hasActiveItem]);
+function AdminNavGroup({
+  group,
+  pathname,
+  open,
+  onOpenChange,
+}: {
+  group: NavGroup;
+  pathname: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="group/nav-group">
+    <Collapsible open={open} onOpenChange={onOpenChange} className="group/nav-group">
       <SidebarMenuSubItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuSubButton className="h-auto min-h-7 cursor-pointer whitespace-normal py-1.5">
-            <group.icon className="size-4" />
-            <span className="flex-1">{group.label}</span>
+          <SidebarMenuSubButton className="h-auto min-h-7 cursor-pointer py-1.5 text-[13px] font-medium tracking-tight">
+            <group.icon className="size-4 shrink-0" />
+            <span className="flex-1 truncate">{group.label}</span>
             <ChevronDown className="size-3.5 shrink-0 transition-transform group-data-[state=open]/nav-group:rotate-180" />
           </SidebarMenuSubButton>
         </CollapsibleTrigger>
@@ -187,14 +189,14 @@ function AdminNavGroup({ group, pathname }: { group: NavGroup; pathname: string 
                   <Link
                     to={item.to}
                     className={cn(
-                      "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                      "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors",
                       active
-                        ? "bg-rail-active/15 font-medium text-rail-active"
+                        ? "bg-sidebar-accent font-medium text-rail-active"
                         : "text-sidebar-foreground hover:bg-sidebar-accent",
                     )}
                   >
                     <item.icon className="size-4 shrink-0" />
-                    {item.label}
+                    <span className="truncate">{item.label}</span>
                   </Link>
                 </li>
               );
@@ -212,6 +214,16 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
   useEffect(() => {
     if (onAdmin) setAdminOpen(true);
   }, [onAdmin]);
+
+  // Accordion: at most one Administration sub-group open at a time. Landing
+  // on one of its pages switches to that group and closes the others; opening
+  // a group by hand also closes whichever one was open.
+  const activeGroupLabel = ADMIN_NAV.find((group) => group.items.some((item) => pathname === item.to))?.label ?? null;
+  const [openGroupLabel, setOpenGroupLabel] = useState<string | null>(activeGroupLabel);
+  useEffect(() => {
+    if (activeGroupLabel) setOpenGroupLabel(activeGroupLabel);
+  }, [activeGroupLabel]);
+
   return (
     <Sidebar collapsible="icon">
       {/* No positioning wrapper here on purpose — absolute resolves against
@@ -226,7 +238,7 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
       <SidebarHeader className="flex h-14 flex-row items-center gap-2 border-b border-sidebar-border px-3 py-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
         <Link
           to="/dashboard"
-          className="grid size-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-from to-brand-to text-[13px] font-bold text-brand-foreground"
+          className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-from text-[13px] font-bold text-brand-foreground"
         >
           XT
         </Link>
@@ -241,7 +253,7 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
               asChild
               isActive={pathname.startsWith("/dashboard")}
               tooltip="Dashboard"
-              className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+              className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
             >
               <Link to="/dashboard">
                 <LayoutDashboard />
@@ -257,7 +269,7 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
                   <SidebarMenuButton
                     isActive={onAdmin}
                     tooltip="Administration"
-                    className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+                    className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
                   >
                     <Settings />
                     <span>Administration</span>
@@ -267,12 +279,34 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
                 <CollapsibleContent>
                   <SidebarMenuSub>
                     {ADMIN_NAV.map((group) => (
-                      <AdminNavGroup key={group.label} group={group} pathname={pathname} />
+                      <AdminNavGroup
+                        key={group.label}
+                        group={group}
+                        pathname={pathname}
+                        open={openGroupLabel === group.label}
+                        onOpenChange={(open) => setOpenGroupLabel(open ? group.label : null)}
+                      />
                     ))}
                   </SidebarMenuSub>
                 </CollapsibleContent>
               </SidebarMenuItem>
             </Collapsible>
+          )}
+
+          {can("admin") && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname.startsWith("/admin/rfp-management")}
+                tooltip="Generic RFP Question Master"
+                className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
+              >
+                <Link to="/admin/rfp-management/generic-rfp-question-master">
+                  <FileQuestion />
+                  <span>Generic RFP Question Master</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           )}
         </SidebarMenu>
       </SidebarContent>

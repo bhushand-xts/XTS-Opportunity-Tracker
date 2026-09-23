@@ -3,7 +3,8 @@
 --
 -- Admin-owned tables: master data + access control.
 --   master data     mst_stage, mst_sub_stage, mst_estimation_phases, mst_rate,
---                   tbl_reason_codes, mst_proposal_section (+ their trackers)
+--                   tbl_reason_codes, mst_proposal_section, mst_rfp_questions
+--                   (+ their trackers)
 --   access control  mst_menus, mst_permissions, mst_roles (+ trackers),
 --                   tbl_menuwise_permission, tbl_role_menu_permission
 --
@@ -146,6 +147,38 @@ CREATE TABLE mst_proposal_section (
   created_by INTEGER,
   updated_dt TIMESTAMP,
   updated_by INTEGER
+);
+
+-- Standard questions asked of vendors during the RFP process (Generic RFP
+-- Question Master). Deactivated rather than deleted — see mst_rfp_questions_tracker.
+CREATE TABLE mst_rfp_questions (
+  question_id SERIAL PRIMARY KEY,
+  question VARCHAR(500) NOT NULL,
+  description VARCHAR(500),
+  display_order INTEGER,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER,
+  is_active BOOLEAN DEFAULT TRUE
+);
+
+CREATE UNIQUE INDEX ux_mst_rfp_questions_question ON mst_rfp_questions (LOWER(question));
+
+-- History of mst_rfp_questions: one snapshot row per change, written in the
+-- same transaction as the change (see rfp-questions.repository.ts). No
+-- foreign key, so history survives beyond any single question row.
+CREATE TABLE mst_rfp_questions_tracker (
+  tracker_id SERIAL PRIMARY KEY,
+  question_id INTEGER NOT NULL,
+  question VARCHAR(500) NOT NULL,
+  description VARCHAR(500),
+  display_order INTEGER,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER,
+  is_active BOOLEAN DEFAULT TRUE NOT NULL
 );
 
 -- ---------------------------------------------------------------------
