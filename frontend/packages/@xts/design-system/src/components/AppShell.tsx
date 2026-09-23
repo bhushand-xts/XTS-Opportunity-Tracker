@@ -1,3 +1,4 @@
+import { useQuery } from "@apollo/client";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
@@ -7,11 +8,15 @@ import {
   CircleHelp,
   ClipboardList,
   FileQuestion,
+  FlaskConical,
   Key,
+  Layers,
   LayoutDashboard,
   Link2,
   List,
+  ListChecks,
   ListOrdered,
+  Menu as MenuLucideIcon,
   Plus,
   Settings,
   Share2,
@@ -19,6 +24,7 @@ import {
   Table2,
   UserCog,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -49,6 +55,7 @@ import {
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth, type AppPermission } from "@/lib/auth";
+import { GET_NAV_MENUS } from "@/lib/nav.queries";
 import { usePageTitle } from "@/lib/pageTitle";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -96,6 +103,166 @@ const ADMIN_NAV: NavGroup[] = [
     ],
   },
 ];
+
+// ---------------------------------------------------------------------
+// Dynamic Nav (Preview) — built live from mst_menus (via the Menu Master
+// admin screen) instead of the hand-written ADMIN_NAV above. Runs alongside
+// the static nav so the two can be compared menu-by-menu before ADMIN_NAV is
+// deleted and this becomes the only nav. Visible only behind the ?devNav=1
+// flag (see useDevNavPreview) — regular users never see it.
+// ---------------------------------------------------------------------
+
+interface NavMenuNode {
+  menuId: number;
+  menuName: string;
+  menuKey: string;
+  icon: string | null;
+  parentId: number | null;
+  sortOrder: number;
+  routePath: string | null;
+  isActive: boolean;
+  children?: NavMenuNode[];
+}
+
+/** Curated lookup for mst_menus.icon, mirroring mfe-admin's Menu Master (its
+ * own copy, in ICON_OPTIONS there) — design-system can't import from an MFE.
+ * Includes every icon the real admin menus use, so the preview matches the
+ * static sidebar's icons exactly. */
+const DYNAMIC_NAV_ICONS: Record<string, LucideIcon> = {
+  LayoutDashboard,
+  Settings,
+  ShieldCheck: Shield,
+  Shield,
+  Users,
+  ListChecks,
+  Layers,
+  Menu: MenuLucideIcon,
+  Table2,
+  Key,
+  Link2,
+  Share2,
+  UserCog,
+  ClipboardList,
+  ListOrdered,
+  FileQuestion,
+};
+function resolveDynamicNavIcon(name: string | null): LucideIcon {
+  return (name && DYNAMIC_NAV_ICONS[name]) || List;
+}
+
+/** Keeps a menu (and its children, recursively) only if it's active and
+ * either directly accessible (has a route and the role holds a permission on
+ * it) or has at least one accessible descendant — so a group isn't hidden
+ * just because it has no permission of its own. */
+function filterAccessibleTree(menu: NavMenuNode, hasMenuAccess: (menuKey: string) => boolean): NavMenuNode | null {
+  if (!menu.isActive) return null;
+  const children = (menu.children ?? [])
+    .map((child) => filterAccessibleTree(child, hasMenuAccess))
+    .filter((child): child is NavMenuNode => child !== null)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const selfAccessible = Boolean(menu.routePath) && hasMenuAccess(menu.menuKey);
+  if (!selfAccessible && children.length === 0) return null;
+  return { ...menu, children };
+}
+
+/** On, only for this browser, once `?devNav=1` has been visited — `?devNav=0`
+ * turns it back off. Lets you flip it on while testing without a code change,
+ * while regular users (and you, by default) never see the preview section. */
+function useDevNavPreview(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const flag = new URLSearchParams(window.location.search).get("devNav");
+    if (flag === "1") window.localStorage.setItem("devNavPreview", "1");
+    if (flag === "0") window.localStorage.removeItem("devNavPreview");
+    setOn(window.localStorage.getItem("devNavPreview") === "1");
+  }, []);
+  return on;
+}
+
+/** One node of the dynamic tree: a link if it has no children, otherwise an
+ * always-expanded group — kept simple (no accordion) since the point here is
+ * to see everything at once for comparison against the static nav. Nesting is
+ * shown by the indented `<ul>` around each level's children, same as
+ * AdminNavGroup above. */
+function DynamicNavNode({ menu, pathname }: { menu: NavMenuNode; pathname: string }) {
+  const Icon = resolveDynamicNavIcon(menu.icon);
+  const children = menu.children ?? [];
+  const hasChildren = children.length > 0;
+  const active = !hasChildren && menu.routePath !== null && pathname === menu.routePath;
+
+  const row = hasChildren ? (
+    <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-sidebar-foreground">
+      <Icon className="size-4 shrink-0" />
+      <span className="flex-1 truncate">{menu.menuName}</span>
+    </div>
+  ) : (
+    <Link
+      to={menu.routePath ?? "#"}
+      className={cn(
+        "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors",
+        active ? "bg-sidebar-accent font-medium text-rail-active" : "text-sidebar-foreground hover:bg-sidebar-accent",
+      )}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span className="truncate">{menu.menuName}</span>
+    </Link>
+  );
+
+  return (
+    <li>
+      {row}
+      {hasChildren && (
+        <ul className="ml-3.5 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2.5">
+          {children.map((child) => (
+            <DynamicNavNode key={child.menuId} menu={child} pathname={pathname} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function DynamicNavPreview({
+  pathname,
+  hasMenuAccess,
+}: {
+  pathname: string;
+  hasMenuAccess: (menuKey: string) => boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const { data } = useQuery<{ menus: NavMenuNode[] }>(GET_NAV_MENUS, { fetchPolicy: "cache-and-network" });
+
+  const tree = (data?.menus ?? [])
+    .map((menu) => filterAccessibleTree(menu, hasMenuAccess))
+    .filter((menu): menu is NavMenuNode => menu !== null)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="group/dynnav mt-2 border-t border-sidebar-border pt-2">
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuButton tooltip="Dynamic Nav (Preview)">
+            <FlaskConical />
+            <span>Dynamic Nav (Preview)</span>
+            <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/dynnav:rotate-180" />
+          </SidebarMenuButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <ul className="ml-2 mt-1 flex flex-col gap-0.5 px-2">
+            {tree.length === 0 && (
+              <li className="px-2 py-1.5 text-[13px] text-sidebar-foreground/60">
+                Nothing to show — no menu has both a Route Path and a permission granted to this role yet.
+              </li>
+            )}
+            {tree.map((menu) => (
+              <DynamicNavNode key={menu.menuId} menu={menu} pathname={pathname} />
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
+  );
+}
 
 function NotificationsPanel() {
   const { notifications, markAllRead } = useStore();
@@ -208,12 +375,21 @@ function AdminNavGroup({
   );
 }
 
-function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boolean; pathname: string }) {
+function AppSidebar({
+  can,
+  hasMenuAccess,
+  pathname,
+}: {
+  can: (permission: AppPermission) => boolean;
+  hasMenuAccess: (menuKey: string) => boolean;
+  pathname: string;
+}) {
   const onAdmin = pathname.startsWith("/admin");
   const [adminOpen, setAdminOpen] = useState(onAdmin);
   useEffect(() => {
     if (onAdmin) setAdminOpen(true);
   }, [onAdmin]);
+  const showDynamicPreview = useDevNavPreview();
 
   // Accordion: at most one Administration sub-group open at a time. Landing
   // on one of its pages switches to that group and closes the others; opening
@@ -308,6 +484,8 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
+
+          {can("admin") && showDynamicPreview && <DynamicNavPreview pathname={pathname} hasMenuAccess={hasMenuAccess} />}
         </SidebarMenu>
       </SidebarContent>
     </Sidebar>
@@ -318,7 +496,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   const location = useLocation();
   const navigate = useNavigate();
   // Who may see the app at all is decided by <AuthGate> in front of this component.
-  const { profile, roleName, signOut, can } = useAuth();
+  const { profile, roleName, signOut, can, hasMenuAccess } = useAuth();
   const { currentUser } = useStore();
   const [helpOpen, setHelpOpen] = useState(false);
   const pageTitle = usePageTitle();
@@ -330,7 +508,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   return (
     <TooltipProvider delayDuration={120}>
       <SidebarProvider>
-        <AppSidebar can={can} pathname={location.pathname} />
+        <AppSidebar can={can} hasMenuAccess={hasMenuAccess} pathname={location.pathname} />
         <SidebarInset>
           <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b bg-card px-5">
             <h1 className="shrink-0 text-[15px] font-semibold tracking-tight">{pageTitle}</h1>

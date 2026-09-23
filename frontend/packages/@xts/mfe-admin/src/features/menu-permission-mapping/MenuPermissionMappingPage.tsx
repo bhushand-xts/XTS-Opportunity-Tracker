@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@apollo/client";
+import { Lock } from "lucide-react";
 import { toast } from "sonner";
 import {
   Badge,
@@ -7,6 +8,11 @@ import {
   Card,
   CardContent,
   Checkbox,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Label,
   Select,
   SelectContent,
@@ -14,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
   Skeleton,
+  useAuth,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -31,10 +38,15 @@ function sameSet(a: Set<number>, b: Set<number>) {
   return a.size === b.size && [...a].every((id) => b.has(id));
 }
 
+const MENU_KEY = "menu_permission_mapping";
+
 export function MenuPermissionMappingPage() {
   useSetPageTitle("Menu Permission Mapping");
   const { rows, loading: menusLoading, error: menusError } = useMenus();
   const { permissions, loading: permissionsLoading, error: permissionsError } = usePermissions();
+  const { hasPermission } = useAuth();
+  const canView = hasPermission(MENU_KEY, "view");
+  const canEdit = hasPermission(MENU_KEY, "edit");
 
   const activeMenus = rows.filter(({ menu }) => menu.isActive);
   const activePermissions = permissions.filter((p) => p.isActive);
@@ -99,6 +111,21 @@ export function MenuPermissionMappingPage() {
 
       {error && <ErrorNotice error={error} />}
 
+      {!canView ? (
+        <Card>
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Lock />
+                </EmptyMedia>
+                <EmptyTitle>No view access</EmptyTitle>
+                <EmptyDescription>Your role doesn&apos;t have permission to view Menu Permission Mapping.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
+        </Card>
+      ) : (
       <Card>
         <CardContent className="space-y-6 pt-6">
           <div className="max-w-xs space-y-1.5">
@@ -153,6 +180,7 @@ export function MenuPermissionMappingPage() {
                         <Checkbox
                           id={id}
                           checked={selected.has(permission.permissionId)}
+                          disabled={!canEdit}
                           onCheckedChange={(checked) => toggle(permission.permissionId, checked === true)}
                           className="mt-0.5"
                         />
@@ -168,18 +196,21 @@ export function MenuPermissionMappingPage() {
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-2 border-t pt-4">
-                <Button variant="outline" disabled={!dirty || saving} onClick={() => setDraft(null)}>
-                  Reset
-                </Button>
-                <Button disabled={!dirty || saving} onClick={() => void save()}>
-                  {saving ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
+              {canEdit && (
+                <div className="flex items-center justify-end gap-2 border-t pt-4">
+                  <Button variant="outline" disabled={!dirty || saving} onClick={() => setDraft(null)}>
+                    Reset
+                  </Button>
+                  <Button disabled={!dirty || saving} onClick={() => void save()}>
+                    {saving ? "Saving…" : "Save changes"}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

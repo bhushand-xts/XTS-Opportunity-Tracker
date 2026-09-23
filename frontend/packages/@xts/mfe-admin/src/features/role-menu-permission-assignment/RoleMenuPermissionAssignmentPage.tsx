@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@apollo/client";
-import { ShieldCheck } from "lucide-react";
+import { Lock, ShieldCheck } from "lucide-react";
 import type { MenuPermissionMapping } from "@xts/api-contracts";
 import {
   Card,
@@ -10,6 +10,7 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
+  useAuth,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -26,11 +27,16 @@ import { UnsavedChangesBar } from "./UnsavedChangesBar";
 import { grantKey, useRoleMenuPermissions } from "./useRoleMenuPermissions";
 import { useSaveRoleMenuPermissions, type MenuChange } from "./useSaveRoleMenuPermissions";
 
+const MENU_KEY = "role_menu_permission_assignment";
+
 export function RoleMenuPermissionAssignmentPage() {
   useSetPageTitle("Role Menu Permission Assignment");
   const { roles, loading: rolesLoading, error: rolesError } = useRoles();
   const { rows, loading: menusLoading, error: menusError } = useMenus();
   const { permissions, error: permissionsError } = usePermissions();
+  const { hasPermission } = useAuth();
+  const canView = hasPermission(MENU_KEY, "view");
+  const canEdit = hasPermission(MENU_KEY, "edit");
   // The mappings are edited on another screen, so always refresh them from the server.
   const mappingsQuery = useQuery<{ menuPermissionMappings: MenuPermissionMapping[] }>(GET_MENU_PERMISSION_MAPPINGS, {
     fetchPolicy: "cache-and-network",
@@ -166,70 +172,91 @@ export function RoleMenuPermissionAssignmentPage() {
   const loading = menusLoading || (mappingsQuery.loading && !mappingsQuery.data) || accessLoading;
 
   return (
-    <div className={`mx-auto w-full max-w-[1500px] space-y-5 p-6 ${changeCount > 0 ? "pb-28" : ""}`}>
+    <div className={`mx-auto w-full max-w-[1500px] space-y-5 p-6 ${changeCount > 0 && canEdit ? "pb-28" : ""}`}>
       <PageHeader description="Decide what each role can do on each menu. Pick a menu, tick the permissions to grant, then save all changes together." />
 
       {error && <ErrorNotice error={error} />}
 
-      <RoleSummaryCard
-        roles={activeRoles}
-        role={role}
-        onSelect={setRoleId}
-        loading={rolesLoading}
-        stats={stats}
-        statsLoading={loading}
-      />
-
-      {!role ? (
+      {!canView ? (
         <Card>
           <CardContent className="py-10">
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <ShieldCheck />
+                  <Lock />
                 </EmptyMedia>
-                <EmptyTitle>No role selected</EmptyTitle>
-                <EmptyDescription>Choose a role above to see and edit the access it holds on every menu.</EmptyDescription>
+                <EmptyTitle>No view access</EmptyTitle>
+                <EmptyDescription>
+                  Your role doesn&apos;t have permission to view Role Menu Permission Assignment.
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           </CardContent>
         </Card>
       ) : (
-        <section className="grid items-start gap-5 lg:grid-cols-[minmax(280px,340px)_1fr]" aria-label="Access by menu">
-          <MenuList
-            rows={shown}
-            activeMenuId={activeMenuId}
-            onSelect={setPickedMenuId}
-            counts={counts}
-            search={search}
-            onSearch={setSearch}
-            showEmpty={showEmpty}
-            onShowEmpty={setShowEmpty}
-            hiddenEmptyMenus={hiddenEmptyMenus}
-            changedMenuIds={changedMenuIds}
+        <>
+          <RoleSummaryCard
+            roles={activeRoles}
+            role={role}
+            onSelect={setRoleId}
+            loading={rolesLoading}
+            stats={stats}
+            statsLoading={loading}
           />
-          <PermissionPanel
-            key={activeMenuId ?? "none"}
-            menu={activeMenu}
-            parentName={parentName}
-            permissions={activeMenuId === undefined ? [] : (availableByMenu.get(activeMenuId) ?? [])}
-            selected={selected}
-            granted={granted}
-            loading={loading}
-            onToggle={togglePermission}
-            onSetAll={setAllForActiveMenu}
-          />
-        </section>
-      )}
 
-      {changeCount > 0 && (
-        <UnsavedChangesBar
-          changes={changeCount}
-          menus={changes.length}
-          saving={saving}
-          onReset={() => setDraft(null)}
-          onSave={() => void handleSave()}
-        />
+          {!role ? (
+            <Card>
+              <CardContent className="py-10">
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <ShieldCheck />
+                    </EmptyMedia>
+                    <EmptyTitle>No role selected</EmptyTitle>
+                    <EmptyDescription>Choose a role above to see and edit the access it holds on every menu.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </CardContent>
+            </Card>
+          ) : (
+            <section className="grid items-start gap-5 lg:grid-cols-[minmax(280px,340px)_1fr]" aria-label="Access by menu">
+              <MenuList
+                rows={shown}
+                activeMenuId={activeMenuId}
+                onSelect={setPickedMenuId}
+                counts={counts}
+                search={search}
+                onSearch={setSearch}
+                showEmpty={showEmpty}
+                onShowEmpty={setShowEmpty}
+                hiddenEmptyMenus={hiddenEmptyMenus}
+                changedMenuIds={changedMenuIds}
+              />
+              <PermissionPanel
+                key={activeMenuId ?? "none"}
+                menu={activeMenu}
+                parentName={parentName}
+                permissions={activeMenuId === undefined ? [] : (availableByMenu.get(activeMenuId) ?? [])}
+                selected={selected}
+                granted={granted}
+                loading={loading}
+                onToggle={togglePermission}
+                onSetAll={setAllForActiveMenu}
+                disabled={!canEdit}
+              />
+            </section>
+          )}
+
+          {changeCount > 0 && canEdit && (
+            <UnsavedChangesBar
+              changes={changeCount}
+              menus={changes.length}
+              saving={saving}
+              onReset={() => setDraft(null)}
+              onSave={() => void handleSave()}
+            />
+          )}
+        </>
       )}
     </div>
   );

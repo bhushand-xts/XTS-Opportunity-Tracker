@@ -6,6 +6,7 @@ export interface RoleMenuPermissionRecord {
   menuId: number;
   permissionId: number;
   menuName: string;
+  menuKey: string;
   permissionName: string;
   permissionKey: string;
   createdDt: Date;
@@ -27,6 +28,7 @@ export class AccessRepository {
         rmp.menu_id AS "menuId",
         rmp.permission_id AS "permissionId",
         m.menu_name AS "menuName",
+        m.menu_key AS "menuKey",
         p.permission_name AS "permissionName",
         p.permission_key AS "permissionKey",
         rmp.created_dt AS "createdDt",
@@ -59,6 +61,7 @@ export class AccessRepository {
         rmp.menu_id AS "menuId",
         rmp.permission_id AS "permissionId",
         m.menu_name AS "menuName",
+        m.menu_key AS "menuKey",
         p.permission_name AS "permissionName",
         p.permission_key AS "permissionKey",
         rmp.created_dt AS "createdDt",

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { History, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { History, Lock, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import type { EstimationPhase } from "@xts/api-contracts";
 import {
   AlertDialog,
@@ -14,6 +14,11 @@ import {
   Button,
   Card,
   CardContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   Table,
   TableBody,
@@ -21,6 +26,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useAuth,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -31,11 +37,17 @@ import { useEstimatePhaseMutations } from "./useEstimatePhaseMutations";
 import { useEstimatePhases } from "./useEstimatePhases";
 
 const COLUMNS = 6;
+const MENU_KEY = "estimate_phase_master";
 
 export function EstimatePhaseMasterPage() {
   useSetPageTitle("Estimate Phase Master");
   const { phases, loading, error } = useEstimatePhases();
   const { deleteEstimatePhase } = useEstimatePhaseMutations();
+  const { hasPermission } = useAuth();
+  const canView = hasPermission(MENU_KEY, "view");
+  const canAdd = hasPermission(MENU_KEY, "add");
+  const canEdit = hasPermission(MENU_KEY, "edit");
+  const canDelete = hasPermission(MENU_KEY, "delete");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPhase, setEditingPhase] = useState<EstimationPhase | null>(null);
   const [deletingPhase, setDeletingPhase] = useState<EstimationPhase | null>(null);
@@ -78,73 +90,95 @@ export function EstimatePhaseMasterPage() {
                 className="pl-9"
               />
             </div>
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 size-4" />
-              Add
-            </Button>
+            {canAdd && (
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 size-4" />
+                Add
+              </Button>
+            )}
           </>
         }
       />
 
       {error && <ErrorNotice error={error} title="Couldn't load estimate phases" />}
 
-      <Card>
-        <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Phase name</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Display order</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading && <TableLoadingRows columns={COLUMNS} />}
-              {!loading && !error && phases.length === 0 && (
-                <TableEmptyRow columns={COLUMNS} message="No estimate phases yet. Add the first one." />
-              )}
-              {!loading && phases.length > 0 && visiblePhases.length === 0 && (
-                <TableEmptyRow columns={COLUMNS} message="No estimate phases match your search." />
-              )}
-              {visiblePhases.map((phase) => (
-                <TableRow key={phase.id}>
-                  <TableCell className="font-medium">{phase.phaseName}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{phase.phaseCode ?? "—"}</TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">{phase.description ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{phase.displayOrder ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant={phase.isActive ? "success" : "muted"}>{phase.isActive ? "Active" : "Inactive"}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`History of ${phase.phaseName}`}
-                      onClick={() => setHistoryPhase(phase)}
-                    >
-                      <History className="size-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" aria-label={`Edit ${phase.phaseName}`} onClick={() => openEdit(phase)}>
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Delete ${phase.phaseName}`}
-                      onClick={() => setDeletingPhase(phase)}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </TableCell>
+      {!canView ? (
+        <Card>
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Lock />
+                </EmptyMedia>
+                <EmptyTitle>No view access</EmptyTitle>
+                <EmptyDescription>Your role doesn&apos;t have permission to view Estimate Phase Master.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Phase name</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Display order</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {loading && <TableLoadingRows columns={COLUMNS} />}
+                {!loading && !error && phases.length === 0 && (
+                  <TableEmptyRow columns={COLUMNS} message="No estimate phases yet. Add the first one." />
+                )}
+                {!loading && phases.length > 0 && visiblePhases.length === 0 && (
+                  <TableEmptyRow columns={COLUMNS} message="No estimate phases match your search." />
+                )}
+                {visiblePhases.map((phase) => (
+                  <TableRow key={phase.id}>
+                    <TableCell className="font-medium">{phase.phaseName}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{phase.phaseCode ?? "—"}</TableCell>
+                    <TableCell className="max-w-xs truncate text-muted-foreground">{phase.description ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{phase.displayOrder ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={phase.isActive ? "success" : "muted"}>{phase.isActive ? "Active" : "Inactive"}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`History of ${phase.phaseName}`}
+                        onClick={() => setHistoryPhase(phase)}
+                      >
+                        <History className="size-4" />
+                      </Button>
+                      {canEdit && (
+                        <Button variant="ghost" size="icon" aria-label={`Edit ${phase.phaseName}`} onClick={() => openEdit(phase)}>
+                          <Pencil className="size-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Delete ${phase.phaseName}`}
+                          onClick={() => setDeletingPhase(phase)}
+                        >
+                          <Trash2 className="size-4 text-destructive" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <EstimatePhaseFormDialog open={dialogOpen} onOpenChange={setDialogOpen} phase={editingPhase} allPhases={phases} />
       <EstimatePhaseHistoryDialog phase={historyPhase} onClose={() => setHistoryPhase(null)} />

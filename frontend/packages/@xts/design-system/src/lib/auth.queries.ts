@@ -45,3 +45,17 @@ export const ROLE_NAME = gql`
     }
   }
 `;
+
+// Every (menu, permission) grant the signed-in user's role holds — the real
+// data behind hasPermission()/hasMenuAccess() in auth.ts. menuKey/permissionKey
+// (not the numeric ids) are what the app keys its checks on, since those stay
+// stable across environments while ids don't (see mst_menus.menu_key,
+// mst_permissions.permission_key).
+export const ROLE_ACCESS = gql`
+  query RoleAccessForAuth($roleId: Int!) {
+    roleAccess(roleId: $roleId) {
+      menuKey
+      permissionKey
+    }
+  }
+`;

@@ -4,6 +4,7 @@ export interface CreateMenuInput {
   icon?: string | null;
   parentId?: number | null;
   sortOrder: number;
+  routePath?: string | null;
   createdBy: number;
 }
 
@@ -13,6 +14,7 @@ export interface UpdateMenuInput {
   icon?: string | null;
   parentId?: number | null;
   sortOrder?: number;
+  routePath?: string | null;
   updatedBy: number;
 }
 
@@ -21,11 +23,13 @@ export interface UpdateMenuInput {
 const MAX_NAME = 100;
 const MAX_KEY = 100;
 const MAX_ICON = 50;
+const MAX_ROUTE_PATH = 255;
 
 function validateLengths(input: {
   menuName?: string;
   menuKey?: string;
   icon?: string | null;
+  routePath?: string | null;
 }): void {
   if (input.menuName && input.menuName.trim().length > MAX_NAME) {
     throw new Error(`Menu name must be at most ${MAX_NAME} characters.`);
@@ -37,6 +41,14 @@ function validateLengths(input: {
 
   if (input.icon && input.icon.length > MAX_ICON) {
     throw new Error(`Icon must be at most ${MAX_ICON} characters.`);
+  }
+
+  if (input.routePath && input.routePath.trim().length > MAX_ROUTE_PATH) {
+    throw new Error(`Route path must be at most ${MAX_ROUTE_PATH} characters.`);
+  }
+
+  if (input.routePath && !input.routePath.trim().startsWith("/")) {
+    throw new Error(`Route path must start with "/".`);
   }
 }
 

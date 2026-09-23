@@ -192,6 +192,10 @@ CREATE TABLE mst_menus (
   icon VARCHAR(50),
   parent_id INTEGER,
   sort_order INTEGER NOT NULL,
+  -- The frontend route this menu links to (e.g. "/admin/user-management/role-master").
+  -- Set by whoever ships the page it points to — see MenuFormDialog.tsx. Null until
+  -- the dynamic sidebar (built from this table) knows where to send the user.
+  route_path VARCHAR(255),
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
   created_by INTEGER NOT NULL,
   updated_dt TIMESTAMP,

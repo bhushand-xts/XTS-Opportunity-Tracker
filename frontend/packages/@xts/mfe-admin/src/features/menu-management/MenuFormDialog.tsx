@@ -28,7 +28,14 @@ import { NO_PARENT, menuFormSchema, type MenuFormValues } from "./menu.schema";
 import { ICON_OPTIONS, descendantIds, nextSortOrder, slugify } from "./menu.utils";
 import { useMenuMutations } from "./useMenuMutations";
 
-const EMPTY: MenuFormValues = { menuName: "", menuKey: "", icon: "", parentId: NO_PARENT, sortOrder: 1 };
+const EMPTY: MenuFormValues = {
+  menuName: "",
+  menuKey: "",
+  icon: "",
+  parentId: NO_PARENT,
+  sortOrder: 1,
+  routePath: "",
+};
 const NO_ICON = "none";
 
 export function MenuFormDialog({
@@ -64,6 +71,7 @@ export function MenuFormDialog({
             icon: menu.icon ?? "",
             parentId: menu.parentId === null ? NO_PARENT : String(menu.parentId),
             sortOrder: menu.sortOrder,
+            routePath: menu.routePath ?? "",
           }
         : EMPTY
     );
@@ -123,6 +131,7 @@ export function MenuFormDialog({
       menuKey: key,
       icon: values.icon ? values.icon : null,
       sortOrder: values.sortOrder,
+      routePath: values.routePath?.trim() || null,
       // Only send the parent when it changed: the backend re-validates it on
       // every update, and rejects a parent that has since been deactivated.
       ...(!menu || parentId !== menu.parentId ? { parentId } : {}),
@@ -168,6 +177,24 @@ export function MenuFormDialog({
                     <Input className="font-mono text-sm" placeholder="e.g. user_management" {...field} />
                   </FormControl>
                   <FormDescription>Unique identifier. Lowercase letters, numbers, hyphens and underscores.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="routePath"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Route path</FormLabel>
+                  <FormControl>
+                    <Input className="font-mono text-sm" placeholder="e.g. /admin/user-management/role-master" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    The page this menu links to. Leave blank until that page has been built — the dynamic sidebar
+                    won&apos;t show a link for a menu with no route yet.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

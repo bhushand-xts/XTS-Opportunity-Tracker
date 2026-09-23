@@ -1,10 +1,19 @@
 import {
+  ClipboardList,
+  FileQuestion,
+  Key,
   Layers,
   LayoutDashboard,
+  Link2,
   ListChecks,
+  ListOrdered,
   Menu as MenuIcon,
   Settings,
+  Share2,
+  Shield,
   ShieldCheck,
+  Table2,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -19,15 +28,25 @@ export function slugify(value: string, separator = "-"): string {
 }
 
 /** Curated lookup for the Icon column. Icon names outside this set are shown
- * as plain text — extend the list as more icons are needed. */
+ * as plain text — extend the list as more icons are needed. Includes every
+ * icon the real admin menus use, matching AppShell's static sidebar. */
 const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard,
   Settings,
   ShieldCheck,
+  Shield,
   Users,
   ListChecks,
   Layers,
   Menu: MenuIcon,
+  Table2,
+  Key,
+  Link2,
+  Share2,
+  UserCog,
+  ClipboardList,
+  ListOrdered,
+  FileQuestion,
 };
 
 export function resolveIcon(name: string | null): LucideIcon | null {
