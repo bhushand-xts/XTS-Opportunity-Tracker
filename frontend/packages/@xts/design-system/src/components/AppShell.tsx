@@ -5,10 +5,12 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleHelp,
+  ClipboardList,
   Key,
   LayoutDashboard,
   Link2,
   List,
+  ListOrdered,
   Plus,
   Settings,
   Share2,
@@ -83,6 +85,13 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "Role Master", to: "/admin/user-management/role-master", icon: Shield },
       { label: "Role Menu Permission Assignment", to: "/admin/user-management/role-menu-permission-assignment", icon: Share2 },
       { label: "User Role Assignment", to: "/admin/user-management/user-role-assignment", icon: UserCog },
+    ],
+  },
+  {
+    label: "Estimate Management",
+    icon: ClipboardList,
+    items: [
+      { label: "Estimate Phase Master", to: "/admin/estimate-management/estimate-phase-master", icon: ListOrdered },
     ],
   },
 ];

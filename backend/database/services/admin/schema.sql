@@ -74,7 +74,9 @@ CREATE TABLE mst_sub_stage_tracker (
 CREATE TABLE mst_estimation_phases (
   phase_id SERIAL PRIMARY KEY,
   phase_name VARCHAR(100),
+  phase_code VARCHAR(50),
   description VARCHAR(500),
+  display_order INTEGER,
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
@@ -82,12 +84,23 @@ CREATE TABLE mst_estimation_phases (
   is_active BOOLEAN DEFAULT TRUE
 );
 
+CREATE UNIQUE INDEX ux_mst_estimation_phases_phase_name ON mst_estimation_phases (LOWER(phase_name));
+CREATE UNIQUE INDEX ux_mst_estimation_phases_phase_code ON mst_estimation_phases (LOWER(phase_code)) WHERE phase_code IS NOT NULL;
+
+-- History of mst_estimation_phases: one snapshot row per change (including a
+-- final inactive snapshot when a phase is deleted), written in the same
+-- transaction as the change (see phases.repository.ts). No foreign key, so
+-- history survives the phase's deletion. opportunity_id is unrelated to this
+-- master-data history — it is reserved for the estimation service to snapshot
+-- the phase a given opportunity's estimate used at the time (left NULL here).
 CREATE TABLE tbl_estimation_phases_tracker (
   phase_tracker_id SERIAL PRIMARY KEY,
   phase_id INTEGER,
   phase_name VARCHAR(100),
+  phase_code VARCHAR(50),
   opportunity_id INTEGER,     -- an opportunity service id; no foreign key
   description VARCHAR(500),
+  display_order INTEGER,
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
