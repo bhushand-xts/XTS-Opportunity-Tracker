@@ -18,7 +18,29 @@ export interface MenuRecord {
   isActive: boolean;
   children?: MenuRecord[];
 }
-
+export interface SidebarMenuRecord {
+  menuId: number;
+  menuName: string;
+  menuKey: string;
+  icon: string | null;
+  parentId: number | null;
+  sortOrder: number;
+  children?: SidebarMenuRecord[];
+}
+export interface UserMenuPermissionRecord {
+  menuId: number;
+  menuName: string;
+  menuKey: string;
+  parentId: number | null;
+  permissionId: number;
+  permissionName: string;
+  permissionKey: string;
+}
+export interface UserPermissionRecord {
+  permissionId: number;
+  permissionName: string;
+  permissionKey: string;
+}
 export class MenusRepository {
 
   async findAll(
@@ -353,4 +375,183 @@ export class MenusRepository {
 
     return result[0];
   }
+    async findSidebarByUserId(
+  userId: number
+): Promise<SidebarMenuRecord[]> {
+
+  const result = await query<SidebarMenuRecord>(
+    `
+    WITH RECURSIVE user_role AS (
+      SELECT role_id
+      FROM mst_user
+      WHERE user_id = $1
+        AND is_active = TRUE
+    ),
+
+    allowed_menus AS (
+      SELECT DISTINCT
+        m.menu_id,
+        m.menu_name,
+        m.menu_key,
+        m.icon,
+        m.parent_id,
+        m.sort_order
+      FROM mst_menus m
+      INNER JOIN tbl_role_menu_permission rmp
+        ON rmp.menu_id = m.menu_id
+       AND rmp.is_active = TRUE
+
+      INNER JOIN user_role ur
+        ON ur.role_id = rmp.role_id
+
+      INNER JOIN mst_permissions p
+        ON p.permission_id = rmp.permission_id
+       AND p.is_active = TRUE
+
+      WHERE m.is_active = TRUE
+    ),
+
+    sidebar_menus AS (
+      SELECT
+        menu_id,
+        menu_name,
+        menu_key,
+        icon,
+        parent_id,
+        sort_order
+      FROM allowed_menus
+
+      UNION
+
+      SELECT
+        m.menu_id,
+        m.menu_name,
+        m.menu_key,
+        m.icon,
+        m.parent_id,
+        m.sort_order
+      FROM mst_menus m
+      INNER JOIN sidebar_menus sm
+        ON sm.parent_id = m.menu_id
+      WHERE m.is_active = TRUE
+    )
+
+    SELECT DISTINCT
+      menu_id AS "menuId",
+      menu_name AS "menuName",
+      menu_key AS "menuKey",
+      icon,
+      parent_id AS "parentId",
+      sort_order AS "sortOrder"
+    FROM sidebar_menus
+    ORDER BY
+      sort_order ASC,
+      menu_id ASC
+    `,
+    [userId]
+  );
+
+  return result;
+}
+async findUserMenus(userId: number): Promise<SidebarMenuRecord[]> {
+  const result = await query<SidebarMenuRecord>(
+    `
+    WITH RECURSIVE user_role AS (
+      SELECT role_id
+      FROM mst_user
+      WHERE user_id = $1
+        AND is_active = TRUE
+    ),
+
+    allowed_menus AS (
+      SELECT DISTINCT
+        m.menu_id,
+        m.menu_name,
+        m.menu_key,
+        m.icon,
+        m.parent_id,
+        m.sort_order
+      FROM mst_menus m
+      INNER JOIN tbl_role_menu_permission rmp
+        ON rmp.menu_id = m.menu_id
+       AND rmp.is_active = TRUE
+      INNER JOIN user_role ur
+        ON ur.role_id = rmp.role_id
+      WHERE m.is_active = TRUE
+    ),
+
+    sidebar_menus AS (
+      SELECT
+        menu_id,
+        menu_name,
+        menu_key,
+        icon,
+        parent_id,
+        sort_order
+      FROM allowed_menus
+
+      UNION
+
+      SELECT
+        m.menu_id,
+        m.menu_name,
+        m.menu_key,
+        m.icon,
+        m.parent_id,
+        m.sort_order
+      FROM mst_menus m
+      INNER JOIN sidebar_menus sm
+        ON sm.parent_id = m.menu_id
+      WHERE m.is_active = TRUE
+    )
+
+    SELECT DISTINCT
+      menu_id AS "menuId",
+      menu_name AS "menuName",
+      menu_key AS "menuKey",
+      icon,
+      parent_id AS "parentId",
+      sort_order AS "sortOrder"
+    FROM sidebar_menus
+    ORDER BY
+      sort_order ASC,
+      menu_id ASC
+    `,
+    [userId]
+  );
+
+  return result;
+}
+async findMenuPermissions(
+  userId: number,
+  menuId: number
+): Promise<UserPermissionRecord[]> {
+
+  const result = await query<UserPermissionRecord>(
+    `
+    SELECT
+      p.permission_id AS "permissionId",
+      p.permission_name AS "permissionName",
+      p.permission_key AS "permissionKey"
+    FROM mst_user u
+    INNER JOIN tbl_role_menu_permission rmp
+      ON rmp.role_id = u.role_id
+     AND rmp.is_active = TRUE
+    INNER JOIN mst_menus m
+      ON m.menu_id = rmp.menu_id
+     AND m.is_active = TRUE
+    INNER JOIN mst_permissions p
+      ON p.permission_id = rmp.permission_id
+     AND p.is_active = TRUE
+    WHERE u.user_id = $1
+      AND u.is_active = TRUE
+      AND m.menu_id = $2
+    ORDER BY
+      p.permission_id
+    `,
+    [userId, menuId]
+  );
+
+  return result;
+}
 }

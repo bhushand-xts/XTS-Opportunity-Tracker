@@ -44,6 +44,55 @@ export const menuResolvers = {
       } catch (error) {
         return handleError(error);
       }
+    },
+    mySidebar: async (
+      _: unknown,
+      __: unknown,
+      ctx: RequestContext
+    ) => {
+      try {
+        if (!ctx.user?.id) {
+          throw new Error("Authentication required.");
+        }
+
+        return await service.getSidebarForUser(ctx.user.id);
+      } catch (error) {
+        return handleError(error);
+      }
+    }
+    ,
+    userMenus: async (
+      _: unknown,
+      __: unknown,
+      ctx: RequestContext
+    ) => {
+      try {
+        if (!ctx.user?.id) {
+          throw new Error("Authentication required.");
+        }
+
+        return await service.getUserMenus(ctx.user.id)
+      } catch (error) {
+        return handleError(error);
+      }
+    },
+    userMenuPermissionsByMenu: async (
+      _: unknown,
+      args: { menuId: number },
+      ctx: RequestContext
+    ) => {
+      try {
+        if (!ctx.user?.id) {
+          throw new Error("Authentication required.");
+        }
+
+        return await service.getMenuPermissions(
+          ctx.user.id,
+          args.menuId
+        );
+      } catch (error) {
+        return handleError(error);
+      }
     }
   },
 
