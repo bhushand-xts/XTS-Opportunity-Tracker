@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Key, Link2, List, Share2, Shield, UserCog, type LucideIcon } from "lucide-react";
+import { ArrowRight, ClipboardList, Key, Link2, List, Share2, Shield, UserCog, type LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, Skeleton, useAuth, useSetPageTitle } from "@xts/design-system";
+import { useEstimatePhases } from "../features/estimate-phase-management/useEstimatePhases";
 import { useMenus } from "../features/menu-management/useMenus";
 import { usePermissions } from "../features/permission-management/usePermissions";
 import { useRoles } from "../features/role-management/useRoles";
@@ -25,6 +26,7 @@ export function AdminOverview() {
   const { roles, loading: rolesLoading } = useRoles();
   const { menus, loading: menusLoading } = useMenus();
   const { permissions, loading: permissionsLoading } = usePermissions();
+  const { phases, loading: phasesLoading } = useEstimatePhases();
 
   const name = profile?.first_name || session?.email;
 
@@ -70,6 +72,13 @@ export function AdminOverview() {
       to: "/admin/user-management/user-role-assignment",
       icon: UserCog,
       summary: null,
+    },
+    {
+      title: "Estimate Phase Master",
+      description: "Phases used during the estimation process.",
+      to: "/admin/estimate-management/estimate-phase-master",
+      icon: ClipboardList,
+      summary: summarize(phases, phasesLoading),
     },
   ];
 

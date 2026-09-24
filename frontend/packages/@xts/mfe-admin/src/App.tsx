@@ -4,9 +4,11 @@ import { BrowserRouter, Navigate, Route, Routes, useInRouterContext } from "reac
 import { getApolloClient } from "@xts/api-client";
 import { AppShell, AuthGate, Spinner, Toaster, useSidebarMenus } from "@xts/design-system";
 import { AdminOverview } from "./components/AdminOverview";
+import { EstimatePhaseMasterPage } from "./features/estimate-phase-management/EstimatePhaseMasterPage";
 import { MenuMasterPage } from "./features/menu-management/MenuMasterPage";
 import { MenuPermissionMappingPage } from "./features/menu-permission-mapping/MenuPermissionMappingPage";
 import { PermissionMasterPage } from "./features/permission-management/PermissionMasterPage";
+import { RfpQuestionMasterPage } from "./features/rfp-question-management/RfpQuestionMasterPage";
 import { RoleMasterPage } from "./features/role-management/RoleMasterPage";
 import { RoleMenuPermissionAssignmentPage } from "./features/role-menu-permission-assignment/RoleMenuPermissionAssignmentPage";
 import { UserRoleAssignmentPage } from "./features/user-role-assignment/UserRoleAssignmentPage";

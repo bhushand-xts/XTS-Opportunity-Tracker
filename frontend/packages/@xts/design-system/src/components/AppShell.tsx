@@ -45,9 +45,7 @@ function NotificationsPanel() {
       <SheetTrigger asChild>
         <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
           <Bell className="size-[18px]" />
-          {unread > 0 && (
-            <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />
-          )}
+          {unread > 0 && <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />}
         </Button>
       </SheetTrigger>
       <SheetContent className="w-[380px] p-0">
@@ -254,7 +252,7 @@ function AppSidebar({ tree, loading, pathname }: { tree: MenuNode[]; loading: bo
       <SidebarHeader className="flex h-14 flex-row items-center gap-2 border-b border-sidebar-border px-3 py-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
         <Link
           to="/dashboard"
-          className="grid size-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-from to-brand-to text-[13px] font-bold text-brand-foreground"
+          className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-from text-[13px] font-bold text-brand-foreground"
         >
           XT
         </Link>

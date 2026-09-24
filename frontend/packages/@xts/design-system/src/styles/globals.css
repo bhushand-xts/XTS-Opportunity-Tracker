@@ -27,28 +27,31 @@
     --input: 220 15% 84%;
     --ring: 224 76% 48%;
     --radius: 0.625rem;
-    /* Sidebar: deep navy with light text. */
-    --sidebar-background: 224 47% 12%;
-    --sidebar-foreground: 220 25% 85%;
+    /* Sidebar: plain slate with a single clean blue accent — flat surfaces,
+       one accent color, no gradients or glow, for a clear resting/hover/active
+       distinction without visual noise. */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 215 20% 75%;
     --sidebar-primary: 217 91% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 224 40% 19%;
+    --sidebar-accent: 217 33% 20%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 224 35% 20%;
+    --sidebar-border: 215 25% 24%;
     --sidebar-ring: 217 91% 60%;
     /* AppShell rail + pipeline-funnel tokens, ported with AppShell/DashboardContent.
-       rail-active is the light blue used for the active item on the dark sidebar. */
-    --rail: 224 47% 12%;
-    --rail-foreground: 220 25% 85%;
-    --rail-active: 213 100% 76%;
+       rail-active is the same clean blue used for the active item on the sidebar. */
+    --rail: 222 47% 11%;
+    --rail-foreground: 215 20% 75%;
+    --rail-active: 217 91% 60%;
     --stage-1: 217.2 91.2% 59.8%;
     --stage-2: 262.1 83.3% 57.8%;
     --stage-3: 291.1 63.9% 57.5%;
     --stage-4: 24.6 95% 53.1%;
     --stage-5: 142.1 76.2% 36.3%;
-    /* Brand gradient — logo tiles only. Buttons use the solid primary. */
-    --brand-from: 224 76% 48%;
-    --brand-to: 262 70% 55%;
+    /* Brand accent — sidebar/top-bar (logo tile, active nav, avatar). A flat
+       blue, not a gradient, to keep the chrome plain and uncluttered. */
+    --brand-from: 217 91% 60%;
+    --brand-to: 217 91% 60%;
     --brand-foreground: 0 0% 100%;
   }
 
@@ -79,16 +82,17 @@
     --border: var(--mauve-4);
     --input: var(--mauve-4);
     --ring: 217.2 91.2% 59.8%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-background: 222 47% 8%;
+    --sidebar-foreground: 215 20% 75%;
+    --sidebar-primary: 217 91% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent: 217 30% 16%;
     --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-border: 215 25% 18%;
+    --sidebar-ring: 217 91% 60%;
     --rail: var(--mauve-1);
     --rail-foreground: 270 4% 65%;
+    --rail-active: 217 91% 60%;
   }
 }
 

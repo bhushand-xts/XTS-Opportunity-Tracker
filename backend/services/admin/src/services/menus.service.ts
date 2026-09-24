@@ -1,6 +1,7 @@
 import {
   MenusRepository,
-  MenuRecord
+  MenuRecord,
+  SidebarMenuRecord
 } from "../repositories/menus.repository";
 
 import {
@@ -26,7 +27,15 @@ export class MenusService {
       ? this.buildTree(menus)
       : menus;
   }
+async getSidebarForUser(userId: number): Promise<SidebarMenuRecord[]> {
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new Error("Valid user id is required.");
+  }
 
+  const menus = await this.repository.findSidebarByUserId(userId);
+
+  return this.buildSidebarTree(menus);
+}
   async getMenu(
     menuId: number
   ): Promise<MenuRecord | null> {
@@ -262,7 +271,39 @@ export class MenusService {
 
     return rootMenus;
   }
+private buildSidebarTree(
+  menus: SidebarMenuRecord[]
+): SidebarMenuRecord[] {
 
+  const menuMap = new Map<number, SidebarMenuRecord>();
+  const rootMenus: SidebarMenuRecord[] = [];
+
+  for (const menu of menus) {
+    menuMap.set(menu.menuId, {
+      ...menu,
+      children: []
+    });
+  }
+
+  for (const menu of menus) {
+
+    const currentMenu = menuMap.get(menu.menuId)!;
+
+    if (
+      menu.parentId !== null &&
+      menuMap.has(menu.parentId)
+    ) {
+      menuMap
+        .get(menu.parentId)!
+        .children!
+        .push(currentMenu);
+    } else {
+      rootMenus.push(currentMenu);
+    }
+  }
+
+  return rootMenus;
+}
   private findInTree(
     menus: MenuRecord[],
     menuId: number
@@ -315,4 +356,59 @@ export class MenusService {
       currentParentId = parent.parentId;
     }
   }
+  async getUserMenus(
+    userId: number
+  ): Promise<any[]> {
+
+    const rows =
+      await this.repository.findUserMenus(userId);
+
+    const menuMap = new Map<number, any>();
+    const rootMenus: any[] = [];
+
+    for (const row of rows) {
+
+      if (!menuMap.has(row.menuId)) {
+        menuMap.set(row.menuId, {
+          menuId: row.menuId,
+          menuName: row.menuName,
+          menuKey: row.menuKey,
+          parentId: row.parentId,
+          children: []
+        });
+      }
+    }
+
+    for (const menu of menuMap.values()) {
+
+      if (
+        menu.parentId !== null &&
+        menuMap.has(menu.parentId)
+      ) {
+        menuMap.get(menu.parentId).children.push(menu);
+      } else {
+        rootMenus.push(menu);
+      }
+    }
+
+    return rootMenus;
+  }
+  async getMenuPermissions(
+  userId: number,
+  menuId: number
+) {
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new Error("Valid user id is required.");
+  }
+
+  if (!Number.isInteger(menuId) || menuId <= 0) {
+    throw new Error("Valid menu id is required.");
+  }
+
+  return this.repository.findMenuPermissions(
+    userId,
+    menuId
+  );
+}
+
 }

@@ -14,7 +14,28 @@ export const menuTypeDefs = `#graphql
     isActive: Boolean!
     children: [Menu!]!
   }
+   type SidebarMenu {
+    menuId: Int!
+    menuName: String!
+    menuKey: String!
+    icon: String
+    parentId: Int
+    sortOrder: Int!
+    children: [SidebarMenu!]!
+  }
+  type UserMenus {
+    menuId: Int!
+    menuName: String!
+    menuKey: String!
+    parentId: Int
+    children: [UserMenus!]!
+  }
 
+  type UserMenuPermissionsByMenu  {
+    permissionId: Int!
+    permissionName: String!
+    permissionKey: String!
+  }
   input CreateMenuInput {
     menuName: String!
     menuKey: String!
@@ -37,6 +58,9 @@ export const menuTypeDefs = `#graphql
     menus(asTree: Boolean = false): [Menu!]!
 
     menu(menuId: Int!): Menu
+     mySidebar: [SidebarMenu!]!
+    userMenus: [UserMenus!]!
+    userMenuPermissionsByMenu(menuId: Int!): [UserMenuPermissionsByMenu!]!
   }
 
   extend type Mutation {
