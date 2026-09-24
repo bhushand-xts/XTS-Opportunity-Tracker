@@ -22,8 +22,6 @@ import { getApolloClient } from "@xts/api-client";
 import type { AuthPayload } from "@xts/api-contracts";
 import { LOGIN, REGISTER, ROLE_NAME } from "./auth.queries";
 
-export type AppPermission = "dashboard" | "admin" | "opportunity" | "solution" | "approval";
-
 interface Profile {
   first_name: string;
   last_name: string;
@@ -147,8 +145,6 @@ if (typeof window !== "undefined") {
   }
 }
 
-const ALL_PERMISSIONS: AppPermission[] = ["dashboard", "admin", "opportunity", "solution", "approval"];
-
 /**
  * The signed-in user's database id, as the positive integer the backend
  * expects for `createdBy` / `updatedBy`. Returns null when nobody is signed
@@ -175,10 +171,8 @@ export function useAuth() {
     loading: false,
     session: snapshot.session,
     profile: snapshot.profile,
+    roleId: snapshot.roleId,
     roleName: snapshot.roleName,
-    can(permission: AppPermission) {
-      return ALL_PERMISSIONS.includes(permission);
-    },
     async signIn(email: string, password: string): Promise<AuthResult> {
       if (!email.trim() || !password.trim()) {
         return { ok: false, error: "Please fill in all fields" };

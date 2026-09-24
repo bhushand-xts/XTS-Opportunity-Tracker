@@ -1,22 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import {
-  Bell,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleHelp,
-  Key,
-  LayoutDashboard,
-  Link2,
-  List,
-  Plus,
-  Settings,
-  Share2,
-  Shield,
-  Table2,
-  UserCog,
-  Users,
-} from "lucide-react";
+import { Bell, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Plus } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -29,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   Sidebar,
@@ -38,54 +22,20 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSkeleton,
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarProvider,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useAuth, type AppPermission } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { usePageTitle } from "@/lib/pageTitle";
+import { useSidebarMenus, type MenuNode } from "@/lib/useSidebarMenus";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
-
-interface NavLeaf {
-  label: string;
-  to: string;
-  icon: typeof Table2;
-}
-interface NavGroup {
-  label: string;
-  icon: typeof List;
-  items: NavLeaf[];
-}
-
-// Administration's own sub-navigation (Menu Management, User Management, ...)
-// is defined here rather than in the Admin MFE — this sidebar is the single
-// shared nav surface for the whole app now, so admin's structure has to live
-// wherever that nav lives. The Admin MFE still owns the actual page content
-// for each of these routes, just not the links to reach them.
-const ADMIN_NAV: NavGroup[] = [
-  {
-    label: "Menu Management",
-    icon: List,
-    items: [
-      { label: "Menu Master", to: "/admin/menu-management/menu-master", icon: Table2 },
-      { label: "Permission Master", to: "/admin/menu-management/permission-master", icon: Key },
-      { label: "Menu Permission Mapping", to: "/admin/menu-management/menu-permission-mapping", icon: Link2 },
-    ],
-  },
-  {
-    label: "User Management",
-    icon: Users,
-    items: [
-      { label: "Role Master", to: "/admin/user-management/role-master", icon: Shield },
-      { label: "Role Menu Permission Assignment", to: "/admin/user-management/role-menu-permission-assignment", icon: Share2 },
-      { label: "User Role Assignment", to: "/admin/user-management/user-role-assignment", icon: UserCog },
-    ],
-  },
-];
 
 function NotificationsPanel() {
   const { notifications, markAllRead } = useStore();
@@ -151,58 +101,145 @@ function MidSidebarToggle() {
   );
 }
 
-function AdminNavGroup({ group, pathname }: { group: NavGroup; pathname: string }) {
-  const hasActiveItem = group.items.some((item) => pathname === item.to);
-  // Open on its own when you land on one of its pages (from a link, a
-  // redirect or a reload), but stay under your control afterwards.
-  const [open, setOpen] = useState(hasActiveItem);
-  useEffect(() => {
-    if (hasActiveItem) setOpen(true);
-  }, [hasActiveItem]);
+function isNodeActive(node: MenuNode, pathname: string): boolean {
+  if (node.path && (pathname === node.path || pathname.startsWith(`${node.path}/`))) return true;
+  return node.children.some((child) => isNodeActive(child, pathname));
+}
+
+/** A leaf's contents (icon + label) — shared between the linked and
+ * not-yet-wired-up (no route registered) rendering below. */
+function NavNodeLabel({ node }: { node: MenuNode }) {
+  const Icon = node.icon;
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="group/nav-group">
+    <>
+      {Icon && <Icon />}
+      <span>{node.menuName}</span>
+    </>
+  );
+}
+
+function TopLevelNavItem({ node, pathname }: { node: MenuNode; pathname: string }) {
+  const active = isNodeActive(node, pathname);
+  const hasChildren = node.children.length > 0;
+  // Open on its own when you land on one of its descendants (from a link, a
+  // redirect or a reload), but stay under your control afterwards.
+  const [open, setOpen] = useState(active);
+  useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
+
+  if (!hasChildren) {
+    return (
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          asChild={node.path !== null}
+          isActive={active}
+          tooltip={node.menuName}
+          aria-disabled={node.path === null}
+          className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+        >
+          {node.path ? (
+            <Link to={node.path}>
+              <NavNodeLabel node={node} />
+            </Link>
+          ) : (
+            <NavNodeLabel node={node} />
+          )}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  }
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="group/nav">
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuButton
+            isActive={active}
+            tooltip={node.menuName}
+            className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+          >
+            <NavNodeLabel node={node} />
+            <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/nav:rotate-180" />
+          </SidebarMenuButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {node.children.map((child) => (
+              <SubLevelNavItem key={child.menuId} node={child} pathname={pathname} />
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
+  );
+}
+
+/** Same shape as TopLevelNavItem, one level down (and recursively below
+ * that) — shadcn's Sidebar primitives only style one sub level by name
+ * (SidebarMenuSub), but nesting it again works fine for a third-plus level,
+ * reading as another indent step via its own left border. */
+function SubLevelNavItem({ node, pathname }: { node: MenuNode; pathname: string }) {
+  const active = isNodeActive(node, pathname);
+  const hasChildren = node.children.length > 0;
+  const [open, setOpen] = useState(active);
+  useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
+
+  if (!hasChildren) {
+    return (
+      <SidebarMenuSubItem>
+        <SidebarMenuSubButton asChild={node.path !== null} isActive={active} aria-disabled={node.path === null}>
+          {node.path ? (
+            <Link to={node.path}>
+              <NavNodeLabel node={node} />
+            </Link>
+          ) : (
+            <NavNodeLabel node={node} />
+          )}
+        </SidebarMenuSubButton>
+      </SidebarMenuSubItem>
+    );
+  }
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="group/nav-sub">
       <SidebarMenuSubItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuSubButton className="h-auto min-h-7 cursor-pointer whitespace-normal py-1.5">
-            <group.icon className="size-4" />
-            <span className="flex-1">{group.label}</span>
-            <ChevronDown className="size-3.5 shrink-0 transition-transform group-data-[state=open]/nav-group:rotate-180" />
+          <SidebarMenuSubButton isActive={active} className="cursor-pointer">
+            <NavNodeLabel node={node} />
+            <ChevronDown className="ml-auto size-3.5 shrink-0 transition-transform group-data-[state=open]/nav-sub:rotate-180" />
           </SidebarMenuSubButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <ul className="ml-3.5 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2.5">
-            {group.items.map((item) => {
-              const active = pathname === item.to;
-              return (
-                <li key={item.to}>
-                  <Link
-                    to={item.to}
-                    className={cn(
-                      "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
-                      active
-                        ? "bg-rail-active/15 font-medium text-rail-active"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent",
-                    )}
-                  >
-                    <item.icon className="size-4 shrink-0" />
-                    {item.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <SidebarMenuSub>
+            {node.children.map((child) => (
+              <SubLevelNavItem key={child.menuId} node={child} pathname={pathname} />
+            ))}
+          </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuSubItem>
     </Collapsible>
   );
 }
 
-function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boolean; pathname: string }) {
-  const onAdmin = pathname.startsWith("/admin");
-  const [adminOpen, setAdminOpen] = useState(onAdmin);
-  useEffect(() => {
-    if (onAdmin) setAdminOpen(true);
-  }, [onAdmin]);
+/** Skeleton rows shown in place of the nav while the menu/access queries are
+ * still loading (nothing cached yet) — shadcn's own SidebarMenuSkeleton,
+ * not a bespoke loading treatment. */
+function SidebarNavSkeleton() {
+  return (
+    <SidebarMenu className="px-2 pt-2">
+      {[0, 1, 2, 3].map((i) => (
+        <SidebarMenuItem key={i}>
+          <SidebarMenuSkeleton showIcon />
+        </SidebarMenuItem>
+      ))}
+    </SidebarMenu>
+  );
+}
+
+function AppSidebar({ tree, loading, pathname }: { tree: MenuNode[]; loading: boolean; pathname: string }) {
   return (
     <Sidebar collapsible="icon">
       {/* No positioning wrapper here on purpose — absolute resolves against
@@ -226,48 +263,47 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
         </span>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarMenu className="px-2 pt-2">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={pathname.startsWith("/dashboard")}
-              tooltip="Dashboard"
-              className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
-            >
-              <Link to="/dashboard">
-                <LayoutDashboard />
-                <span>Dashboard</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-
-          {can("admin") && (
-            <Collapsible open={adminOpen} onOpenChange={setAdminOpen} className="group/admin">
-              <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton
-                    isActive={onAdmin}
-                    tooltip="Administration"
-                    className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
-                  >
-                    <Settings />
-                    <span>Administration</span>
-                    <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/admin:rotate-180" />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {ADMIN_NAV.map((group) => (
-                      <AdminNavGroup key={group.label} group={group} pathname={pathname} />
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
-          )}
-        </SidebarMenu>
+        {loading ? (
+          <SidebarNavSkeleton />
+        ) : (
+          <SidebarMenu className="px-2 pt-2">
+            {tree.map((node) => (
+              <TopLevelNavItem key={node.menuId} node={node} pathname={pathname} />
+            ))}
+          </SidebarMenu>
+        )}
       </SidebarContent>
     </Sidebar>
+  );
+}
+
+/** Shown in the main content area — not a full-screen replacement, the
+ * header/sidebar shell stays so Sign out is still reachable — when the
+ * signed-in account has no role, or a role with nothing granted yet.
+ * Distinguishes the two: "no role" needs an admin to assign one at all,
+ * "role with nothing granted" needs an admin to configure that role's
+ * menu access — different fixes, so different messages. */
+function NoAccessMessage({ roleId, roleName }: { roleId: number | null; roleName: string | null }) {
+  const hasRole = roleId !== null;
+  return (
+    <Empty className="min-h-[60vh]">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <CircleHelp />
+        </EmptyMedia>
+        <EmptyTitle>{hasRole ? "No Menu Access" : "No Role Assigned"}</EmptyTitle>
+        <EmptyDescription>
+          {hasRole ? (
+            <>
+              Your assigned role{roleName ? ` (${roleName})` : ""} doesn&apos;t have access to any menus yet. Please
+              contact your administrator to configure your menu access.
+            </>
+          ) : (
+            "Your account hasn't been assigned a role yet. Please contact your administrator to have a role assigned."
+          )}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -275,10 +311,11 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   const location = useLocation();
   const navigate = useNavigate();
   // Who may see the app at all is decided by <AuthGate> in front of this component.
-  const { profile, roleName, signOut, can } = useAuth();
+  const { profile, roleId, roleName, signOut } = useAuth();
   const { currentUser } = useStore();
   const [helpOpen, setHelpOpen] = useState(false);
   const pageTitle = usePageTitle();
+  const { tree, loading: menusLoading } = useSidebarMenus();
 
   const displayRole = roleName ?? "No role assigned";
   const displayName = profile ? `${profile.first_name} ${profile.last_name}` : currentUser.name;
@@ -287,7 +324,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   return (
     <TooltipProvider delayDuration={120}>
       <SidebarProvider>
-        <AppSidebar can={can} pathname={location.pathname} />
+        <AppSidebar tree={tree} loading={menusLoading} pathname={location.pathname} />
         <SidebarInset>
           <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b bg-card px-5">
             <h1 className="shrink-0 text-[15px] font-semibold tracking-tight">{pageTitle}</h1>
@@ -338,7 +375,17 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
               Tip: use the search bar above to jump straight to an opportunity, customer, or contact.
             </div>
           )}
-          <main className="min-w-0 flex-1">{children}</main>
+          <main className="min-w-0 flex-1">
+            {menusLoading ? (
+              <div className="flex items-center justify-center p-10">
+                <Spinner className="size-5" />
+              </div>
+            ) : tree.length === 0 ? (
+              <NoAccessMessage roleId={roleId} roleName={roleName} />
+            ) : (
+              children
+            )}
+          </main>
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>

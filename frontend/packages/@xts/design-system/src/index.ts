@@ -80,3 +80,6 @@ export * from "./lib/auth";
 export * from "./lib/store";
 export * from "./lib/mock-data";
 export * from "./lib/pageTitle";
+export * from "./lib/menuIcons";
+export * from "./lib/menuRoutes";
+export * from "./lib/useSidebarMenus";

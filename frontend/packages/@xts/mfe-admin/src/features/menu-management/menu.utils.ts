@@ -1,14 +1,8 @@
-import {
-  Layers,
-  LayoutDashboard,
-  ListChecks,
-  Menu as MenuIcon,
-  Settings,
-  ShieldCheck,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
 import type { Menu } from "@xts/api-contracts";
+// Shared with the sidebar (AppShell), which also needs to resolve a menu's
+// `icon` string to a component — kept in @xts/design-system, which both
+// mfe-admin and the sidebar depend on, so there's one lookup, not two.
+export { resolveIcon, ICON_OPTIONS } from "@xts/design-system";
 
 export function slugify(value: string, separator = "-"): string {
   return value
@@ -17,25 +11,6 @@ export function slugify(value: string, separator = "-"): string {
     .replace(/[^a-z0-9]+/g, separator)
     .replace(new RegExp(`(^${separator}|${separator}$)`, "g"), "");
 }
-
-/** Curated lookup for the Icon column. Icon names outside this set are shown
- * as plain text — extend the list as more icons are needed. */
-const ICONS: Record<string, LucideIcon> = {
-  LayoutDashboard,
-  Settings,
-  ShieldCheck,
-  Users,
-  ListChecks,
-  Layers,
-  Menu: MenuIcon,
-};
-
-export function resolveIcon(name: string | null): LucideIcon | null {
-  if (!name) return null;
-  return ICONS[name] ?? null;
-}
-
-export const ICON_OPTIONS = Object.keys(ICONS);
 
 export interface MenuRow {
   menu: Menu;
