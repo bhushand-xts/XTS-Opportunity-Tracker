@@ -45,3 +45,17 @@ export const ROLE_NAME = gql`
     }
   }
 `;
+
+// There's no single-user "who am I, live" query on the user service yet
+// (only userList — everyone — and currentUserId — just an id, no role), so
+// this is the only zero-backend-change way to notice a role reassignment:
+// fetch everyone, then pick out the signed-in user's own row. See
+// refreshRoleId() in auth.ts.
+export const USER_LIST_ROLES = gql`
+  query UserListRoles {
+    userList {
+      id
+      roleId
+    }
+  }
+`;

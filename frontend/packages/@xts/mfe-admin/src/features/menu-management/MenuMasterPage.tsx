@@ -13,6 +13,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useMenuActionPermissions,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -28,6 +29,7 @@ export function MenuMasterPage() {
   useSetPageTitle("Menu Master");
   const { menus, rows, loading, error } = useMenus();
   const { setMenuActive } = useMenuMutations();
+  const { can } = useMenuActionPermissions("menu_master");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMenu, setEditingMenu] = useState<Menu | null>(null);
   const [search, setSearch] = useState("");
@@ -65,10 +67,12 @@ export function MenuMasterPage() {
                 className="pl-9"
               />
             </div>
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 size-4" />
-              Add menu
-            </Button>
+            {can("add") && (
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 size-4" />
+                Add menu
+              </Button>
+            )}
           </>
         }
       />
@@ -115,19 +119,22 @@ export function MenuMasterPage() {
                     <TableCell>
                       <Switch
                         checked={menu.isActive}
+                        disabled={!can("edit")}
                         aria-label={`${menu.isActive ? "Deactivate" : "Activate"} ${menu.menuName}`}
                         onCheckedChange={(checked) => void setMenuActive(menu.menuId, checked)}
                       />
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Edit ${menu.menuName}`}
-                        onClick={() => openEdit(menu)}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
+                      {can("edit") && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Edit ${menu.menuName}`}
+                          onClick={() => openEdit(menu)}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

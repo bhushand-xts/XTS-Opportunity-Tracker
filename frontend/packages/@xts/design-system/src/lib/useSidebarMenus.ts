@@ -2,30 +2,26 @@ import { useMemo } from "react";
 import { useQuery } from "@apollo/client";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "./auth";
-import { MENUS, ROLE_ACCESS } from "./menu.queries";
+import { MY_SIDEBAR } from "./menu.queries";
 import { resolveIcon } from "./menuIcons";
 import { MENU_ROUTES } from "./menuRoutes";
 
 // A short poll, not a push mechanism — cheap way to satisfy "the sidebar
 // reflects updated access" (AC9) without new backend infrastructure. Also
 // refetches for free whenever Apollo's normal cache-and-network kicks in
-// (e.g. remount after navigating back into the app shell).
-const ROLE_ACCESS_POLL_MS = 2 * 60 * 1000;
+// (e.g. remount after navigating back into the app shell). mySidebar is
+// keyed off the signed-in user's identity (their auth token), not a roleId
+// we cache client-side — so unlike the old roleId-keyed query, this poll
+// also picks up a role *reassignment*, not just a grant change on the same
+// role, without needing a fresh login.
+const MY_SIDEBAR_POLL_MS = 2 * 60 * 1000;
 
-interface SidebarMenu {
+interface SidebarMenuRow {
   menuId: number;
   menuName: string;
   menuKey: string;
   icon: string | null;
-  parentId: number | null;
-  sortOrder: number;
-  isActive: boolean;
-}
-
-interface RoleAccessRow {
-  menuId: number;
-  permissionId: number;
-  permissionKey: string;
+  children: SidebarMenuRow[];
 }
 
 export interface MenuNode {
@@ -39,54 +35,29 @@ export interface MenuNode {
   children: MenuNode[];
 }
 
-/** A menu is visible if the role holds it directly, or if any menu beneath
- * it is held — a purely structural parent (e.g. "Menu Management") still
- * needs to show up to reach an accessible child. */
-function computeVisibleIds(menus: SidebarMenu[], accessibleIds: Set<number>): Set<number> {
-  const byId = new Map(menus.map((m) => [m.menuId, m]));
-  const visible = new Set<number>();
-  for (const id of accessibleIds) {
-    let current: number | null = id;
-    while (current !== null && !visible.has(current)) {
-      visible.add(current);
-      current = byId.get(current)?.parentId ?? null;
-    }
-  }
-  return visible;
+// The backend already resolves the role, prunes to what it holds (plus
+// structural ancestors), and nests the tree — this just maps that shape
+// into what the sidebar renders (icon component + route), in the order the
+// server already sorted it.
+function toMenuNode(row: SidebarMenuRow): MenuNode {
+  return {
+    menuId: row.menuId,
+    menuName: row.menuName,
+    menuKey: row.menuKey,
+    icon: resolveIcon(row.icon),
+    path: MENU_ROUTES[row.menuKey] ?? null,
+    children: row.children.map(toMenuNode),
+  };
 }
 
-function buildTree(menus: SidebarMenu[], visibleIds: Set<number>): MenuNode[] {
-  const nodesById = new Map<number, MenuNode & { parentId: number | null; sortOrder: number }>();
-  for (const m of menus) {
-    if (!visibleIds.has(m.menuId)) continue;
-    nodesById.set(m.menuId, {
-      menuId: m.menuId,
-      menuName: m.menuName,
-      menuKey: m.menuKey,
-      icon: resolveIcon(m.icon),
-      path: MENU_ROUTES[m.menuKey] ?? null,
-      parentId: m.parentId,
-      sortOrder: m.sortOrder,
-      children: [],
-    });
-  }
+function findByMenuKey(nodes: MenuNode[], menuKey: string): boolean {
+  return nodes.some((node) => node.menuKey === menuKey || findByMenuKey(node.children, menuKey));
+}
 
-  const roots: (MenuNode & { sortOrder: number })[] = [];
-  for (const node of nodesById.values()) {
-    const parent = node.parentId !== null ? nodesById.get(node.parentId) : undefined;
-    if (parent) parent.children.push(node);
-    else roots.push(node);
-  }
-
-  const bySort = (a: { sortOrder: number; menuId: number }, b: { sortOrder: number; menuId: number }) =>
-    a.sortOrder - b.sortOrder || a.menuId - b.menuId;
-  const sortTree = (nodes: (MenuNode & { sortOrder: number })[]) => {
-    nodes.sort(bySort);
-    nodes.forEach((n) => sortTree(n.children as (MenuNode & { sortOrder: number })[]));
-  };
-  sortTree(roots);
-
-  return roots;
+function findUnderPath(nodes: MenuNode[], pathPrefix: string): boolean {
+  return nodes.some(
+    (node) => (node.path !== null && node.path.startsWith(pathPrefix)) || findUnderPath(node.children, pathPrefix)
+  );
 }
 
 /**
@@ -96,59 +67,42 @@ function buildTree(menus: SidebarMenu[], visibleIds: Set<number>): MenuNode[] {
  * into AppShell.
  */
 export function useSidebarMenus() {
-  const { roleId } = useAuth();
+  const { session } = useAuth();
 
-  const menusQuery = useQuery<{ menus: SidebarMenu[] }>(MENUS, { fetchPolicy: "cache-and-network" });
-  const roleAccessQuery = useQuery<{ roleAccess: RoleAccessRow[] }>(ROLE_ACCESS, {
-    variables: { roleId },
-    skip: roleId === null,
+  // No session, no token, no point asking — mySidebar would just reject it.
+  const { data, loading: queryLoading, error } = useQuery<{ mySidebar: SidebarMenuRow[] }>(MY_SIDEBAR, {
+    skip: session === null,
     fetchPolicy: "cache-and-network",
-    pollInterval: ROLE_ACCESS_POLL_MS,
+    pollInterval: MY_SIDEBAR_POLL_MS,
   });
 
-  const menus = useMemo(() => menusQuery.data?.menus ?? [], [menusQuery.data]);
-  const activeMenus = useMemo(() => menus.filter((m) => m.isActive), [menus]);
-  const roleAccessRows = useMemo(() => roleAccessQuery.data?.roleAccess ?? [], [roleAccessQuery.data]);
-
-  const accessibleMenuIds = useMemo(() => new Set(roleAccessRows.map((r) => r.menuId)), [roleAccessRows]);
-
-  const tree = useMemo(() => {
-    const visibleIds = computeVisibleIds(activeMenus, accessibleMenuIds);
-    return buildTree(activeMenus, visibleIds);
-  }, [activeMenus, accessibleMenuIds]);
-
-  const menuKeyById = useMemo(() => new Map(activeMenus.map((m) => [m.menuId, m.menuKey])), [activeMenus]);
+  const tree = useMemo(() => (data?.mySidebar ?? []).map(toMenuNode), [data]);
 
   // Only "loading" while there's nothing to show yet — a background
-  // poll/refresh shouldn't flash the sidebar back to a skeleton.
-  const loading =
-    roleId !== null &&
-    ((menusQuery.loading && menusQuery.data === undefined) ||
-      (roleAccessQuery.loading && roleAccessQuery.data === undefined));
+  // poll/refresh shouldn't flash the sidebar back to a skeleton. A query
+  // error (e.g. a stale/invalid token) is treated the same as "no access"
+  // rather than left to throw and break the shell.
+  const loading = session !== null && data === undefined && !error && queryLoading;
 
   return {
     tree,
     loading,
 
-    /** Whether the signed-in role holds this specific menu (by menuKey) —
-     * for guarding a single page's route (AC8). A menuKey with no matching
-     * (active) menu row is treated as inaccessible. */
+    /** Whether the signed-in user's sidebar includes this specific menu (by
+     * menuKey) — for guarding a single page's route (AC8). A leaf page's
+     * menuKey only ever appears here if it was actually granted (a leaf has
+     * no descendant to pull it in as a structural ancestor), so this is
+     * equivalent to "was this exact menu granted," not just "does it show
+     * up somewhere." */
     isMenuKeyAccessible(menuKey: string): boolean {
-      for (const [menuId, key] of menuKeyById) {
-        if (key === menuKey) return accessibleMenuIds.has(menuId);
-      }
-      return false;
+      return findByMenuKey(tree, menuKey);
     },
 
-    /** Whether the role has access to anything whose route falls under the
+    /** Whether the user's sidebar has anything whose route falls under the
      * given path prefix (e.g. "/admin") — for gating an entire MFE's route
      * before its bundle is even loaded. */
     hasAccessibleUnder(pathPrefix: string): boolean {
-      const hasAccessibleDescendant = (nodes: MenuNode[]): boolean =>
-        nodes.some(
-          (node) => (node.path !== null && node.path.startsWith(pathPrefix)) || hasAccessibleDescendant(node.children)
-        );
-      return hasAccessibleDescendant(tree);
+      return findUnderPath(tree, pathPrefix);
     },
   };
 }

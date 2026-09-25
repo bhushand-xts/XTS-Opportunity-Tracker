@@ -21,6 +21,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useMenuActionPermissions,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -36,6 +37,7 @@ export function RoleMasterPage() {
   useSetPageTitle("Role Master");
   const { roles, loading, error } = useRoles();
   const { deleteRole } = useRoleMutations();
+  const { can } = useMenuActionPermissions("role_master");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [deletingRole, setDeletingRole] = useState<Role | null>(null);
@@ -78,10 +80,12 @@ export function RoleMasterPage() {
                 className="pl-9"
               />
             </div>
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 size-4" />
-              Add role
-            </Button>
+            {can("add") && (
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 size-4" />
+                Add role
+              </Button>
+            )}
           </>
         }
       />
@@ -125,17 +129,21 @@ export function RoleMasterPage() {
                     >
                       <History className="size-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" aria-label={`Edit ${role.roleName}`} onClick={() => openEdit(role)}>
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Delete ${role.roleName}`}
-                      onClick={() => setDeletingRole(role)}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
+                    {can("edit") && (
+                      <Button variant="ghost" size="icon" aria-label={`Edit ${role.roleName}`} onClick={() => openEdit(role)}>
+                        <Pencil className="size-4" />
+                      </Button>
+                    )}
+                    {can("delete") && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Delete ${role.roleName}`}
+                        onClick={() => setDeletingRole(role)}
+                      >
+                        <Trash2 className="size-4 text-destructive" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

@@ -1,8 +1,8 @@
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
 import { ApolloProvider } from "@apollo/client";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { getApolloClient } from "@xts/api-client";
-import { AppShell, AuthGate, DashboardContent, Spinner, useSidebarMenus } from "@xts/design-system";
+import { AppShell, AuthGate, DashboardContent, Spinner, toast, useSidebarMenus } from "@xts/design-system";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 // Remote MFEs are loaded on demand via Module Federation (see webpack.config.js).
@@ -23,8 +23,16 @@ function LoadingFallback({ label }: { label: string }) {
 // individual admin routes live inside the Admin MFE itself.
 function AdminRoute() {
   const { hasAccessibleUnder, loading } = useSidebarMenus();
+  const denied = !loading && !hasAccessibleUnder("/admin");
+
+  // The redirect below is what actually stops the visit — this is just
+  // feedback so it doesn't look like nothing happened.
+  useEffect(() => {
+    if (denied) toast.error("You don't have permission to access that page.");
+  }, [denied]);
+
   if (loading) return <LoadingFallback label="Loading module…" />;
-  if (!hasAccessibleUnder("/admin")) return <Navigate to="/dashboard" replace />;
+  if (denied) return <Navigate to="/dashboard" replace />;
   return <AdminMFE />;
 }
 

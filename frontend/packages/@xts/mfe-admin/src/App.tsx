@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { ApolloProvider } from "@apollo/client";
 import { BrowserRouter, Navigate, Route, Routes, useInRouterContext } from "react-router-dom";
 import { getApolloClient } from "@xts/api-client";
-import { AppShell, AuthGate, Spinner, Toaster, useSidebarMenus } from "@xts/design-system";
+import { AppShell, AuthGate, Spinner, toast, useSidebarMenus } from "@xts/design-system";
 import { AdminOverview } from "./components/AdminOverview";
 import { EstimatePhaseMasterPage } from "./features/estimate-phase-management/EstimatePhaseMasterPage";
 import { MenuMasterPage } from "./features/menu-management/MenuMasterPage";
@@ -22,6 +22,14 @@ import { UserRoleAssignmentPage } from "./features/user-role-assignment/UserRole
 // legitimate visit never flashes a redirect before the query resolves.
 function Protected({ menuKey, children }: { menuKey: string; children: ReactNode }) {
   const { isMenuKeyAccessible, loading } = useSidebarMenus();
+  const denied = !loading && !isMenuKeyAccessible(menuKey);
+
+  // The redirect below is what actually stops the visit — this is just
+  // feedback so it doesn't look like nothing happened.
+  useEffect(() => {
+    if (denied) toast.error("You don't have permission to access that page.");
+  }, [denied]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-10">
@@ -29,7 +37,7 @@ function Protected({ menuKey, children }: { menuKey: string; children: ReactNode
       </div>
     );
   }
-  if (!isMenuKeyAccessible(menuKey)) return <Navigate to="/dashboard" replace />;
+  if (denied) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -100,22 +108,21 @@ function AdminRoutes() {
 function AuthedApp() {
   const inRouterContext = useInRouterContext();
 
-  return (
-    <>
-      <Toaster />
-      {inRouterContext ? (
-        <AdminRoutes />
-      ) : (
-        <BrowserRouter>
-          <AppShell>
-            <Routes>
-              <Route path="/admin/*" element={<AdminRoutes />} />
-              <Route path="*" element={<Navigate to="/admin" replace />} />
-            </Routes>
-          </AppShell>
-        </BrowserRouter>
-      )}
-    </>
+  // AppShell (from @xts/design-system) renders the shared <Toaster />, so
+  // nothing extra is needed here in either branch: the host's AppShell
+  // covers the nested case, this component's own AppShell below covers the
+  // standalone one.
+  return inRouterContext ? (
+    <AdminRoutes />
+  ) : (
+    <BrowserRouter>
+      <AppShell>
+        <Routes>
+          <Route path="/admin/*" element={<AdminRoutes />} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Routes>
+      </AppShell>
+    </BrowserRouter>
   );
 }
 

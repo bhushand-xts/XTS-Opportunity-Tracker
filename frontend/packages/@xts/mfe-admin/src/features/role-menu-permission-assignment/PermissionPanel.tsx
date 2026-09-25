@@ -22,6 +22,7 @@ export function PermissionPanel({
   selected,
   granted,
   loading,
+  canEdit,
   onToggle,
   onSetAll,
 }: {
@@ -32,6 +33,10 @@ export function PermissionPanel({
   /** what the server holds — a box that differs from it gets an "unsaved" dot */
   granted: Set<string>;
   loading: boolean;
+  /** Whether the signed-in user's own role holds "edit" on this menu — a
+   * role with only "view" here can look at another role's grants but not
+   * change them. */
+  canEdit: boolean;
   onToggle: (permissionId: number, checked: boolean) => void;
   onSetAll: (checked: boolean) => void;
 }) {
@@ -95,10 +100,10 @@ export function PermissionPanel({
 
         {total > 0 && (
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={ticked === total} onClick={() => onSetAll(true)}>
+            <Button variant="outline" size="sm" disabled={!canEdit || ticked === total} onClick={() => onSetAll(true)}>
               Select all
             </Button>
-            <Button variant="outline" size="sm" disabled={ticked === 0} onClick={() => onSetAll(false)}>
+            <Button variant="outline" size="sm" disabled={!canEdit || ticked === 0} onClick={() => onSetAll(false)}>
               Clear
             </Button>
           </div>
@@ -147,6 +152,7 @@ export function PermissionPanel({
                       <Checkbox
                         id={id}
                         checked={isOn}
+                        disabled={!canEdit}
                         onCheckedChange={(v) => onToggle(p.permissionId, v === true)}
                         className="mt-0.5"
                       />

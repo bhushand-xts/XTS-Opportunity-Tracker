@@ -30,6 +30,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
 import { usePageTitle } from "@/lib/pageTitle";
@@ -117,6 +118,8 @@ function NavNodeLabel({ node }: { node: MenuNode }) {
 }
 
 function TopLevelNavItem({ node, pathname }: { node: MenuNode; pathname: string }) {
+  const { state: sidebarState, setOpen: setSidebarOpen } = useSidebar();
+  const sidebarCollapsed = sidebarState === "collapsed";
   const active = isNodeActive(node, pathname);
   const hasChildren = node.children.length > 0;
   // Open on its own when you land on one of its descendants (from a link, a
@@ -151,16 +154,28 @@ function TopLevelNavItem({ node, pathname }: { node: MenuNode; pathname: string 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="group/nav">
       <SidebarMenuItem>
-        <CollapsibleTrigger asChild>
-          <SidebarMenuButton
-            isActive={active}
-            tooltip={node.menuName}
-            className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
-          >
-            <NavNodeLabel node={node} />
-            <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/nav:rotate-180" />
-          </SidebarMenuButton>
-        </CollapsibleTrigger>
+        <SidebarMenuButton
+          isActive={active}
+          tooltip={node.menuName}
+          aria-expanded={open}
+          className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+          onClick={() => {
+            // The nested list is entirely hidden while the rail itself is
+            // collapsed (shadcn's icon mode), so there's nothing to toggle
+            // into view yet — expand the rail first and make sure this is
+            // the group that opens once it does, rather than silently
+            // flipping state nobody can see.
+            if (sidebarCollapsed) {
+              setSidebarOpen(true);
+              setOpen(true);
+              return;
+            }
+            setOpen((o) => !o);
+          }}
+        >
+          <NavNodeLabel node={node} />
+          <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/nav:rotate-180" />
+        </SidebarMenuButton>
         <CollapsibleContent>
           <SidebarMenuSub>
             {node.children.map((child) => (
@@ -254,10 +269,10 @@ function AppSidebar({ tree, loading, pathname }: { tree: MenuNode[]; loading: bo
           to="/dashboard"
           className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-from text-[13px] font-bold text-brand-foreground"
         >
-          XT
+          XTS
         </Link>
         <span className="truncate text-sm font-semibold text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-          XTS Opportunity Tracker
+          Opportunity Tracker
         </span>
       </SidebarHeader>
       <SidebarContent>
@@ -321,6 +336,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
 
   return (
     <TooltipProvider delayDuration={120}>
+      <Toaster />
       <SidebarProvider>
         <AppSidebar tree={tree} loading={menusLoading} pathname={location.pathname} />
         <SidebarInset>

@@ -10,6 +10,7 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
+  useMenuActionPermissions,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -45,6 +46,7 @@ export function RoleMenuPermissionAssignmentPage() {
 
   const { granted, loading: accessLoading, error: accessError } = useRoleMenuPermissions(roleId);
   const { save, saving } = useSaveRoleMenuPermissions();
+  const { can } = useMenuActionPermissions("role_menu_permission_assignment");
 
   const activeMenus = useMemo(() => rows.filter(({ menu }) => menu.isActive), [rows]);
   const activePermissionIds = useMemo(
@@ -216,6 +218,7 @@ export function RoleMenuPermissionAssignmentPage() {
             selected={selected}
             granted={granted}
             loading={loading}
+            canEdit={can("edit")}
             onToggle={togglePermission}
             onSetAll={setAllForActiveMenu}
           />

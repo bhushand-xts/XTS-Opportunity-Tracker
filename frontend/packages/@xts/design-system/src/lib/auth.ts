@@ -20,7 +20,12 @@ import { useMutation } from "@apollo/client";
 import { useSyncExternalStore } from "react";
 import { getApolloClient } from "@xts/api-client";
 import type { AuthPayload } from "@xts/api-contracts";
-import { LOGIN, REGISTER, ROLE_NAME } from "./auth.queries";
+import { LOGIN, REGISTER, ROLE_NAME, USER_LIST_ROLES } from "./auth.queries";
+
+// How often to notice a role reassignment made while this session is still
+// open — same cadence as useSidebarMenus's own poll, so the header label and
+// the sidebar go stale (and recover) together.
+const ROLE_POLL_MS = 2 * 60 * 1000;
 
 interface Profile {
   first_name: string;
@@ -131,6 +136,36 @@ async function resolveRoleName(userId: string, roleId: number | null): Promise<v
   setState(next);
 }
 
+// Notices a role reassignment made elsewhere (e.g. an admin using Role
+// Master) while this session is still open. roleId is otherwise only ever
+// set once, at login — useSidebarMenus() no longer depends on it staying
+// fresh (mySidebar is resolved from the token, not a client-supplied
+// roleId), but the header's displayed role name does, so this is what
+// keeps that label from being stuck until the next login.
+async function refreshRoleId(): Promise<void> {
+  const userId = state.session?.userId;
+  if (!userId) return;
+  let roleId: number | null;
+  try {
+    const { data } = await getApolloClient().query<{
+      userList: ({ id: number; roleId: number | null } | null)[] | null;
+    }>({
+      query: USER_LIST_ROLES,
+      fetchPolicy: "network-only",
+    });
+    const me = data?.userList?.find((u) => u && String(u.id) === userId);
+    if (!me || state.session?.userId !== userId) return;
+    roleId = me.roleId ?? null;
+  } catch {
+    return; // transient failure — the next poll tick will retry
+  }
+  if (roleId === state.roleId) return; // unchanged, nothing to do
+  const next: AuthState = { ...state, roleId, roleName: null };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  setState(next);
+  void resolveRoleName(userId, roleId);
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY) return;
@@ -143,6 +178,18 @@ if (typeof window !== "undefined") {
   if (state.session && state.roleId !== null && state.roleName === null) {
     void resolveRoleName(state.session.userId, state.roleId);
   }
+
+  // Check for a role reassignment immediately on load too, not just on the
+  // poll's first tick — otherwise a stale roleId cached from a previous
+  // session can sit uncorrected for up to ROLE_POLL_MS after a fresh
+  // reload, unlike the sidebar's own query, which always fetches fresh.
+  if (state.session) {
+    void refreshRoleId();
+  }
+
+  setInterval(() => {
+    if (state.session) void refreshRoleId();
+  }, ROLE_POLL_MS);
 }
 
 /**

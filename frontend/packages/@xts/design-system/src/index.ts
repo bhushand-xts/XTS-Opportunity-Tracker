@@ -58,7 +58,11 @@ export * from "./components/ui/toggle-group";
 export * from "./components/ui/toggle";
 export * from "./components/ui/tooltip";
 
-export * from "./hooks/use-toast";
+// Same reasoning as LegacyToaster above: this hook's own `toast` is the
+// legacy Radix-toast-based one, colliding with sonner's `toast` (the
+// recommended one, kept unqualified) — export the hook under its own name,
+// its `toast` under a qualified one.
+export { useToast, toast as legacyToast } from "./hooks/use-toast";
 export * from "./hooks/use-mobile";
 
 // Feature/composite components (not shadcn primitives) — ported from a
@@ -83,3 +87,4 @@ export * from "./lib/pageTitle";
 export * from "./lib/menuIcons";
 export * from "./lib/menuRoutes";
 export * from "./lib/useSidebarMenus";
+export * from "./lib/useMenuActionPermissions";

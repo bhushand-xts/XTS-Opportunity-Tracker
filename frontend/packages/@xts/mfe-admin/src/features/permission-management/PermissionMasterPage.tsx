@@ -13,6 +13,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useMenuActionPermissions,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -28,6 +29,9 @@ export function PermissionMasterPage() {
   useSetPageTitle("Permission Master");
   const { permissions, loading, error } = usePermissions();
   const { setPermissionActive } = usePermissionMutations();
+  // Menu-level access already got them onto this page (mySidebar) — this is
+  // the finer-grained layer: which of its actions their role actually holds.
+  const { can } = useMenuActionPermissions("permission_master");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPermission, setEditingPermission] = useState<Permission | null>(null);
   const [historyPermission, setHistoryPermission] = useState<Permission | null>(null);
@@ -64,10 +68,12 @@ export function PermissionMasterPage() {
                 className="pl-9"
               />
             </div>
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 size-4" />
-              Add permission
-            </Button>
+            {can("add") && (
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 size-4" />
+                Add permission
+              </Button>
+            )}
           </>
         }
       />
@@ -107,6 +113,7 @@ export function PermissionMasterPage() {
                   <TableCell>
                     <Switch
                       checked={permission.isActive}
+                      disabled={!can("edit")}
                       aria-label={`${permission.isActive ? "Deactivate" : "Activate"} ${permission.permissionName}`}
                       onCheckedChange={(checked) => void setPermissionActive(permission.permissionId, checked)}
                     />
@@ -120,14 +127,16 @@ export function PermissionMasterPage() {
                     >
                       <History className="size-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Edit ${permission.permissionName}`}
-                      onClick={() => openEdit(permission)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
+                    {can("edit") && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Edit ${permission.permissionName}`}
+                        onClick={() => openEdit(permission)}
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
   Skeleton,
+  useMenuActionPermissions,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -35,6 +36,7 @@ export function MenuPermissionMappingPage() {
   useSetPageTitle("Menu Permission Mapping");
   const { rows, loading: menusLoading, error: menusError } = useMenus();
   const { permissions, loading: permissionsLoading, error: permissionsError } = usePermissions();
+  const { can } = useMenuActionPermissions("menu_permission_mapping");
 
   const activeMenus = rows.filter(({ menu }) => menu.isActive);
   const activePermissions = permissions.filter((p) => p.isActive);
@@ -153,6 +155,7 @@ export function MenuPermissionMappingPage() {
                         <Checkbox
                           id={id}
                           checked={selected.has(permission.permissionId)}
+                          disabled={!can("edit")}
                           onCheckedChange={(checked) => toggle(permission.permissionId, checked === true)}
                           className="mt-0.5"
                         />
@@ -172,7 +175,7 @@ export function MenuPermissionMappingPage() {
                 <Button variant="outline" disabled={!dirty || saving} onClick={() => setDraft(null)}>
                   Reset
                 </Button>
-                <Button disabled={!dirty || saving} onClick={() => void save()}>
+                <Button disabled={!dirty || saving || !can("edit")} onClick={() => void save()}>
                   {saving ? "Saving…" : "Save changes"}
                 </Button>
               </div>

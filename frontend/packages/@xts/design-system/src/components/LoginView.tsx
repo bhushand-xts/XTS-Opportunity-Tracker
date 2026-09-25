@@ -152,7 +152,8 @@ export function LoginView({
               <Separator className="flex-1" />
             </div>
 
-            <Button type="button" variant="outline" className="h-11 w-full" onClick={onSso} disabled={busy}>
+            {/* Disabled for now — SSO is a demo stand-in, not a real flow yet. */}
+            <Button type="button" variant="outline" className="h-11 w-full" onClick={onSso} disabled>
               <KeyRound className="mr-2 size-4" />
               Login with SSO
             </Button>
