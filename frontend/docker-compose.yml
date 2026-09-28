@@ -80,4 +80,10 @@ services:
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     ports:
       - "3001:3001"
+    environment:
+      # Same reasoning as app-shell's copy of this var — mfe-admin's own
+      # webpack.config.js reads it directly for output.publicPath, which
+      # can't come from frontend/.env (Dotenv-webpack only reaches bundled
+      # application source, not the config file itself).
+      ADMIN_REMOTE_URL: ${ADMIN_REMOTE_URL:-http://localhost:3001}
     volumes: *workspace-node-modules-volumes
