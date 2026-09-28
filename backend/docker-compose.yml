@@ -1,0 +1,95 @@
+# Local dev only — containerizes gateway + user + admin, the same set the
+# gateway composes by default today (ENABLED_SUBGRAPHS defaults to
+# "user,admin" in gateway/src/config/services.ts). `opportunity` isn't wired
+# in here since it isn't part of that default either; add a service block
+# for it the same way once it's actually needed.
+#
+# Still uses the existing remote Postgres (each service's own .env,
+# untouched) — no database container. Every container mounts the whole
+# backend/ folder live, so `tsx watch` keeps hot-reloading on edits exactly
+# like running `npm run dev` directly does; the anonymous node_modules
+# volume keeps each container's own (Linux-built) install from being
+# shadowed by whatever is (or isn't) in node_modules on the host.
+#
+# Run with: docker compose up   (from this backend/ folder)
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        SERVICE_PATH: gateway
+    ports:
+      - "4000:4000"
+    environment:
+      # gateway/.env doesn't exist today — config/env.ts and config/services.ts
+      # fall back to these same values (just localhost instead of container
+      # hostnames) when it's missing, so this reproduces that, pointed at the
+      # other containers by their Compose service name.
+      USER_URL: http://user:4001/graphql
+      ADMIN_URL: http://admin:4010/graphql
+      CORS_ORIGIN: http://localhost:3000,http://localhost:3001
+    volumes:
+      - .:/app
+      - /app/node_modules
+    # `depends_on` alone only waits for the container to *start*, not for
+    # Apollo Server inside it to actually be listening — the gateway
+    # introspects on startup and gives up immediately if that races ahead of
+    # user/admin being ready. `condition: service_healthy` (below) waits for
+    # each one's own /health endpoint to actually respond first.
+    depends_on:
+      user:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    # A one-off timing issue can still happen; restart rather than staying
+    # crashed (the container itself exits on a failed introspection).
+    restart: on-failure
+
+  user:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        SERVICE_PATH: services/user
+    ports:
+      - "4001:4001"
+    env_file:
+      - services/user/.env
+    environment:
+      # Overrides just the one value that needs to change for container-to-
+      # container reachability — everything else still comes from the .env
+      # file above (DB creds, SMTP, FRONTEND_URL, etc.), unmodified.
+      ADMIN_SERVICE_URL: http://admin:4010/graphql
+    volumes:
+      - .:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4001/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        SERVICE_PATH: services/admin
+    ports:
+      - "4010:4010"
+    env_file:
+      - services/admin/.env
+    environment:
+      USER_SERVICE_URL: http://user:4001/graphql
+    volumes:
+      - .:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4010/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s

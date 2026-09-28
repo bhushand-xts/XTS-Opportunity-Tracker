@@ -1,0 +1,52 @@
+# Local dev only — containerizes the two packages actually served as running
+# apps today: app-shell (the host) and mfe-admin (the one remote App.tsx
+# actually loads via Module Federation). design-system/api-client/
+# api-contracts are shared libraries consumed through workspace resolution,
+# not standalone servers, so they don't get their own container.
+# mfe-opportunity/solution/approval/dashboard aren't wired into app-shell's
+# routes yet either — add a service block for one the same way once it is.
+#
+# Module Federation's remoteEntry.js is fetched by the BROWSER, not
+# container-to-container, so as long as each container's port is mapped to
+# the same localhost port app-shell's webpack.config.js already hardcodes
+# (3000, 3001), nothing in webpack.config.js needs to change — the browser
+# can't tell a container apart from a bare `npm run dev` process.
+#
+# `--host 0.0.0.0` (appended below) is the one thing that does need adding:
+# webpack-dev-server's own default host binding doesn't reliably resolve to
+# "every interface" inside a container's limited network namespace, so
+# without it the port mapping below would have nothing to actually reach.
+# Passed here, not edited into webpack.config.js, so nothing changes about
+# how `npm run dev` behaves outside Docker.
+#
+# Run with: docker compose up   (from this frontend/ folder)
+# Needs the backend's own `docker compose up` (or native `npm run dev`)
+# already running on 4000/4001/4010 — GRAPHQL_API_URL defaults to
+# http://localhost:4000/graphql either way.
+
+services:
+  app-shell:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        PACKAGE_PATH: packages/@xts/app-shell
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  mfe-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        PACKAGE_PATH: packages/@xts/mfe-admin
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app
+      - /app/node_modules
