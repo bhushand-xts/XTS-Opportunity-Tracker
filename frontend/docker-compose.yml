@@ -59,6 +59,16 @@ services:
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     ports:
       - "3000:3000"
+    environment:
+      # webpack.config.js reads this via plain Node process.env, evaluated
+      # when webpack.config.js itself loads — BEFORE webpack or the Dotenv
+      # plugin ever run, so a frontend/.env value alone (which only reaches
+      # bundled *application* source, e.g. apolloClient.ts's
+      # GRAPHQL_API_URL) never reaches it. Has to be a real container env
+      # var instead; ${ADMIN_REMOTE_URL} still comes from that same
+      # frontend/.env file, since docker compose auto-loads one from this
+      # directory for ${...} substitution in this file.
+      ADMIN_REMOTE_URL: ${ADMIN_REMOTE_URL:-http://localhost:3001}
     volumes: *workspace-node-modules-volumes
 
   mfe-admin:
