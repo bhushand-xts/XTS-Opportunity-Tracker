@@ -47,5 +47,18 @@ services:
       postgres:
         condition: service_healthy
 
+  # Web-based DB browser for the postgres container above — reaches it by
+  # Compose service name over the shared Docker network, same as user/admin
+  # do. Bound to 127.0.0.1 only (not the public security group), so it's
+  # reachable solely via an SSH tunnel, never directly from the internet —
+  # this is a full DB admin UI, not something to expose publicly.
+  adminer:
+    image: adminer:latest
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
