@@ -29,7 +29,11 @@ services:
       # other containers by their Compose service name.
       USER_URL: http://user:4001/graphql
       ADMIN_URL: http://admin:4010/graphql
-      CORS_ORIGIN: http://localhost:3000,http://localhost:3001
+      # Overridable via a backend/.env file (docker compose auto-loads one
+      # from this same directory) for deployed environments where the
+      # frontend isn't on localhost — falls back to local-dev's value when
+      # that file doesn't exist.
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,http://localhost:3001}
     volumes:
       - .:/app
       - /app/node_modules
