@@ -24,6 +24,31 @@
 # already running on 4000/4001/4010 — GRAPHQL_API_URL defaults to
 # http://localhost:4000/graphql either way.
 
+# Bind-mounting `.:/app` (below) overlays the image's build output with
+# whatever's on the host — fine for hoisted deps (protected by the
+# `/app/node_modules` anonymous volume), but npm doesn't always hoist:
+# a version conflict can leave a package nested inside one workspace's own
+# node_modules instead (e.g. react-resizable-panels ended up at
+# packages/@xts/design-system/node_modules/ rather than the shared root).
+# On a machine that already has `npm install` run natively (own dev laptop),
+# that nested folder exists on the host too, so it never breaks. On a fresh
+# `git clone` with no native install (e.g. a freshly launched EC2 box), the
+# host has nothing there, so the bind mount wipes out what the image built —
+# "Module not found" even though package.json/package-lock.json are correct.
+# Fix: protect every workspace's own node_modules the same way as the root's.
+x-workspace-node-modules-volumes: &workspace-node-modules-volumes
+  - .:/app
+  - /app/node_modules
+  - /app/packages/@xts/app-shell/node_modules
+  - /app/packages/@xts/design-system/node_modules
+  - /app/packages/@xts/api-contracts/node_modules
+  - /app/packages/@xts/api-client/node_modules
+  - /app/packages/@xts/mfe-admin/node_modules
+  - /app/packages/@xts/mfe-opportunity/node_modules
+  - /app/packages/@xts/mfe-solution/node_modules
+  - /app/packages/@xts/mfe-approval/node_modules
+  - /app/packages/@xts/mfe-dashboard/node_modules
+
 services:
   app-shell:
     build:
@@ -34,9 +59,7 @@ services:
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     ports:
       - "3000:3000"
-    volumes:
-      - .:/app
-      - /app/node_modules
+    volumes: *workspace-node-modules-volumes
 
   mfe-admin:
     build:
@@ -47,6 +70,4 @@ services:
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     ports:
       - "3001:3001"
-    volumes:
-      - .:/app
-      - /app/node_modules
+    volumes: *workspace-node-modules-volumes
