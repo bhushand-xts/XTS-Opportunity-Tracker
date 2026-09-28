@@ -10,6 +10,7 @@ import {
   FileQuestion,
   FlaskConical,
   Key,
+  KeyRound,
   Layers,
   LayoutDashboard,
   Link2,
@@ -29,6 +30,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
@@ -416,7 +418,7 @@ function AppSidebar({
           to="/dashboard"
           className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-from text-[13px] font-bold text-brand-foreground"
         >
-          XT
+          XTS
         </Link>
         <span className="truncate text-sm font-semibold text-sidebar-foreground group-data-[collapsible=icon]:hidden">
           XTS Opportunity Tracker
@@ -499,6 +501,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   const { profile, roleName, signOut, can, hasMenuAccess } = useAuth();
   const { currentUser } = useStore();
   const [helpOpen, setHelpOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const pageTitle = usePageTitle();
 
   const displayRole = roleName ?? "No role assigned";
@@ -542,6 +545,10 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
                   <DropdownMenuLabel className="text-xs text-muted-foreground">Signed in account</DropdownMenuLabel>
                   <DropdownMenuItem disabled className="text-[13px]">{displayRole}</DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-[13px]" onClick={() => setChangePasswordOpen(true)}>
+                    <KeyRound className="mr-2 size-4" />
+                    Change password
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-[13px]"
                     onClick={() => {
@@ -562,6 +569,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
           <main className="min-w-0 flex-1">{children}</main>
         </SidebarInset>
       </SidebarProvider>
+      <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
     </TooltipProvider>
   );
 }

@@ -23,5 +23,17 @@ export default {
       const actorId = (await authService.userIdFromToken(ctx.token)) ?? ctx.verifiedUserId ?? args.updatedBy;
       return service.assignRole(args.userId, args.roleId ?? null, actorId);
     },
+    changePassword: async (
+      _: unknown,
+      args: { currentPassword: string; newPassword: string },
+      ctx: { token?: string; verifiedUserId?: number }
+    ) => {
+      const userId = (await authService.userIdFromToken(ctx.token)) ?? ctx.verifiedUserId;
+      if (!userId) throw new Error('You must be signed in to change your password.');
+      return authService.changePassword(userId, args.currentPassword, args.newPassword);
+    },
+    requestPasswordReset: (_: unknown, args: { email: string }) => authService.requestPasswordReset(args.email),
+    resetPassword: (_: unknown, args: { token: string; newPassword: string }) =>
+      authService.resetPassword(args.token, args.newPassword),
   },
 };

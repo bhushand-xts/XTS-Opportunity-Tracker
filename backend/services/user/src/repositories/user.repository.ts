@@ -62,6 +62,21 @@ async function findByEmail(email: string): Promise<User | null> {
   return rows[0] ?? null;
 }
 
+async function findById(userId: number): Promise<User | null> {
+  const rows = await query<User>(
+    'SELECT user_id AS id, first_name AS "firstName", last_name AS "lastName", email, password_hash AS "passwordHash", role_id AS "roleId" FROM mst_user WHERE user_id = $1 AND is_active = TRUE',
+    [userId]
+  );
+  return rows[0] ?? null;
+}
+
+async function updatePasswordHash(userId: number, passwordHash: string): Promise<void> {
+  await query('UPDATE mst_user SET password_hash = $2, updated_dt = CURRENT_TIMESTAMP, updated_by = $1 WHERE user_id = $1', [
+    userId,
+    passwordHash,
+  ]);
+}
+
 async function createUser(firstName: string, lastName: string, email: string, passwordHash: string): Promise<User> {
   const rows = await query<User>(
     'INSERT INTO mst_user (first_name, last_name, email, password_hash) VALUES ($1, $2, LOWER($3), $4) RETURNING user_id AS id, first_name AS "firstName", last_name AS "lastName", email, password_hash AS "passwordHash", role_id AS "roleId"',
@@ -95,4 +110,50 @@ async function countByRole(roleId: number): Promise<number> {
   return Number(rows[0]?.count ?? 0);
 }
 
-export { findAll, findSummaryById, setRole, findByEmail, createUser, createSession, findUserIdByTokenHash, countByRole };
+// The expiry is computed here, at the database, with make_interval() — not in
+// JS as a Date object passed in as a parameter. node-postgres serializes a JS
+// Date for a "timestamp without time zone" column using the app server's
+// local wall-clock time, while CURRENT_TIMESTAMP is always the DB session's
+// time zone (UTC here); mixing the two silently shifts expiry by whatever the
+// two clocks' offset is (5.5h for a UTC DB / IST app server). Doing the whole
+// calculation in one SQL statement uses only the DB's own clock, so there is
+// no client/server time zone to mismatch.
+async function createPasswordResetToken(userId: number, tokenHash: string, lifetimeSeconds: number): Promise<void> {
+  await query(
+    `INSERT INTO password_reset_token (user_id, token_hash, expires_at)
+     VALUES ($1, $2, CURRENT_TIMESTAMP + make_interval(secs => $3))`,
+    [userId, tokenHash, lifetimeSeconds]
+  );
+}
+
+// A still-usable token: not expired, not already used. Returns the user it
+// belongs to, or null for an unknown, expired or already-used token.
+async function findValidResetToken(tokenHash: string): Promise<{ tokenId: number; userId: number } | null> {
+  const rows = await query<{ tokenId: number; userId: number }>(
+    `SELECT token_id AS "tokenId", user_id AS "userId"
+     FROM password_reset_token
+     WHERE token_hash = $1 AND expires_at > CURRENT_TIMESTAMP AND used_at IS NULL`,
+    [tokenHash]
+  );
+  return rows[0] ?? null;
+}
+
+async function markResetTokenUsed(tokenId: number): Promise<void> {
+  await query('UPDATE password_reset_token SET used_at = CURRENT_TIMESTAMP WHERE token_id = $1', [tokenId]);
+}
+
+export {
+  findAll,
+  findSummaryById,
+  setRole,
+  findByEmail,
+  findById,
+  updatePasswordHash,
+  createUser,
+  createSession,
+  findUserIdByTokenHash,
+  countByRole,
+  createPasswordResetToken,
+  findValidResetToken,
+  markResetTokenUsed,
+};

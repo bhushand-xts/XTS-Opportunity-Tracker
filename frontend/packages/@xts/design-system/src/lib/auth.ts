@@ -20,7 +20,15 @@ import { useMutation } from "@apollo/client";
 import { useSyncExternalStore } from "react";
 import { getApolloClient } from "@xts/api-client";
 import type { AuthPayload } from "@xts/api-contracts";
-import { LOGIN, REGISTER, ROLE_ACCESS, ROLE_NAME } from "./auth.queries";
+import {
+  CHANGE_PASSWORD,
+  LOGIN,
+  REGISTER,
+  REQUEST_PASSWORD_RESET,
+  RESET_PASSWORD,
+  ROLE_ACCESS,
+  ROLE_NAME,
+} from "./auth.queries";
 
 export type AppPermission = "dashboard" | "admin" | "opportunity" | "solution" | "approval";
 
@@ -235,6 +243,17 @@ export function useAuth() {
     { register: AuthPayload },
     { firstName: string; lastName: string; email: string; password: string }
   >(REGISTER);
+  const [changePasswordMutation] = useMutation<
+    { changePassword: boolean },
+    { currentPassword: string; newPassword: string }
+  >(CHANGE_PASSWORD);
+  const [requestPasswordResetMutation] = useMutation<{ requestPasswordReset: boolean }, { email: string }>(
+    REQUEST_PASSWORD_RESET
+  );
+  const [resetPasswordMutation] = useMutation<
+    { resetPassword: boolean },
+    { token: string; newPassword: string }
+  >(RESET_PASSWORD);
 
   return {
     loading: false,
@@ -282,6 +301,55 @@ export function useAuth() {
         });
         if (!data) throw new Error("No response from server.");
         persistSession(data.register);
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: messageFrom(error) };
+      }
+    },
+    async changePassword(currentPassword: string, newPassword: string, confirmPassword: string): Promise<AuthResult> {
+      if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
+        return { ok: false, error: "Please fill in all fields" };
+      }
+      if (newPassword.length < 8) {
+        return { ok: false, error: "New password must be at least 8 characters" };
+      }
+      if (newPassword !== confirmPassword) {
+        return { ok: false, error: "New password and confirmation do not match" };
+      }
+      try {
+        const { data } = await changePasswordMutation({ variables: { currentPassword, newPassword } });
+        if (!data?.changePassword) throw new Error("Failed to change password.");
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: messageFrom(error) };
+      }
+    },
+    // Always resolves ok — the server never reveals whether the email exists,
+    // so there is nothing for this to fail on except a network/server error.
+    async requestPasswordReset(email: string): Promise<AuthResult> {
+      if (!email.trim() || !email.includes("@")) {
+        return { ok: false, error: "Please enter a valid email" };
+      }
+      try {
+        await requestPasswordResetMutation({ variables: { email: email.trim() } });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: messageFrom(error) };
+      }
+    },
+    async resetPassword(token: string, newPassword: string, confirmPassword: string): Promise<AuthResult> {
+      if (!newPassword.trim() || !confirmPassword.trim()) {
+        return { ok: false, error: "Please fill in all fields" };
+      }
+      if (newPassword.length < 8) {
+        return { ok: false, error: "New password must be at least 8 characters" };
+      }
+      if (newPassword !== confirmPassword) {
+        return { ok: false, error: "New password and confirmation do not match" };
+      }
+      try {
+        const { data } = await resetPasswordMutation({ variables: { token, newPassword } });
+        if (!data?.resetPassword) throw new Error("Failed to reset password.");
         return { ok: true };
       } catch (error) {
         return { ok: false, error: messageFrom(error) };
