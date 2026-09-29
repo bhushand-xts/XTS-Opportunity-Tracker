@@ -168,6 +168,7 @@ export function CurrencyMasterPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         currency={editingCurrency}
+        allCurrencies={currencies}
       />
     </div>
   );

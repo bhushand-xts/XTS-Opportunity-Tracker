@@ -40,7 +40,27 @@ async function findAll(): Promise<Currency[]> {
      ORDER BY currency_name ASC`
   );
 }
-
+async function findByName(
+  currencyName: string,
+  excludeId?: number
+): Promise<Currency | null> {
+  const rows = excludeId
+    ? await query<Currency>(
+        `SELECT ${SELECT_COLUMNS}
+         FROM mst_currency
+         WHERE LOWER(currency_name) = LOWER($1)
+           AND currency_id <> $2`,
+        [currencyName, excludeId]
+      )
+    : await query<Currency>(
+        `SELECT ${SELECT_COLUMNS}
+         FROM mst_currency
+         WHERE LOWER(currency_name) = LOWER($1)`,
+        [currencyName]
+      );
+ 
+  return rows[0] || null;
+}
 async function findById(id: number): Promise<Currency | null> {
   const rows = await query<Currency>(
     `SELECT ${SELECT_COLUMNS}
@@ -149,6 +169,7 @@ export {
   findAll,
   findById,
   findByCode,
+  findByName,
   create,
   update,
   isUsed,

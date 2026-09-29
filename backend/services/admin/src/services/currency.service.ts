@@ -19,51 +19,70 @@ async function get(id: number) {
 
 async function create(input: CurrencyInput, ctx: any) {
   validator.assertValidCreate(input);
-
+ 
   const duplicateCode = await repository.findByCode(input.currencyCode.trim());
-
+  const duplicateName = await repository.findByName(input.currencyName.trim());
+ 
+  if (duplicateName) {
+    throw conflict("Currency Name already exists");
+  }
+ 
   if (duplicateCode) {
     throw conflict("Currency Code already exists");
   }
-
+ 
   const userId = ctx?.user?.id ?? input.createdBy;
-
+ 
   if (!userId) {
     throw conflict("Created By user is required");
   }
-
+ 
   return repository.create(input, userId);
 }
-
+ 
 async function update(
   currencyId: number,
   input: Partial<CurrencyInput>,
   ctx: any
 ) {
   const current = await repository.findById(currencyId);
-
+ 
   if (!current) {
     throw notFound("Currency not found");
   }
-
+ 
   validator.assertValidUpdate(input);
-
+ 
+  const incomingName = input.currencyName?.trim();
+  const currentName = current.currencyName.trim();
+ 
+  if (incomingName && incomingName.toLowerCase() !== currentName.toLowerCase()) {
+    const duplicateName = await repository.findByName(
+      incomingName,
+      currencyId
+    );
+ 
+    if (duplicateName) {
+      throw conflict("Currency Name already exists");
+    }
+  }
+ 
   const incomingCode = input.currencyCode?.trim().toUpperCase();
   const currentCode = current.currencyCode.trim().toUpperCase();
-
+ 
   if (incomingCode && incomingCode !== currentCode) {
     const duplicateCode = await repository.findByCode(
       incomingCode,
       currencyId
     );
-
+ 
     if (duplicateCode) {
       throw conflict("Currency Code already exists");
     }
   }
-
+ 
   const userId = ctx?.user?.id ?? input.updatedBy ?? null;
-
+ 
   return repository.update(currencyId, input, userId);
 }
 
