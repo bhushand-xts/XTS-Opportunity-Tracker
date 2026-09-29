@@ -102,6 +102,15 @@ const ADMIN_NAV: NavGroup[] = [
     icon: ClipboardList,
     items: [
       { label: "Estimate Phase Master", to: "/admin/estimate-management/estimate-phase-master", icon: ListOrdered },
+      { label: "Currency Master", to: "/admin/estimate-management/currency-master", icon: Table2 },
+      { label: "Technical Roles and Rate Master", to: "/admin/estimate-management/rate-master", icon: Table2 },
+    ],
+  },
+  {
+    label: "RFP Management",
+    icon: FileQuestion,
+    items: [
+      { label: "Generic RFP Question Master", to: "/admin/rfp-management/generic-rfp-question-master", icon: FileQuestion },
     ],
   },
 ];
@@ -181,45 +190,68 @@ function useDevNavPreview(): boolean {
   return on;
 }
 
-/** One node of the dynamic tree: a link if it has no children, otherwise an
- * always-expanded group — kept simple (no accordion) since the point here is
- * to see everything at once for comparison against the static nav. Nesting is
- * shown by the indented `<ul>` around each level's children, same as
- * AdminNavGroup above. */
+/** Whether `pathname` matches this menu's own route or any descendant's —
+ * used to auto-expand a branch that contains the current page, same as the
+ * static nav's activeGroupLabel does for AdminNavGroup. */
+function containsRoute(menu: NavMenuNode, pathname: string): boolean {
+  if (menu.routePath === pathname) return true;
+  return (menu.children ?? []).some((child) => containsRoute(child, pathname));
+}
+
+/** One node of the dynamic tree: a link if it has no children, otherwise a
+ * collapsible group — same expand/collapse interaction as AdminNavGroup in
+ * the static nav, just self-toggling per node instead of one-open-at-a-time,
+ * since this tree can nest arbitrarily deep. Starts open when the current
+ * page is somewhere inside it, and re-expands if navigation moves into it. */
 function DynamicNavNode({ menu, pathname }: { menu: NavMenuNode; pathname: string }) {
   const Icon = resolveDynamicNavIcon(menu.icon);
   const children = menu.children ?? [];
   const hasChildren = children.length > 0;
   const active = !hasChildren && menu.routePath !== null && pathname === menu.routePath;
+  const [open, setOpen] = useState(() => containsRoute(menu, pathname));
+  useEffect(() => {
+    if (containsRoute(menu, pathname)) setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, menu.menuId]);
 
-  const row = hasChildren ? (
-    <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-sidebar-foreground">
-      <Icon className="size-4 shrink-0" />
-      <span className="flex-1 truncate">{menu.menuName}</span>
-    </div>
-  ) : (
-    <Link
-      to={menu.routePath ?? "#"}
-      className={cn(
-        "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors",
-        active ? "bg-sidebar-accent font-medium text-rail-active" : "text-sidebar-foreground hover:bg-sidebar-accent",
-      )}
-    >
-      <Icon className="size-4 shrink-0" />
-      <span className="truncate">{menu.menuName}</span>
-    </Link>
-  );
+  if (!hasChildren) {
+    return (
+      <li>
+        <Link
+          to={menu.routePath ?? "#"}
+          className={cn(
+            "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors",
+            active ? "bg-sidebar-accent font-medium text-rail-active" : "text-sidebar-foreground hover:bg-sidebar-accent",
+          )}
+        >
+          <Icon className="size-4 shrink-0" />
+          <span className="truncate">{menu.menuName}</span>
+        </Link>
+      </li>
+    );
+  }
 
   return (
     <li>
-      {row}
-      {hasChildren && (
-        <ul className="ml-3.5 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2.5">
-          {children.map((child) => (
-            <DynamicNavNode key={child.menuId} menu={child} pathname={pathname} />
-          ))}
-        </ul>
-      )}
+      <Collapsible open={open} onOpenChange={setOpen} className="group/dyn-node">
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-sidebar-foreground hover:bg-sidebar-accent"
+          >
+            <Icon className="size-4 shrink-0" />
+            <span className="flex-1 truncate text-left">{menu.menuName}</span>
+            <ChevronDown className="size-3.5 shrink-0 transition-transform group-data-[state=open]/dyn-node:rotate-180" />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <ul className="ml-3.5 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2.5">
+            {children.map((child) => (
+              <DynamicNavNode key={child.menuId} menu={child} pathname={pathname} />
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </Collapsible>
     </li>
   );
 }
@@ -469,22 +501,6 @@ function AppSidebar({
                 </CollapsibleContent>
               </SidebarMenuItem>
             </Collapsible>
-          )}
-
-          {can("admin") && (
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname.startsWith("/admin/rfp-management")}
-                tooltip="Generic RFP Question Master"
-                className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
-              >
-                <Link to="/admin/rfp-management/generic-rfp-question-master">
-                  <FileQuestion />
-                  <span>Generic RFP Question Master</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
           )}
 
           {can("admin") && showDynamicPreview && <DynamicNavPreview pathname={pathname} hasMenuAccess={hasMenuAccess} />}

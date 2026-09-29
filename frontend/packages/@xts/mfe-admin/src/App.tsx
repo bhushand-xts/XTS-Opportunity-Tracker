@@ -11,6 +11,8 @@ import { RfpQuestionMasterPage } from "./features/rfp-question-management/RfpQue
 import { RoleMasterPage } from "./features/role-management/RoleMasterPage";
 import { RoleMenuPermissionAssignmentPage } from "./features/role-menu-permission-assignment/RoleMenuPermissionAssignmentPage";
 import { UserRoleAssignmentPage } from "./features/user-role-assignment/UserRoleAssignmentPage";
+import { CurrencyMasterPage } from "./features/currency-management/CurrencyMasterPage";
+import { RateMasterPage } from "./features/rate-master-management/RateMasterPage";
 
 // The pages of this MFE. Their links (and the sidebar's) are absolute paths
 // under /admin, so these routes are always mounted at /admin/*.
@@ -19,6 +21,8 @@ function AdminRoutes() {
     <Routes>
       <Route index element={<AdminOverview />} />
       <Route path="estimate-management/estimate-phase-master" element={<EstimatePhaseMasterPage />} />
+      <Route path="estimate-management/currency-master" element={<CurrencyMasterPage />}/>
+      <Route path="estimate-management/rate-master" element={<RateMasterPage />}/>
       <Route path="menu-management/menu-master" element={<MenuMasterPage />} />
       <Route path="menu-management/permission-master" element={<PermissionMasterPage />} />
       <Route path="menu-management/menu-permission-mapping" element={<MenuPermissionMappingPage />} />
