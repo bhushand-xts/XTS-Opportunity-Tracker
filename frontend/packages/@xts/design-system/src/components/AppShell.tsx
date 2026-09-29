@@ -200,15 +200,30 @@ function containsRoute(menu: NavMenuNode, pathname: string): boolean {
 
 /** One node of the dynamic tree: a link if it has no children, otherwise a
  * collapsible group — same expand/collapse interaction as AdminNavGroup in
- * the static nav, just self-toggling per node instead of one-open-at-a-time,
- * since this tree can nest arbitrarily deep. Starts open when the current
- * page is somewhere inside it, and re-expands if navigation moves into it. */
-function DynamicNavNode({ menu, pathname }: { menu: NavMenuNode; pathname: string }) {
+ * the static nav. Top-level siblings are accordioned one-open-at-a-time by
+ * DynamicNavPreview (via the optional open/onOpenChange below); a node
+ * rendering its own children lower in the tree falls back to independent,
+ * self-managed state, since only the top level had this requested. Starts
+ * open when the current page is somewhere inside it, and re-expands if
+ * navigation moves into it. */
+function DynamicNavNode({
+  menu,
+  pathname,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+}: {
+  menu: NavMenuNode;
+  pathname: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const Icon = resolveDynamicNavIcon(menu.icon);
   const children = menu.children ?? [];
   const hasChildren = children.length > 0;
   const active = !hasChildren && menu.routePath !== null && pathname === menu.routePath;
-  const [open, setOpen] = useState(() => containsRoute(menu, pathname));
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(() => containsRoute(menu, pathname));
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = controlledOnOpenChange ?? setUncontrolledOpen;
   useEffect(() => {
     if (containsRoute(menu, pathname)) setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -271,6 +286,16 @@ function DynamicNavPreview({
     .filter((menu): menu is NavMenuNode => menu !== null)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
+  // Accordion across top-level menus only — opening one closes whichever
+  // other top-level menu was open, same one-at-a-time behavior as the
+  // static nav's AdminNavGroup siblings.
+  const activeTopMenuId = tree.find((menu) => containsRoute(menu, pathname))?.menuId ?? null;
+  const [openTopMenuId, setOpenTopMenuId] = useState<number | null>(activeTopMenuId);
+  useEffect(() => {
+    if (activeTopMenuId !== null) setOpenTopMenuId(activeTopMenuId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="group/dynnav mt-2 border-t border-sidebar-border pt-2">
       <SidebarMenuItem>
@@ -289,7 +314,13 @@ function DynamicNavPreview({
               </li>
             )}
             {tree.map((menu) => (
-              <DynamicNavNode key={menu.menuId} menu={menu} pathname={pathname} />
+              <DynamicNavNode
+                key={menu.menuId}
+                menu={menu}
+                pathname={pathname}
+                open={openTopMenuId === menu.menuId}
+                onOpenChange={(isOpen) => setOpenTopMenuId(isOpen ? menu.menuId : null)}
+              />
             ))}
           </ul>
         </CollapsibleContent>
