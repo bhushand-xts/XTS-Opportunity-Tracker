@@ -19,6 +19,14 @@ export const menuFormSchema = z.object({
     .number({ invalid_type_error: "Sort Order is required" })
     .int("Sort Order must be a whole number")
     .min(0, "Sort Order cannot be negative"),
+  // The frontend route this menu links to (e.g. "/admin/user-management/role-master").
+  // Set by whoever ships the page — leave blank until that page exists.
+  routePath: z
+    .string()
+    .trim()
+    .max(255, "Route Path must be at most 255 characters")
+    .refine((v) => !v || v.startsWith("/"), 'Route Path must start with "/"')
+    .optional(),
 });
 
 export type MenuFormValues = z.infer<typeof menuFormSchema>;

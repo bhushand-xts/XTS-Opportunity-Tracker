@@ -1,11 +1,16 @@
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Lock, Search } from "lucide-react";
 import type { ManagedUser } from "@xts/api-contracts";
 import {
   Badge,
   Button,
   Card,
   CardContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   Select,
   SelectContent,
@@ -18,6 +23,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useAuth,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -29,6 +35,7 @@ import { useUsers } from "./useUsers";
 /** Select value meaning "no role" (Radix Select can't use an empty string). */
 const NO_ROLE = "none";
 const COLUMNS = 5;
+const MENU_KEY = "user_role_assignment";
 
 const fullName = (u: ManagedUser) => [u.firstName, u.lastName].filter(Boolean).join(" ") || "(no name)";
 
@@ -37,6 +44,9 @@ export function UserRoleAssignmentPage() {
   const { users, loading: usersLoading, error: usersError } = useUsers();
   const { roles, error: rolesError } = useRoles();
   const { assignRole } = useAssignUserRole();
+  const { hasPermission } = useAuth();
+  const canView = hasPermission(MENU_KEY, "view");
+  const canEdit = hasPermission(MENU_KEY, "edit");
 
   const [search, setSearch] = useState("");
   // Role chosen in a row's dropdown but not saved yet, by user id (null = "no role").
@@ -91,6 +101,21 @@ export function UserRoleAssignmentPage() {
 
       {error && <ErrorNotice error={error} title="Couldn't load users" />}
 
+      {!canView ? (
+        <Card>
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Lock />
+                </EmptyMedia>
+                <EmptyTitle>No view access</EmptyTitle>
+                <EmptyDescription>Your role doesn&apos;t have permission to view User Role Assignment.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
+        </Card>
+      ) : (
       <Card>
         <CardContent className="pt-6">
           {!usersLoading && users.length > 0 && (
@@ -139,7 +164,7 @@ export function UserRoleAssignmentPage() {
                     <TableCell>
                       <Select
                         value={chosen === null ? NO_ROLE : String(chosen)}
-                        disabled={inactive || saving}
+                        disabled={!canEdit || inactive || saving}
                         onValueChange={(value) =>
                           setDraft((d) => ({ ...d, [u.id]: value === NO_ROLE ? null : Number(value) }))
                         }
@@ -159,9 +184,11 @@ export function UserRoleAssignmentPage() {
                       </Select>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" disabled={!changed || inactive || saving} onClick={() => void save(u)}>
-                        {saving ? "Saving…" : "Update"}
-                      </Button>
+                      {canEdit && (
+                        <Button size="sm" disabled={!changed || inactive || saving} onClick={() => void save(u)}>
+                          {saving ? "Saving…" : "Update"}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -170,6 +197,7 @@ export function UserRoleAssignmentPage() {
           </Table>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

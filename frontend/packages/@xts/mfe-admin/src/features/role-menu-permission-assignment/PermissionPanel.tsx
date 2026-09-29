@@ -24,6 +24,7 @@ export function PermissionPanel({
   loading,
   onToggle,
   onSetAll,
+  disabled = false,
 }: {
   menu: Menu | undefined;
   parentName?: string;
@@ -34,6 +35,8 @@ export function PermissionPanel({
   loading: boolean;
   onToggle: (permissionId: number, checked: boolean) => void;
   onSetAll: (checked: boolean) => void;
+  /** Read-only mode — checkboxes and Select all/Clear are shown but can't be changed. */
+  disabled?: boolean;
 }) {
   const [filter, setFilter] = useState("");
 
@@ -95,10 +98,10 @@ export function PermissionPanel({
 
         {total > 0 && (
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={ticked === total} onClick={() => onSetAll(true)}>
+            <Button variant="outline" size="sm" disabled={disabled || ticked === total} onClick={() => onSetAll(true)}>
               Select all
             </Button>
-            <Button variant="outline" size="sm" disabled={ticked === 0} onClick={() => onSetAll(false)}>
+            <Button variant="outline" size="sm" disabled={disabled || ticked === 0} onClick={() => onSetAll(false)}>
               Clear
             </Button>
           </div>
@@ -147,6 +150,7 @@ export function PermissionPanel({
                       <Checkbox
                         id={id}
                         checked={isOn}
+                        disabled={disabled}
                         onCheckedChange={(v) => onToggle(p.permissionId, v === true)}
                         className="mt-0.5"
                       />

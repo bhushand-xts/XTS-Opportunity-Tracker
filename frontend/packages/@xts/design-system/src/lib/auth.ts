@@ -20,7 +20,15 @@ import { useMutation } from "@apollo/client";
 import { useSyncExternalStore } from "react";
 import { getApolloClient } from "@xts/api-client";
 import type { AuthPayload } from "@xts/api-contracts";
-import { LOGIN, REGISTER, ROLE_NAME } from "./auth.queries";
+import {
+  CHANGE_PASSWORD,
+  LOGIN,
+  REGISTER,
+  REQUEST_PASSWORD_RESET,
+  RESET_PASSWORD,
+  ROLE_ACCESS,
+  ROLE_NAME,
+} from "./auth.queries";
 
 export type AppPermission = "dashboard" | "admin" | "opportunity" | "solution" | "approval";
 
@@ -36,17 +44,24 @@ interface Session {
   token: string;
 }
 
+// Serializable form of Map<menuKey, Set<permissionKey>> (JSON can't hold Maps/Sets
+// directly, and this goes straight into localStorage) — every permission the
+// signed-in user's role holds, grouped by the menu it's on.
+type AccessMap = Record<string, string[]>;
+
 interface AuthState {
   session: Session | null;
   profile: Profile | null;
   roleId: number | null;
   // Null until resolveRoleName() fills it in (or if there's no role assigned).
   roleName: string | null;
+  // Empty until resolveAccess() fills it in.
+  access: AccessMap;
 }
 
 type AuthResult = { ok: true } | { ok: false; error: string };
 
-const EMPTY_STATE: AuthState = { session: null, profile: null, roleId: null, roleName: null };
+const EMPTY_STATE: AuthState = { session: null, profile: null, roleId: null, roleName: null, access: {} };
 const STORAGE_KEY = "authState";
 
 function stateFromPayload({ user, token }: AuthPayload): AuthState {
@@ -63,6 +78,7 @@ function stateFromPayload({ user, token }: AuthPayload): AuthState {
     },
     roleId: user.roleId ?? null,
     roleName: null,
+    access: {},
   };
 }
 
@@ -77,8 +93,8 @@ function readStoredState(): AuthState {
   }
 }
 
-// Defends against a stored value from before roleId/roleName existed (an
-// older `roles: []` shape) — anything missing just falls back to empty.
+// Defends against a stored value from before roleId/roleName/access existed
+// (an older `roles: []` shape) — anything missing just falls back to empty.
 function normalizeState(raw: unknown): AuthState {
   const parsed = (raw ?? {}) as Partial<AuthState>;
   return {
@@ -86,6 +102,7 @@ function normalizeState(raw: unknown): AuthState {
     profile: parsed.profile ?? null,
     roleId: parsed.roleId ?? null,
     roleName: parsed.roleName ?? null,
+    access: parsed.access ?? {},
   };
 }
 
@@ -109,6 +126,7 @@ function persistSession(payload: AuthPayload) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   setState(next);
   void resolveRoleName(next.session!.userId, next.roleId);
+  void resolveAccess(next.session!.userId, next.roleId);
 }
 
 // Fetches the role name for roleId from the admin subgraph and patches it
@@ -133,6 +151,30 @@ async function resolveRoleName(userId: string, roleId: number | null): Promise<v
   setState(next);
 }
 
+// Fetches every (menu, permission) grant the role holds and patches it into
+// the stored state, same guard as resolveRoleName. Drives hasPermission() /
+// hasMenuAccess() below.
+async function resolveAccess(userId: string, roleId: number | null): Promise<void> {
+  if (roleId === null) return;
+  let access: AccessMap = {};
+  try {
+    const { data } = await getApolloClient().query<{ roleAccess: { menuKey: string; permissionKey: string }[] }>({
+      query: ROLE_ACCESS,
+      variables: { roleId },
+      fetchPolicy: "network-only",
+    });
+    for (const grant of data?.roleAccess ?? []) {
+      (access[grant.menuKey] ??= []).push(grant.permissionKey);
+    }
+  } catch {
+    return;
+  }
+  if (state.session?.userId !== userId) return;
+  const next: AuthState = { ...state, access };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  setState(next);
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY) return;
@@ -140,11 +182,27 @@ if (typeof window !== "undefined") {
   });
 
   // On a fresh page load the stored session may still be missing its role
-  // name (e.g. the previous resolveRoleName() call never finished), so
+  // name or access (e.g. the previous resolve*() call never finished), so
   // retry once here.
   if (state.session && state.roleId !== null && state.roleName === null) {
     void resolveRoleName(state.session.userId, state.roleId);
   }
+  if (state.session && state.roleId !== null && Object.keys(state.access).length === 0) {
+    void resolveAccess(state.session.userId, state.roleId);
+  }
+
+  // Silently refresh the signed-in user's access data in the background, so a
+  // permission change (Role Menu Permission Assignment, Menu Permission
+  // Mapping) takes effect without requiring a full sign-out/sign-in. The
+  // previous access map keeps serving hasPermission()/hasMenuAccess()
+  // synchronously until this resolves, so there's no flicker — just fresher
+  // data a moment after each refresh. No-ops while signed out.
+  const ACCESS_REFRESH_INTERVAL_MS = 30_000;
+  setInterval(() => {
+    if (state.session && state.roleId !== null) {
+      void resolveAccess(state.session.userId, state.roleId);
+    }
+  }, ACCESS_REFRESH_INTERVAL_MS);
 }
 
 const ALL_PERMISSIONS: AppPermission[] = ["dashboard", "admin", "opportunity", "solution", "approval"];
@@ -163,6 +221,21 @@ function messageFrom(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
+/**
+ * Does the signed-in user's role hold this specific permission on this menu?
+ * Keyed by menuKey/permissionKey (stable, human-chosen strings), never by the
+ * numeric ids — see mst_menus.menu_key / mst_permissions.permission_key.
+ */
+export function hasPermission(menuKey: string, permissionKey: string): boolean {
+  return state.access[menuKey]?.includes(permissionKey) ?? false;
+}
+
+/** Does the role hold ANY permission on this menu? — enough to decide whether
+ * to show a nav link for it at all. */
+export function hasMenuAccess(menuKey: string): boolean {
+  return (state.access[menuKey]?.length ?? 0) > 0;
+}
+
 export function useAuth() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_STATE);
   const [loginMutation] = useMutation<{ login: AuthPayload }, { email: string; password: string }>(LOGIN);
@@ -170,6 +243,17 @@ export function useAuth() {
     { register: AuthPayload },
     { firstName: string; lastName: string; email: string; password: string }
   >(REGISTER);
+  const [changePasswordMutation] = useMutation<
+    { changePassword: boolean },
+    { currentPassword: string; newPassword: string }
+  >(CHANGE_PASSWORD);
+  const [requestPasswordResetMutation] = useMutation<{ requestPasswordReset: boolean }, { email: string }>(
+    REQUEST_PASSWORD_RESET
+  );
+  const [resetPasswordMutation] = useMutation<
+    { resetPassword: boolean },
+    { token: string; newPassword: string }
+  >(RESET_PASSWORD);
 
   return {
     loading: false,
@@ -178,6 +262,15 @@ export function useAuth() {
     roleName: snapshot.roleName,
     can(permission: AppPermission) {
       return ALL_PERMISSIONS.includes(permission);
+    },
+    // Reactive versions of hasPermission()/hasMenuAccess(), reading from this
+    // hook's subscribed snapshot so a component re-renders once access data
+    // resolves (it arrives asynchronously, after sign-in).
+    hasPermission(menuKey: string, permissionKey: string) {
+      return snapshot.access[menuKey]?.includes(permissionKey) ?? false;
+    },
+    hasMenuAccess(menuKey: string) {
+      return (snapshot.access[menuKey]?.length ?? 0) > 0;
     },
     async signIn(email: string, password: string): Promise<AuthResult> {
       if (!email.trim() || !password.trim()) {
@@ -213,6 +306,55 @@ export function useAuth() {
         return { ok: false, error: messageFrom(error) };
       }
     },
+    async changePassword(currentPassword: string, newPassword: string, confirmPassword: string): Promise<AuthResult> {
+      if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
+        return { ok: false, error: "Please fill in all fields" };
+      }
+      if (newPassword.length < 8) {
+        return { ok: false, error: "New password must be at least 8 characters" };
+      }
+      if (newPassword !== confirmPassword) {
+        return { ok: false, error: "New password and confirmation do not match" };
+      }
+      try {
+        const { data } = await changePasswordMutation({ variables: { currentPassword, newPassword } });
+        if (!data?.changePassword) throw new Error("Failed to change password.");
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: messageFrom(error) };
+      }
+    },
+    // Always resolves ok — the server never reveals whether the email exists,
+    // so there is nothing for this to fail on except a network/server error.
+    async requestPasswordReset(email: string): Promise<AuthResult> {
+      if (!email.trim() || !email.includes("@")) {
+        return { ok: false, error: "Please enter a valid email" };
+      }
+      try {
+        await requestPasswordResetMutation({ variables: { email: email.trim() } });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: messageFrom(error) };
+      }
+    },
+    async resetPassword(token: string, newPassword: string, confirmPassword: string): Promise<AuthResult> {
+      if (!newPassword.trim() || !confirmPassword.trim()) {
+        return { ok: false, error: "Please fill in all fields" };
+      }
+      if (newPassword.length < 8) {
+        return { ok: false, error: "New password must be at least 8 characters" };
+      }
+      if (newPassword !== confirmPassword) {
+        return { ok: false, error: "New password and confirmation do not match" };
+      }
+      try {
+        const { data } = await resetPasswordMutation({ variables: { token, newPassword } });
+        if (!data?.resetPassword) throw new Error("Failed to reset password.");
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: messageFrom(error) };
+      }
+    },
     // Demo stand-in for a real SSO redirect/callback — signs straight in as
     // a fixed corporate identity, bypassing GraphQL entirely. Swap for a
     // real OIDC/SAML flow before shipping.
@@ -222,6 +364,7 @@ export function useAuth() {
         profile: { first_name: "B", last_name: "Dixit", status: "approved" },
         roleId: null,
         roleName: "System Administrator",
+        access: {},
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       setState(next);

@@ -11,6 +11,7 @@ export interface MenuRecord {
   icon: string | null;
   parentId: number | null;
   sortOrder: number;
+  routePath: string | null;
   createdDt: Date;
   createdBy: number;
   updatedDt: Date | null;
@@ -33,6 +34,7 @@ export class MenusRepository {
         icon,
         parent_id AS "parentId",
         sort_order AS "sortOrder",
+        route_path AS "routePath",
         created_dt AS "createdDt",
         created_by AS "createdBy",
         updated_dt AS "updatedDt",
@@ -72,6 +74,7 @@ export class MenusRepository {
         icon,
         parent_id AS "parentId",
         sort_order AS "sortOrder",
+        route_path AS "routePath",
         created_dt AS "createdDt",
         created_by AS "createdBy",
         updated_dt AS "updatedDt",
@@ -99,6 +102,7 @@ export class MenusRepository {
         icon,
         parent_id AS "parentId",
         sort_order AS "sortOrder",
+        route_path AS "routePath",
         created_dt AS "createdDt",
         created_by AS "createdBy",
         updated_dt AS "updatedDt",
@@ -127,6 +131,7 @@ export class MenusRepository {
         icon,
         parent_id AS "parentId",
         sort_order AS "sortOrder",
+        route_path AS "routePath",
         created_dt AS "createdDt",
         created_by AS "createdBy",
         updated_dt AS "updatedDt",
@@ -156,6 +161,7 @@ export class MenusRepository {
         icon,
         parent_id AS "parentId",
         sort_order AS "sortOrder",
+        route_path AS "routePath",
         created_dt AS "createdDt",
         created_by AS "createdBy",
         updated_dt AS "updatedDt",
@@ -202,6 +208,7 @@ export class MenusRepository {
           icon,
           parent_id,
           sort_order,
+          route_path,
           created_dt,
           created_by,
           is_active
@@ -213,8 +220,9 @@ export class MenusRepository {
           $3,
           $4,
           $5,
-          CURRENT_TIMESTAMP,
           $6,
+          CURRENT_TIMESTAMP,
+          $7,
           TRUE
         )
         RETURNING
@@ -224,6 +232,7 @@ export class MenusRepository {
           icon,
           parent_id AS "parentId",
           sort_order AS "sortOrder",
+          route_path AS "routePath",
           created_dt AS "createdDt",
           created_by AS "createdBy",
           updated_dt AS "updatedDt",
@@ -236,6 +245,7 @@ export class MenusRepository {
           input.icon ?? null,
           input.parentId ?? null,
           input.sortOrder,
+          input.routePath ?? null,
           input.createdBy
         ]
       );
@@ -274,9 +284,13 @@ export class MenusRepository {
           ELSE parent_id
         END,
         sort_order = COALESCE($7, sort_order),
+        route_path = CASE
+          WHEN $8::boolean = TRUE THEN $9
+          ELSE route_path
+        END,
         updated_dt = CURRENT_TIMESTAMP,
-        updated_by = $8
-      WHERE menu_id = $9
+        updated_by = $10
+      WHERE menu_id = $11
       RETURNING
         menu_id AS "menuId",
         menu_name AS "menuName",
@@ -284,6 +298,7 @@ export class MenusRepository {
         icon,
         parent_id AS "parentId",
         sort_order AS "sortOrder",
+        route_path AS "routePath",
         created_dt AS "createdDt",
         created_by AS "createdBy",
         updated_dt AS "updatedDt",
@@ -301,6 +316,10 @@ export class MenusRepository {
         input.parentId ?? null,
 
         input.sortOrder ?? null,
+
+        input.routePath !== undefined,
+        input.routePath ?? null,
+
         input.updatedBy,
         menuId
       ]
@@ -334,6 +353,7 @@ export class MenusRepository {
         icon,
         parent_id AS "parentId",
         sort_order AS "sortOrder",
+        route_path AS "routePath",
         created_dt AS "createdDt",
         created_by AS "createdBy",
         updated_dt AS "updatedDt",

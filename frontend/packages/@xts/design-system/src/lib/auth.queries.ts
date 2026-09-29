@@ -37,11 +37,48 @@ export const REGISTER = gql`
   ${AUTH_PAYLOAD_FIELDS}
 `;
 
+// Changes the signed-in user's own password. Always targets the caller — the
+// server derives who's calling from the login token, not a client-supplied id.
+export const CHANGE_PASSWORD = gql`
+  mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
+    changePassword(currentPassword: $currentPassword, newPassword: $newPassword)
+  }
+`;
+
+// Emails a reset link if the address has an account. Always resolves the same
+// way (true) regardless of whether the email exists — see auth.service.ts.
+export const REQUEST_PASSWORD_RESET = gql`
+  mutation RequestPasswordReset($email: String!) {
+    requestPasswordReset(email: $email)
+  }
+`;
+
+// Completes a reset using the token from the emailed link.
+export const RESET_PASSWORD = gql`
+  mutation ResetPassword($token: String!, $newPassword: String!) {
+    resetPassword(token: $token, newPassword: $newPassword)
+  }
+`;
+
 // The signed-in user's role name, resolved from the admin service by roleId.
 export const ROLE_NAME = gql`
   query RoleName($id: Int!) {
     role(id: $id) {
       roleName
+    }
+  }
+`;
+
+// Every (menu, permission) grant the signed-in user's role holds — the real
+// data behind hasPermission()/hasMenuAccess() in auth.ts. menuKey/permissionKey
+// (not the numeric ids) are what the app keys its checks on, since those stay
+// stable across environments while ids don't (see mst_menus.menu_key,
+// mst_permissions.permission_key).
+export const ROLE_ACCESS = gql`
+  query RoleAccessForAuth($roleId: Int!) {
+    roleAccess(roleId: $roleId) {
+      menuKey
+      permissionKey
     }
   }
 `;

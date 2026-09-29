@@ -6,3 +6,5 @@ export * from "./rfpQuestion";
 export * from "./role";
 export * from "./roleMenuPermission";
 export * from "./user";
+export * from "./currency";
+export * from "./rateMaster";

@@ -6,6 +6,7 @@ export const accessTypeDefs = `#graphql
     menuId: Int!
     permissionId: Int!
     menuName: String!
+    menuKey: String!
     permissionName: String!
     permissionKey: String!
     createdDt: String!

@@ -9,6 +9,8 @@ export interface Menu {
   icon: string | null;
   parentId: number | null;
   sortOrder: number;
+  /** The frontend route this menu links to, e.g. "/admin/user-management/role-master". */
+  routePath: string | null;
   isActive: boolean;
   createdDt: string;
   createdBy: number;
@@ -22,6 +24,7 @@ export interface CreateMenuInput {
   icon?: string | null;
   parentId?: number | null;
   sortOrder: number;
+  routePath?: string | null;
   createdBy: number;
 }
 
@@ -31,5 +34,6 @@ export interface UpdateMenuInput {
   icon?: string | null;
   parentId?: number | null;
   sortOrder?: number;
+  routePath?: string | null;
   updatedBy: number;
 }

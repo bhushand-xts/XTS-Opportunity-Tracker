@@ -8,6 +8,7 @@ const MENU_FIELDS = gql`
     icon
     parentId
     sortOrder
+    routePath
     isActive
     createdDt
     createdBy

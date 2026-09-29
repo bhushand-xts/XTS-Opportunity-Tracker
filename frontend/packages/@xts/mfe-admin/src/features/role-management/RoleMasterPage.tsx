@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { History, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { History, Lock, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import type { Role } from "@xts/api-contracts";
 import {
   AlertDialog,
@@ -14,6 +14,11 @@ import {
   Button,
   Card,
   CardContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   Table,
   TableBody,
@@ -21,6 +26,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useAuth,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -31,11 +37,17 @@ import { useRoleMutations } from "./useRoleMutations";
 import { useRoles } from "./useRoles";
 
 const COLUMNS = 5;
+const MENU_KEY = "role_master";
 
 export function RoleMasterPage() {
   useSetPageTitle("Role Master");
   const { roles, loading, error } = useRoles();
   const { deleteRole } = useRoleMutations();
+  const { hasPermission } = useAuth();
+  const canView = hasPermission(MENU_KEY, "view");
+  const canAdd = hasPermission(MENU_KEY, "add");
+  const canEdit = hasPermission(MENU_KEY, "edit");
+  const canDelete = hasPermission(MENU_KEY, "delete");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [deletingRole, setDeletingRole] = useState<Role | null>(null);
@@ -78,71 +90,93 @@ export function RoleMasterPage() {
                 className="pl-9"
               />
             </div>
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 size-4" />
-              Add role
-            </Button>
+            {canAdd && (
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 size-4" />
+                Add role
+              </Button>
+            )}
           </>
         }
       />
 
       {error && <ErrorNotice error={error} title="Couldn't load roles" />}
 
-      <Card>
-        <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Role name</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading && <TableLoadingRows columns={COLUMNS} />}
-              {!loading && !error && roles.length === 0 && (
-                <TableEmptyRow columns={COLUMNS} message="No roles yet. Add the first one." />
-              )}
-              {!loading && roles.length > 0 && visibleRoles.length === 0 && (
-                <TableEmptyRow columns={COLUMNS} message="No roles match your search." />
-              )}
-              {visibleRoles.map((role) => (
-                <TableRow key={role.id}>
-                  <TableCell className="font-medium">{role.roleName}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{role.roleCode ?? "—"}</TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">{role.description ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant={role.isActive ? "success" : "muted"}>{role.isActive ? "Active" : "Inactive"}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`History of ${role.roleName}`}
-                      onClick={() => setHistoryRole(role)}
-                    >
-                      <History className="size-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" aria-label={`Edit ${role.roleName}`} onClick={() => openEdit(role)}>
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Delete ${role.roleName}`}
-                      onClick={() => setDeletingRole(role)}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </TableCell>
+      {!canView ? (
+        <Card>
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Lock />
+                </EmptyMedia>
+                <EmptyTitle>No view access</EmptyTitle>
+                <EmptyDescription>Your role doesn&apos;t have permission to view Role Master.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Role name</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {loading && <TableLoadingRows columns={COLUMNS} />}
+                {!loading && !error && roles.length === 0 && (
+                  <TableEmptyRow columns={COLUMNS} message="No roles yet. Add the first one." />
+                )}
+                {!loading && roles.length > 0 && visibleRoles.length === 0 && (
+                  <TableEmptyRow columns={COLUMNS} message="No roles match your search." />
+                )}
+                {visibleRoles.map((role) => (
+                  <TableRow key={role.id}>
+                    <TableCell className="font-medium">{role.roleName}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{role.roleCode ?? "—"}</TableCell>
+                    <TableCell className="max-w-xs truncate text-muted-foreground">{role.description ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={role.isActive ? "success" : "muted"}>{role.isActive ? "Active" : "Inactive"}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`History of ${role.roleName}`}
+                        onClick={() => setHistoryRole(role)}
+                      >
+                        <History className="size-4" />
+                      </Button>
+                      {canEdit && (
+                        <Button variant="ghost" size="icon" aria-label={`Edit ${role.roleName}`} onClick={() => openEdit(role)}>
+                          <Pencil className="size-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Delete ${role.roleName}`}
+                          onClick={() => setDeletingRole(role)}
+                        >
+                          <Trash2 className="size-4 text-destructive" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <RoleFormDialog open={dialogOpen} onOpenChange={setDialogOpen} role={editingRole} allRoles={roles} />
       <RoleHistoryDialog role={historyRole} onClose={() => setHistoryRole(null)} />

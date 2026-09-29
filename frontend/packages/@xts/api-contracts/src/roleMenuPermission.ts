@@ -8,6 +8,7 @@ export interface RoleMenuPermission {
   menuId: number;
   permissionId: number;
   menuName: string;
+  menuKey: string;
   permissionName: string;
   permissionKey: string;
 }

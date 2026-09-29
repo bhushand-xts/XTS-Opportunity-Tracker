@@ -45,6 +45,7 @@ export function HistoryDialog<T extends HistoryRow>({
   fields,
   loading,
   error,
+  resolveUser = formatUser,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,6 +54,8 @@ export function HistoryDialog<T extends HistoryRow>({
   fields: HistoryField<T>[];
   loading: boolean;
   error?: Error;
+  /** Turns a user id into a display name. Defaults to "User #<id>" when not given. */
+  resolveUser?: (userId: number | null | undefined) => string;
 }) {
   const columns = fields.length + 3;
 
@@ -94,7 +97,7 @@ export function HistoryDialog<T extends HistoryRow>({
                 <TableRow key={row.trackerId}>
                   <TableCell className="whitespace-nowrap">{formatDateTime(row.updatedDt ?? row.createdDt)}</TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {formatUser(row.updatedBy ?? row.createdBy)}
+                    {resolveUser(row.updatedBy ?? row.createdBy)}
                   </TableCell>
                   <TableCell>
                     <Badge variant={index === rows.length - 1 ? "success" : "muted"}>{changedFields(row, index)}</Badge>
