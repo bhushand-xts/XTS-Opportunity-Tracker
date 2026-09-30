@@ -1,0 +1,18 @@
+-- This project has moved to database-per-service.
+--
+-- Tables from the original combined schema (Section 6, 24-table design)
+-- have been split across the owning service's own DDL file:
+--
+--   database/services/user/schema.sql          (xts_user)
+--   database/services/account/schema.sql       (xts_account)
+--   database/services/opportunity/schema.sql   (xts_opportunity)
+--   database/services/estimation/schema.sql    (xts_estimation)
+--   database/services/admin/schema.sql         (xts_admin)
+--
+-- Cross-service foreign keys were dropped in the split (Postgres can't
+-- enforce a FK across two databases) — the referencing column stays as
+-- a plain INTEGER, with a comment noting what it used to point to.
+--
+-- approval, rfp, document, notification, and reporting-audit have no
+-- tables yet and still share this file's (now empty) database, `xts`,
+-- until they get real schemas of their own.

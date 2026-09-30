@@ -1,0 +1,2 @@
+-- DDL for the `xts_account` database only.
+-- Paste account DDL here.
