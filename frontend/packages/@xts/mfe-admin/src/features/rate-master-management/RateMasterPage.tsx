@@ -107,7 +107,7 @@ export function RateMasterPage() {
             {canAdd && (
               <Button onClick={openAdd}>
                 <Plus className="mr-2 size-4" />
-                Add rate
+                Add technical role
               </Button>
             )}
           </>

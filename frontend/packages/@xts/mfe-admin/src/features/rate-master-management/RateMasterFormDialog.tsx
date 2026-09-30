@@ -104,7 +104,7 @@ export function RateMasterFormDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? "Edit rate master" : "Add rate master"}
+            {isEdit ? "Edit technical role" : "Add technical role"}
           </DialogTitle>
         </DialogHeader>
 
