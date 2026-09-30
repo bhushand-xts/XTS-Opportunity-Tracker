@@ -34,10 +34,12 @@ export function CurrencyFormDialog({
   open,
   onOpenChange,
   currency,
+  allCurrencies,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currency: Currency | null;
+  allCurrencies: Currency[];
 }) {
   const isEdit = currency !== null;
   const { createCurrency, updateCurrency, saving } = useCurrencyMutations();
@@ -63,6 +65,18 @@ export function CurrencyFormDialog({
   }, [open, currency, form]);
 
   async function onSubmit(values: CurrencyFormValues) {
+    const others = allCurrencies.filter((c) => c.currencyId !== currency?.currencyId);
+    const name = values.currencyName.trim().toLowerCase();
+    if (others.some((c) => c.currencyName.trim().toLowerCase() === name)) {
+      form.setError("currencyName", { message: `A currency named "${values.currencyName.trim()}" already exists.` });
+      return;
+    }
+    const code = values.currencyCode.trim().toLowerCase();
+    if (others.some((c) => c.currencyCode.trim().toLowerCase() === code)) {
+      form.setError("currencyCode", { message: `The code "${values.currencyCode.trim()}" is already used by another currency.` });
+      return;
+    }
+
     const details = {
       currencyName: values.currencyName.trim(),
       currencyCode: values.currencyCode.trim(),
