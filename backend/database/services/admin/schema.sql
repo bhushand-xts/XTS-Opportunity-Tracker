@@ -4,7 +4,8 @@
 -- Admin-owned tables: master data + access control.
 --   master data     mst_stage, mst_sub_stage, mst_estimation_phases, mst_rate,
 --                   tbl_reason_codes, mst_proposal_section, mst_rfp_questions,
---                   mst_account_type (no tracker) (+ trackers for the rest)
+--                   mst_account_type, mst_industry (no tracker)
+--                   (+ trackers for the rest)
 --   access control  mst_menus, mst_permissions, mst_roles (+ trackers),
 --                   tbl_menuwise_permission, tbl_role_menu_permission
 --
@@ -172,6 +173,21 @@ CREATE TABLE mst_account_type (
 );
 
 CREATE UNIQUE INDEX ux_mst_account_type_account_name ON mst_account_type (LOWER(account_name));
+
+-- Industry (Industry Master) — no history tracker for this one either (same
+-- Add/Edit/toggle-status pattern as mst_account_type, see industry.repository.ts).
+CREATE TABLE mst_industry (
+  industry_id SERIAL PRIMARY KEY,
+  industry_name VARCHAR(100),
+  description VARCHAR(500),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER
+);
+
+CREATE UNIQUE INDEX ux_mst_industry_industry_name ON mst_industry (LOWER(industry_name));
 
 CREATE TABLE mst_proposal_section (
   proposal_section_id SERIAL PRIMARY KEY,

@@ -1,6 +1,7 @@
 export * from "./accountType";
 export * from "./auth";
 export * from "./estimationPhase";
+export * from "./industry";
 export * from "./menu";
 export * from "./permission";
 export * from "./reasonCode";

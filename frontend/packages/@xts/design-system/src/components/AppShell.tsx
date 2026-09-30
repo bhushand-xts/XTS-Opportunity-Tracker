@@ -2,6 +2,7 @@ import { useQuery } from "@apollo/client";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
+  Building2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -106,6 +107,7 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "Technical Roles and Rate Master", to: "/admin/estimate-management/rate-master", icon: Table2 },
       { label: "Reason Code Master", to: "/admin/estimate-management/reason-code-master", icon: ListChecks },
       { label: "Account Type Master", to: "/admin/estimate-management/account-type-master", icon: Layers },
+      { label: "Industry Master", to: "/admin/estimate-management/industry-master", icon: Building2 },
     ],
   },
   {
