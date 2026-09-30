@@ -1,11 +1,16 @@
 import { useMemo, useState } from "react";
-import { Pencil, Plus, Search } from "lucide-react";
+import { Lock, Pencil, Plus, Search } from "lucide-react";
 import type { AccountType } from "@xts/api-contracts";
 import {
   Badge,
   Button,
   Card,
   CardContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   Switch,
   Table,
@@ -14,6 +19,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useAuth,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -27,12 +33,17 @@ import { useAccountTypes } from "./useAccountTypes";
 import { useAccountTypeMutations } from "./useAccountTypeMutations";
 
 const COLUMNS = 5;
+const MENU_KEY = "account_type_master";
 
 export function AccountTypeMasterPage() {
   useSetPageTitle("Account Type Master");
 
   const { accountTypes, loading, error } = useAccountTypes();
   const { setAccountTypeActive } = useAccountTypeMutations();
+  const { hasPermission } = useAuth();
+  const canView = hasPermission(MENU_KEY, "view");
+  const canAdd = hasPermission(MENU_KEY, "add");
+  const canEdit = hasPermission(MENU_KEY, "edit");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingAccountType, setEditingAccountType] = useState<AccountType | null>(null);
@@ -77,10 +88,12 @@ export function AccountTypeMasterPage() {
               />
             </div>
 
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 size-4" />
-              Add account type
-            </Button>
+            {canAdd && (
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 size-4" />
+                Add account type
+              </Button>
+            )}
           </>
         }
       />
@@ -89,78 +102,97 @@ export function AccountTypeMasterPage() {
         <ErrorNotice error={error} title="Couldn't load account types" />
       )}
 
-      <Card>
-        <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Account name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Active</TableHead>
-                <TableHead className="text-right">Edit</TableHead>
-              </TableRow>
-            </TableHeader>
+      {!canView ? (
+        <Card>
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Lock />
+                </EmptyMedia>
+                <EmptyTitle>No view access</EmptyTitle>
+                <EmptyDescription>Your role doesn&apos;t have permission to view Account Type Master.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Account name</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead className="text-right">Edit</TableHead>
+                </TableRow>
+              </TableHeader>
 
-            <TableBody>
-              {loading && <TableLoadingRows columns={COLUMNS} />}
+              <TableBody>
+                {loading && <TableLoadingRows columns={COLUMNS} />}
 
-              {!loading && !error && accountTypes.length === 0 && (
-                <TableEmptyRow
-                  columns={COLUMNS}
-                  message="No account types yet. Add the first one."
-                />
-              )}
-
-              {!loading &&
-                accountTypes.length > 0 &&
-                visibleAccountTypes.length === 0 && (
+                {!loading && !error && accountTypes.length === 0 && (
                   <TableEmptyRow
                     columns={COLUMNS}
-                    message="No account types match your search."
+                    message="No account types yet. Add the first one."
                   />
                 )}
 
-              {visibleAccountTypes.map((accountType) => (
-                <TableRow key={accountType.accountTypeId}>
-                  <TableCell className="font-medium">
-                    {accountType.accountName}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">
-                    {accountType.description ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={accountType.isActive ? "success" : "muted"}
-                    >
-                      {accountType.isActive ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={accountType.isActive}
-                      aria-label={`${accountType.isActive ? "Deactivate" : "Activate"} ${accountType.accountName}`}
-                      onCheckedChange={(checked) =>
-                        void setAccountTypeActive(accountType.accountTypeId, checked)
-                      }
+                {!loading &&
+                  accountTypes.length > 0 &&
+                  visibleAccountTypes.length === 0 && (
+                    <TableEmptyRow
+                      columns={COLUMNS}
+                      message="No account types match your search."
                     />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Edit ${accountType.accountName}`}
-                      onClick={() => openEdit(accountType)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  )}
+
+                {visibleAccountTypes.map((accountType) => (
+                  <TableRow key={accountType.accountTypeId}>
+                    <TableCell className="font-medium">
+                      {accountType.accountName}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate text-muted-foreground">
+                      {accountType.description ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={accountType.isActive ? "success" : "muted"}
+                      >
+                        {accountType.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={accountType.isActive}
+                        disabled={!canEdit}
+                        aria-label={`${accountType.isActive ? "Deactivate" : "Activate"} ${accountType.accountName}`}
+                        onCheckedChange={(checked) =>
+                          void setAccountTypeActive(accountType.accountTypeId, checked)
+                        }
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Edit ${accountType.accountName}`}
+                          onClick={() => openEdit(accountType)}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <AccountTypeFormDialog
         open={dialogOpen}

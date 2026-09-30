@@ -1,11 +1,16 @@
 import { useMemo, useState } from "react";
-import { Pencil, Plus, Search } from "lucide-react";
+import { Lock, Pencil, Plus, Search } from "lucide-react";
 import type { Industry } from "@xts/api-contracts";
 import {
   Badge,
   Button,
   Card,
   CardContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   Switch,
   Table,
@@ -14,6 +19,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useAuth,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -27,12 +33,17 @@ import { useIndustries } from "./useIndustries";
 import { useIndustryMutations } from "./useIndustryMutations";
 
 const COLUMNS = 5;
+const MENU_KEY = "industry_master";
 
 export function IndustryMasterPage() {
   useSetPageTitle("Industry Master");
 
   const { industries, loading, error } = useIndustries();
   const { setIndustryActive } = useIndustryMutations();
+  const { hasPermission } = useAuth();
+  const canView = hasPermission(MENU_KEY, "view");
+  const canAdd = hasPermission(MENU_KEY, "add");
+  const canEdit = hasPermission(MENU_KEY, "edit");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingIndustry, setEditingIndustry] = useState<Industry | null>(null);
@@ -77,10 +88,12 @@ export function IndustryMasterPage() {
               />
             </div>
 
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 size-4" />
-              Add industry
-            </Button>
+            {canAdd && (
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 size-4" />
+                Add industry
+              </Button>
+            )}
           </>
         }
       />
@@ -89,78 +102,97 @@ export function IndustryMasterPage() {
         <ErrorNotice error={error} title="Couldn't load industries" />
       )}
 
-      <Card>
-        <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Industry name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Active</TableHead>
-                <TableHead className="text-right">Edit</TableHead>
-              </TableRow>
-            </TableHeader>
+      {!canView ? (
+        <Card>
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Lock />
+                </EmptyMedia>
+                <EmptyTitle>No view access</EmptyTitle>
+                <EmptyDescription>Your role doesn&apos;t have permission to view Industry Master.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Industry name</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead className="text-right">Edit</TableHead>
+                </TableRow>
+              </TableHeader>
 
-            <TableBody>
-              {loading && <TableLoadingRows columns={COLUMNS} />}
+              <TableBody>
+                {loading && <TableLoadingRows columns={COLUMNS} />}
 
-              {!loading && !error && industries.length === 0 && (
-                <TableEmptyRow
-                  columns={COLUMNS}
-                  message="No industries yet. Add the first one."
-                />
-              )}
-
-              {!loading &&
-                industries.length > 0 &&
-                visibleIndustries.length === 0 && (
+                {!loading && !error && industries.length === 0 && (
                   <TableEmptyRow
                     columns={COLUMNS}
-                    message="No industries match your search."
+                    message="No industries yet. Add the first one."
                   />
                 )}
 
-              {visibleIndustries.map((industry) => (
-                <TableRow key={industry.industryId}>
-                  <TableCell className="font-medium">
-                    {industry.industryName}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">
-                    {industry.description ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={industry.isActive ? "success" : "muted"}
-                    >
-                      {industry.isActive ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={industry.isActive}
-                      aria-label={`${industry.isActive ? "Deactivate" : "Activate"} ${industry.industryName}`}
-                      onCheckedChange={(checked) =>
-                        void setIndustryActive(industry.industryId, checked)
-                      }
+                {!loading &&
+                  industries.length > 0 &&
+                  visibleIndustries.length === 0 && (
+                    <TableEmptyRow
+                      columns={COLUMNS}
+                      message="No industries match your search."
                     />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Edit ${industry.industryName}`}
-                      onClick={() => openEdit(industry)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  )}
+
+                {visibleIndustries.map((industry) => (
+                  <TableRow key={industry.industryId}>
+                    <TableCell className="font-medium">
+                      {industry.industryName}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate text-muted-foreground">
+                      {industry.description ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={industry.isActive ? "success" : "muted"}
+                      >
+                        {industry.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={industry.isActive}
+                        disabled={!canEdit}
+                        aria-label={`${industry.isActive ? "Deactivate" : "Activate"} ${industry.industryName}`}
+                        onCheckedChange={(checked) =>
+                          void setIndustryActive(industry.industryId, checked)
+                        }
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Edit ${industry.industryName}`}
+                          onClick={() => openEdit(industry)}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <IndustryFormDialog
         open={dialogOpen}

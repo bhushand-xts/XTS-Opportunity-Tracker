@@ -154,6 +154,7 @@ export function ReasonCodeMasterPage() {
                     <TableCell>
                       <Switch
                         checked={reasonCode.isActive}
+                        disabled={!canEdit}
                         aria-label={`${reasonCode.isActive ? "Deactivate" : "Activate"} ${reasonCode.reasonName}`}
                         onCheckedChange={(checked) => void setReasonCodeActive(reasonCode.id, checked)}
                       />
