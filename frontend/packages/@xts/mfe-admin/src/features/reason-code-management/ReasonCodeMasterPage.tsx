@@ -20,6 +20,7 @@ import {
   EmptyMedia,
   EmptyTitle,
   Input,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -36,13 +37,13 @@ import { ReasonCodeHistoryDialog } from "./ReasonCodeHistoryDialog";
 import { useReasonCodeMutations } from "./useReasonCodeMutations";
 import { useReasonCodes } from "./useReasonCodes";
 
-const COLUMNS = 5;
+const COLUMNS = 6;
 const MENU_KEY = "reason_code_master";
 
 export function ReasonCodeMasterPage() {
   useSetPageTitle("Reason Code Master");
   const { reasonCodes, loading, error } = useReasonCodes();
-  const { deleteReasonCode } = useReasonCodeMutations();
+  const { deleteReasonCode, setReasonCodeActive } = useReasonCodeMutations();
   const { hasPermission } = useAuth();
   const canView = hasPermission(MENU_KEY, "view");
   const canAdd = hasPermission(MENU_KEY, "add");
@@ -126,6 +127,7 @@ export function ReasonCodeMasterPage() {
                   <TableHead>Reason description</TableHead>
                   <TableHead>Display order</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Active</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -148,6 +150,13 @@ export function ReasonCodeMasterPage() {
                       <Badge variant={reasonCode.isActive ? "success" : "muted"}>
                         {reasonCode.isActive ? "Active" : "Inactive"}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={reasonCode.isActive}
+                        aria-label={`${reasonCode.isActive ? "Deactivate" : "Activate"} ${reasonCode.reasonName}`}
+                        onCheckedChange={(checked) => void setReasonCodeActive(reasonCode.id, checked)}
+                      />
                     </TableCell>
                     <TableCell className="text-right">
                       <Button

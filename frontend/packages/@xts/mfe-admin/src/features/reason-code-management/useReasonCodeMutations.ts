@@ -46,6 +46,15 @@ export function useReasonCodeMutations() {
         "Reason code deleted.",
         "Failed to delete reason code."
       ),
+    // Grid's quick Active/Inactive switch — a partial update (just isActive),
+    // reusing the same mutation as the full edit form. Still goes through
+    // update(), so it's recorded in the History tab like any other change.
+    setReasonCodeActive: (id: number, isActive: boolean) =>
+      runWithToast(
+        () => updateMutation({ variables: { id, input: { isActive, updatedBy: requireUserId() } } }),
+        isActive ? "Reason code activated." : "Reason code deactivated.",
+        "Failed to change reason code status."
+      ),
     saving: creating || updating || deleting,
   };
 }
