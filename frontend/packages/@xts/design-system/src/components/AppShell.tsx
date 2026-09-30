@@ -104,6 +104,8 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "Estimate Phase Master", to: "/admin/estimate-management/estimate-phase-master", icon: ListOrdered },
       { label: "Currency Master", to: "/admin/estimate-management/currency-master", icon: Table2 },
       { label: "Technical Roles and Rate Master", to: "/admin/estimate-management/rate-master", icon: Table2 },
+      { label: "Reason Code Master", to: "/admin/estimate-management/reason-code-master", icon: ListChecks },
+      { label: "Account Type Master", to: "/admin/estimate-management/account-type-master", icon: Layers },
     ],
   },
   {

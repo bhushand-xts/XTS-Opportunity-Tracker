@@ -3,8 +3,8 @@
 --
 -- Admin-owned tables: master data + access control.
 --   master data     mst_stage, mst_sub_stage, mst_estimation_phases, mst_rate,
---                   tbl_reason_codes, mst_proposal_section, mst_rfp_questions
---                   (+ their trackers)
+--                   tbl_reason_codes, mst_proposal_section, mst_rfp_questions,
+--                   mst_account_type (no tracker) (+ trackers for the rest)
 --   access control  mst_menus, mst_permissions, mst_roles (+ trackers),
 --                   tbl_menuwise_permission, tbl_role_menu_permission
 --
@@ -130,12 +130,48 @@ CREATE TABLE tbl_reason_codes (
   reason_name VARCHAR(100),
   reason_category VARCHAR(100),
   description TEXT,
+  display_order INTEGER,
   is_active BOOLEAN DEFAULT TRUE,
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
   updated_by INTEGER
 );
+
+CREATE UNIQUE INDEX ux_tbl_reason_codes_reason_name ON tbl_reason_codes (LOWER(reason_name));
+
+-- History of tbl_reason_codes: one snapshot row per change, written in the
+-- same transaction as the change (see reason-codes.repository.ts). No
+-- foreign key to tbl_reason_codes, so history survives a reason code's
+-- deletion. Unlike some sibling trackers (e.g. tbl_estimation_phases_tracker),
+-- is_active here is a real tracked column, not an is_current stand-in.
+CREATE TABLE tbl_reason_codes_tracker (
+  tracker_id SERIAL PRIMARY KEY,
+  reason_code_id INTEGER NOT NULL,
+  reason_name VARCHAR(100) NOT NULL,
+  description TEXT,
+  display_order INTEGER,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER,
+  is_active BOOLEAN DEFAULT TRUE NOT NULL
+);
+
+-- Account type (Account Type Master) — no history tracker for this one,
+-- deliberately (see account-type.repository.ts).
+CREATE TABLE mst_account_type (
+  account_type_id SERIAL PRIMARY KEY,
+  account_name VARCHAR(100),
+  description VARCHAR(500),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER
+);
+
+CREATE UNIQUE INDEX ux_mst_account_type_account_name ON mst_account_type (LOWER(account_name));
 
 CREATE TABLE mst_proposal_section (
   proposal_section_id SERIAL PRIMARY KEY,

@@ -68,7 +68,7 @@ export function HistoryDialog<T extends HistoryRow>({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-w-6xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>Every change, newest first. Each row is the record as it stood after that change.</DialogDescription>
@@ -76,7 +76,11 @@ export function HistoryDialog<T extends HistoryRow>({
 
         {error && <ErrorNotice error={error} title="Couldn't load the history" />}
 
-        <ScrollArea className="max-h-[60vh]">
+        {/* overflow-x-auto is the safety net for however many feature-specific
+            fields a given history has — ScrollArea below only handles the
+            vertical (max-height) side, so without this the table just got
+            clipped at the dialog's edge instead of being reachable at all. */}
+        <ScrollArea className="max-h-[60vh] overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
