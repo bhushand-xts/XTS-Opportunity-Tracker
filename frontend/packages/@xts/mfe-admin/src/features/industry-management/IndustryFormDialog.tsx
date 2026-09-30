@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import type { Industry } from "@xts/api-contracts";
 import {
   Button,
+  Checkbox,
   Dialog,
   DialogContent,
   DialogFooter,
@@ -67,13 +68,14 @@ export function IndustryFormDialog({
     const others = allIndustries.filter((i) => i.industryId !== industry?.industryId);
     const name = values.industryName.trim().toLowerCase();
     if (others.some((i) => i.industryName.trim().toLowerCase() === name)) {
-      form.setError("industryName", { message: `An industry named "${values.industryName.trim()}" already exists.` });
+      form.setError("industryName", { message: "An Industry with this name already exists." });
       return;
     }
 
     const details = {
       industryName: values.industryName.trim(),
       description: values.description?.trim() || null,
+      isActive: values.isActive,
     };
 
     const success = isEdit
@@ -121,6 +123,19 @@ export function IndustryFormDialog({
                     <Textarea rows={3} placeholder="What is this industry used for?" {...field} />
                   </FormControl>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="isActive"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                  <FormControl>
+                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <FormLabel className="!mt-0">Active</FormLabel>
                 </FormItem>
               )}
             />

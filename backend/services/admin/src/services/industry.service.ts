@@ -23,7 +23,7 @@ async function create(input: IndustryInput, ctx: any) {
   const duplicateName = await repository.findByName(input.industryName.trim());
 
   if (duplicateName) {
-    throw conflict("Industry Name already exists");
+    throw conflict("An Industry with this name already exists.");
   }
 
   const userId = ctx?.user?.id ?? input.createdBy;
@@ -51,7 +51,7 @@ async function update(industryId: number, input: Partial<IndustryInput>, ctx: an
     const duplicateName = await repository.findByName(incomingName, industryId);
 
     if (duplicateName) {
-      throw conflict("Industry Name already exists");
+      throw conflict("An Industry with this name already exists.");
     }
   }
 

@@ -23,7 +23,7 @@ async function create(input: AccountTypeInput, ctx: any) {
   const duplicateName = await repository.findByName(input.accountName.trim());
 
   if (duplicateName) {
-    throw conflict("Account Name already exists");
+    throw conflict("An Account Type with this name already exists.");
   }
 
   const userId = ctx?.user?.id ?? input.createdBy;
@@ -51,7 +51,7 @@ async function update(accountTypeId: number, input: Partial<AccountTypeInput>, c
     const duplicateName = await repository.findByName(incomingName, accountTypeId);
 
     if (duplicateName) {
-      throw conflict("Account Name already exists");
+      throw conflict("An Account Type with this name already exists.");
     }
   }
 

@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import type { AccountType } from "@xts/api-contracts";
 import {
   Button,
+  Checkbox,
   Dialog,
   DialogContent,
   DialogFooter,
@@ -67,13 +68,14 @@ export function AccountTypeFormDialog({
     const others = allAccountTypes.filter((a) => a.accountTypeId !== accountType?.accountTypeId);
     const name = values.accountName.trim().toLowerCase();
     if (others.some((a) => a.accountName.trim().toLowerCase() === name)) {
-      form.setError("accountName", { message: `An account type named "${values.accountName.trim()}" already exists.` });
+      form.setError("accountName", { message: "An Account Type with this name already exists." });
       return;
     }
 
     const details = {
       accountName: values.accountName.trim(),
       description: values.description?.trim() || null,
+      isActive: values.isActive,
     };
 
     const success = isEdit
@@ -102,7 +104,7 @@ export function AccountTypeFormDialog({
               name="accountName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Account name</FormLabel>
+                  <FormLabel>Account type name</FormLabel>
                   <FormControl>
                     <Input placeholder="e.g. Enterprise" autoFocus {...field} />
                   </FormControl>
@@ -121,6 +123,19 @@ export function AccountTypeFormDialog({
                     <Textarea rows={3} placeholder="What is this account type used for?" {...field} />
                   </FormControl>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="isActive"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                  <FormControl>
+                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <FormLabel className="!mt-0">Active</FormLabel>
                 </FormItem>
               )}
             />
