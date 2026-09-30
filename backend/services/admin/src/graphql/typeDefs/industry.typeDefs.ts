@@ -14,12 +14,14 @@ export const industryTypeDefs = `#graphql
   input CreateIndustryInput {
     industryName: String!
     description: String
+    isActive: Boolean
     createdBy: Int
   }
 
   input UpdateIndustryInput {
     industryName: String
     description: String
+    isActive: Boolean
     updatedBy: Int
   }
 

@@ -14,12 +14,14 @@ export const accountTypeTypeDefs = `#graphql
   input CreateAccountTypeInput {
     accountName: String!
     description: String
+    isActive: Boolean
     createdBy: Int
   }
 
   input UpdateAccountTypeInput {
     accountName: String
     description: String
+    isActive: Boolean
     updatedBy: Int
   }
 
