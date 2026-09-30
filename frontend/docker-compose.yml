@@ -1,0 +1,89 @@
+# Local dev only — containerizes the two packages actually served as running
+# apps today: app-shell (the host) and mfe-admin (the one remote App.tsx
+# actually loads via Module Federation). design-system/api-client/
+# api-contracts are shared libraries consumed through workspace resolution,
+# not standalone servers, so they don't get their own container.
+# mfe-opportunity/solution/approval/dashboard aren't wired into app-shell's
+# routes yet either — add a service block for one the same way once it is.
+#
+# Module Federation's remoteEntry.js is fetched by the BROWSER, not
+# container-to-container, so as long as each container's port is mapped to
+# the same localhost port app-shell's webpack.config.js already hardcodes
+# (3000, 3001), nothing in webpack.config.js needs to change — the browser
+# can't tell a container apart from a bare `npm run dev` process.
+#
+# `--host 0.0.0.0` (appended below) is the one thing that does need adding:
+# webpack-dev-server's own default host binding doesn't reliably resolve to
+# "every interface" inside a container's limited network namespace, so
+# without it the port mapping below would have nothing to actually reach.
+# Passed here, not edited into webpack.config.js, so nothing changes about
+# how `npm run dev` behaves outside Docker.
+#
+# Run with: docker compose up   (from this frontend/ folder)
+# Needs the backend's own `docker compose up` (or native `npm run dev`)
+# already running on 4000/4001/4010 — GRAPHQL_API_URL defaults to
+# http://localhost:4000/graphql either way.
+
+# Bind-mounting `.:/app` (below) overlays the image's build output with
+# whatever's on the host — fine for hoisted deps (protected by the
+# `/app/node_modules` anonymous volume), but npm doesn't always hoist:
+# a version conflict can leave a package nested inside one workspace's own
+# node_modules instead (e.g. react-resizable-panels ended up at
+# packages/@xts/design-system/node_modules/ rather than the shared root).
+# On a machine that already has `npm install` run natively (own dev laptop),
+# that nested folder exists on the host too, so it never breaks. On a fresh
+# `git clone` with no native install (e.g. a freshly launched EC2 box), the
+# host has nothing there, so the bind mount wipes out what the image built —
+# "Module not found" even though package.json/package-lock.json are correct.
+# Fix: protect every workspace's own node_modules the same way as the root's.
+x-workspace-node-modules-volumes: &workspace-node-modules-volumes
+  - .:/app
+  - /app/node_modules
+  - /app/packages/@xts/app-shell/node_modules
+  - /app/packages/@xts/design-system/node_modules
+  - /app/packages/@xts/api-contracts/node_modules
+  - /app/packages/@xts/api-client/node_modules
+  - /app/packages/@xts/mfe-admin/node_modules
+  - /app/packages/@xts/mfe-opportunity/node_modules
+  - /app/packages/@xts/mfe-solution/node_modules
+  - /app/packages/@xts/mfe-approval/node_modules
+  - /app/packages/@xts/mfe-dashboard/node_modules
+
+services:
+  app-shell:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        PACKAGE_PATH: packages/@xts/app-shell
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    ports:
+      - "3000:3000"
+    environment:
+      # webpack.config.js reads this via plain Node process.env, evaluated
+      # when webpack.config.js itself loads — BEFORE webpack or the Dotenv
+      # plugin ever run, so a frontend/.env value alone (which only reaches
+      # bundled *application* source, e.g. apolloClient.ts's
+      # GRAPHQL_API_URL) never reaches it. Has to be a real container env
+      # var instead; ${ADMIN_REMOTE_URL} still comes from that same
+      # frontend/.env file, since docker compose auto-loads one from this
+      # directory for ${...} substitution in this file.
+      ADMIN_REMOTE_URL: ${ADMIN_REMOTE_URL:-http://localhost:3001}
+    volumes: *workspace-node-modules-volumes
+
+  mfe-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        PACKAGE_PATH: packages/@xts/mfe-admin
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    ports:
+      - "3001:3001"
+    environment:
+      # Same reasoning as app-shell's copy of this var — mfe-admin's own
+      # webpack.config.js reads it directly for output.publicPath, which
+      # can't come from frontend/.env (Dotenv-webpack only reaches bundled
+      # application source, not the config file itself).
+      ADMIN_REMOTE_URL: ${ADMIN_REMOTE_URL:-http://localhost:3001}
+    volumes: *workspace-node-modules-volumes
