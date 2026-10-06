@@ -2,11 +2,24 @@ import { useMemo, useState } from "react";
 import { Ban, CheckCircle2, History, Pencil, Plus, Search } from "lucide-react";
 import type { RfpQuestion } from "@xts/api-contracts";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Badge,
   Button,
   Card,
   CardContent,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Table,
   TableBody,
   TableCell,
@@ -19,25 +32,42 @@ import { PageHeader } from "../../components/PageHeader";
 import { ErrorNotice, TableEmptyRow, TableLoadingRows } from "../../components/TableStates";
 import { RfpQuestionFormDialog } from "./RfpQuestionFormDialog";
 import { RfpQuestionHistoryDialog } from "./RfpQuestionHistoryDialog";
+import { useRfpQuestionCategories } from "./rfpQuestionCategories";
 import { useRfpQuestionMutations } from "./useRfpQuestionMutations";
 import { useRfpQuestions } from "./useRfpQuestions";
 
-const COLUMNS = 5;
+const COLUMNS = 7;
+const ALL = "all";
 
 export function RfpQuestionMasterPage() {
   useSetPageTitle("Generic RFP Question Master");
   const { questions, loading, error } = useRfpQuestions();
+  const { categories } = useRfpQuestionCategories();
   const { setQuestionActive } = useRfpQuestionMutations();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<RfpQuestion | null>(null);
   const [historyQuestion, setHistoryQuestion] = useState<RfpQuestion | null>(null);
+  const [deactivatingQuestion, setDeactivatingQuestion] = useState<RfpQuestion | null>(null);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(ALL);
+  const [statusFilter, setStatusFilter] = useState(ALL);
 
   const visibleQuestions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return questions;
-    return questions.filter((item) => item.question.toLowerCase().includes(q));
-  }, [questions, search]);
+    const text = search.trim().toLowerCase();
+    return questions.filter((item) => {
+      if (text && !item.question.toLowerCase().includes(text)) return false;
+      if (categoryFilter !== ALL && String(item.categoryId ?? "") !== categoryFilter) return false;
+      if (statusFilter === "active" && !item.isActive) return false;
+      if (statusFilter === "inactive" && item.isActive) return false;
+      return true;
+    });
+  }, [questions, search, categoryFilter, statusFilter]);
+
+  const clearFilters = () => {
+    setSearch("");
+    setCategoryFilter(ALL);
+    setStatusFilter(ALL);
+  };
 
   const openAdd = () => {
     setEditingQuestion(null);
@@ -48,10 +78,16 @@ export function RfpQuestionMasterPage() {
     setDialogOpen(true);
   };
 
+  const confirmDeactivate = () => {
+    if (!deactivatingQuestion) return;
+    void setQuestionActive(deactivatingQuestion.id, false);
+    setDeactivatingQuestion(null);
+  };
+
   return (
     <div className="space-y-4 p-5">
       <PageHeader
-        description="Manage the standard questions used during the RFP process."
+        description="Manage reusable standard questions for RFP processes."
         actions={
           <>
             <div className="relative w-64">
@@ -59,46 +95,80 @@ export function RfpQuestionMasterPage() {
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search question"
+                placeholder="Search questions..."
                 aria-label="Search RFP questions"
                 className="pl-9"
               />
             </div>
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-44" aria-label="Filter by category">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All categories</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={String(category.id)}>
+                    {category.categoryName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-36" aria-label="Filter by status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All statuses</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
             <Button onClick={openAdd}>
               <Plus className="mr-2 size-4" />
-              Add
+              Add Question
             </Button>
           </>
         }
       />
 
-      {error && <ErrorNotice error={error} title="Couldn't load RFP questions" />}
+      {error && <ErrorNotice error={error} title="Unable to load generic RFP questions" />}
 
       <Card>
         <CardContent className="pt-6">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">#</TableHead>
                 <TableHead>Question</TableHead>
-                <TableHead>Description</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Description / Guidance</TableHead>
                 <TableHead>Display order</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && <TableLoadingRows columns={COLUMNS} />}
               {!loading && !error && questions.length === 0 && (
-                <TableEmptyRow columns={COLUMNS} message="No RFP questions yet. Add the first one." />
+                <TableEmptyRow columns={COLUMNS} message="No generic RFP questions found. Add the first one." />
               )}
               {!loading && questions.length > 0 && visibleQuestions.length === 0 && (
-                <TableEmptyRow columns={COLUMNS} message="No RFP questions match your search." />
+                <TableRow>
+                  <TableCell colSpan={COLUMNS} className="h-24 text-center text-sm text-muted-foreground">
+                    <p>No questions match your current filters.</p>
+                    <Button variant="link" className="h-auto p-0 text-sm" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  </TableCell>
+                </TableRow>
               )}
-              {visibleQuestions.map((item) => (
+              {visibleQuestions.map((item, index) => (
                 <TableRow key={item.id} className={item.isActive ? undefined : "text-muted-foreground"}>
+                  <TableCell className="text-muted-foreground tabular-nums">{index + 1}</TableCell>
                   <TableCell className="max-w-md font-medium">{item.question}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{item.categoryName ?? "—"}</TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground">{item.description ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{item.displayOrder ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">{item.displayOrder ?? "—"}</TableCell>
                   <TableCell>
                     <Badge variant={item.isActive ? "success" : "muted"}>{item.isActive ? "Active" : "Inactive"}</Badge>
                   </TableCell>
@@ -119,18 +189,25 @@ export function RfpQuestionMasterPage() {
                     >
                       <Pencil className="size-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`${item.isActive ? "Deactivate" : "Activate"} question "${item.question}"`}
-                      onClick={() => void setQuestionActive(item.id, !item.isActive)}
-                    >
-                      {item.isActive ? (
+                    {item.isActive ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Deactivate question "${item.question}"`}
+                        onClick={() => setDeactivatingQuestion(item)}
+                      >
                         <Ban className="size-4 text-destructive" />
-                      ) : (
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Activate question "${item.question}"`}
+                        onClick={() => void setQuestionActive(item.id, true)}
+                      >
                         <CheckCircle2 className="size-4 text-emerald-600" />
-                      )}
-                    </Button>
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -146,6 +223,27 @@ export function RfpQuestionMasterPage() {
         allQuestions={questions}
       />
       <RfpQuestionHistoryDialog question={historyQuestion} onClose={() => setHistoryQuestion(null)} />
+
+      <AlertDialog
+        open={deactivatingQuestion !== null}
+        onOpenChange={(open) => !open && setDeactivatingQuestion(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate RFP Question?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This question will no longer be available for selection in new RFP processes. It remains in the master for
+              historical reference, and RFPs that already use it are unaffected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={confirmDeactivate}>
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

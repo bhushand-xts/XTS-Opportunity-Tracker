@@ -16,6 +16,7 @@
   "scripts": {
     "dev:shell": "npm run dev --workspace=packages/@xts/app-shell",
     "dev:admin": "npm run dev --workspace=packages/@xts/mfe-admin",
+    "dev:opportunity": "npm run dev --workspace=packages/@xts/mfe-opportunity",
     "dev": "npm run dev --workspaces",
     "build": "npm run build --workspaces",
     "type-check": "npm run type-check --workspaces --if-present",

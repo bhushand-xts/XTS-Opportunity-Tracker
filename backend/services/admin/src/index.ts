@@ -14,6 +14,7 @@ import phasesTypes from './graphql/typeDefs/phases.typeDefs';
 import proposalSectionsTypes from './graphql/typeDefs/proposal-sections.typeDefs';
 import rateMasterTypes from './graphql/typeDefs/rate-master.typeDefs';
 import reasonCodesTypes from './graphql/typeDefs/reason-codes.typeDefs';
+import rfpQuestionsTypes from './graphql/typeDefs/rfp-questions.typeDefs';
 import rolesTypes from './graphql/typeDefs/roles.typeDefs';
 import stagesTypes from './graphql/typeDefs/stages.typeDefs';
 
@@ -24,6 +25,7 @@ import phasesResolvers from './graphql/resolvers/phases.resolver';
 import proposalSectionsResolvers from './graphql/resolvers/proposal-sections.resolver';
 import rateMasterResolvers from './graphql/resolvers/rate-master.resolver';
 import reasonCodesResolvers from './graphql/resolvers/reason-codes.resolver';
+import rfpQuestionsResolvers from './graphql/resolvers/rfp-questions.resolver';
 import rolesResolvers from './graphql/resolvers/roles.resolver';
 import stagesResolvers from './graphql/resolvers/stages.resolver';
 import subStagesResolvers from './graphql/resolvers/sub-stages.resolver';
@@ -40,9 +42,9 @@ const base = `
   type Mutation { _empty: String }
 `;
 
-const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes];
+const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, rfpQuestionsTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes];
 
-const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers];
+const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, rfpQuestionsResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers];
 const resolvers = parts.reduce(
   (acc: any, p: any) => ({
     Query: { ...acc.Query, ...(p.Query || {}) },

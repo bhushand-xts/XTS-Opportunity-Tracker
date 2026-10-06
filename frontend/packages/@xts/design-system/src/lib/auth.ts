@@ -47,6 +47,20 @@ type AuthResult = { ok: true } | { ok: false; error: string };
 const EMPTY_STATE: AuthState = { session: null, profile: null, roles: [] };
 const STORAGE_KEY = "authState";
 
+// Storage holds whatever shape a previous build wrote — a field this build
+// expects (e.g. roles) can be missing entirely, not just empty, if the value
+// predates it. Every read goes through this rather than trusting the parsed
+// JSON's shape directly, so a stale value degrades to safe defaults instead
+// of crashing render (see AppShell's use of roles[0]).
+function normalizeState(parsed: unknown): AuthState {
+  const candidate = (parsed && typeof parsed === "object" ? parsed : {}) as Partial<AuthState>;
+  return {
+    session: candidate.session ?? null,
+    profile: candidate.profile ?? null,
+    roles: Array.isArray(candidate.roles) ? candidate.roles : [],
+  };
+}
+
 function stateFromPayload({ user, token }: AuthPayload): AuthState {
   return {
     session: { userId: String(user.id), email: user.email, token },
@@ -68,7 +82,7 @@ function readStoredState(): AuthState {
   const raw = window.localStorage.getItem(STORAGE_KEY);
   if (!raw) return EMPTY_STATE;
   try {
-    return JSON.parse(raw) as AuthState;
+    return normalizeState(JSON.parse(raw));
   } catch {
     return EMPTY_STATE;
   }
@@ -98,7 +112,7 @@ function persistSession(payload: AuthPayload) {
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY) return;
-    setState(event.newValue ? (JSON.parse(event.newValue) as AuthState) : EMPTY_STATE);
+    setState(event.newValue ? normalizeState(JSON.parse(event.newValue)) : EMPTY_STATE);
   });
 }
 

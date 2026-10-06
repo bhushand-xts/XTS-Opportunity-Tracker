@@ -9,6 +9,18 @@ export interface RfpQuestion {
   isActive: boolean;
   createdDt: string | null;
   updatedDt: string | null;
+  /** Not stored yet: mst_rfp_questions has no category column, so the server
+   * never sends these. Declared here as the shape to fill in once it does. */
+  categoryId?: number | null;
+  categoryName?: string | null;
+}
+
+/** A category a generic RFP question belongs to. Fixed list for now — see
+ * mfe-admin's rfpQuestionCategories.ts. */
+export interface RfpQuestionCategory {
+  id: number;
+  categoryName: string;
+  displayOrder: number | null;
 }
 
 export interface RfpQuestionInput {

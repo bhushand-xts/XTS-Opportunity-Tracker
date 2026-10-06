@@ -1,15 +1,17 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
+  ArrowLeft,
   Bell,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
+  FileQuestion,
   Key,
   LayoutDashboard,
   Link2,
   List,
-  Plus,
+  MessageSquareText,
   Search,
   Settings,
   Share2,
@@ -86,6 +88,18 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "Role Menu Permission Assignment", to: "/admin/user-management/role-menu-permission-assignment", icon: Share2 },
       { label: "User Role Assignment", to: "/admin/user-management/user-role-assignment", icon: UserCog },
     ],
+  },
+];
+
+// RFP gets its own top-level sidebar tab (alongside Dashboard and
+// Administration) rather than living inside Administration's submenu — a
+// product decision, not a permissions change, so it still uses the same
+// can("admin") gate as Administration.
+const RFP_NAV: NavLeaf[] = [
+  {
+    label: "Generic RFP Question Master",
+    to: "/admin/rfp-management/generic-rfp-question-master",
+    icon: FileQuestion,
   },
 ];
 
@@ -200,11 +214,20 @@ function AdminNavGroup({ group, pathname }: { group: NavGroup; pathname: string 
 }
 
 function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boolean; pathname: string }) {
-  const onAdmin = pathname.startsWith("/admin");
+  // RFP routes are still mounted under /admin/* (mfe-admin owns the page),
+  // but RFP is its own sidebar tab now — excluded here so the two tabs'
+  // active-highlight and auto-expand don't both fire on an RFP page.
+  const onRfp = pathname.startsWith("/admin/rfp-management");
+  const onAdmin = pathname.startsWith("/admin") && !onRfp;
+  const onOpportunities = pathname.startsWith("/opportunities");
   const [adminOpen, setAdminOpen] = useState(onAdmin);
+  const [rfpOpen, setRfpOpen] = useState(onRfp);
   useEffect(() => {
     if (onAdmin) setAdminOpen(true);
   }, [onAdmin]);
+  useEffect(() => {
+    if (onRfp) setRfpOpen(true);
+  }, [onRfp]);
   return (
     <Sidebar collapsible="icon">
       {/* No positioning wrapper here on purpose — absolute resolves against
@@ -218,13 +241,13 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
           at the sidebar's edge, reading as one continuous top bar. */}
       <SidebarHeader className="flex h-14 flex-row items-center gap-2 border-b border-sidebar-border px-3 py-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
         <Link
-          to="/dashboard"
+          to="/opportunities"
           className="grid size-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-from to-brand-to text-[13px] font-bold text-brand-foreground"
         >
-          XT
+          XTS
         </Link>
         <span className="truncate text-sm font-semibold text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-          XTS Opportunity Tracker
+          Opportunity Tracker
         </span>
       </SidebarHeader>
       <SidebarContent>
@@ -232,11 +255,15 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              isActive={pathname.startsWith("/dashboard")}
+              isActive={onOpportunities}
               tooltip="Dashboard"
               className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
             >
-              <Link to="/dashboard">
+              {/* Label/icon kept as "Dashboard" for this phase — the pipeline
+                  mockup's home screen (no separate dashboard) now renders
+                  here; renaming to "Pipeline" is cosmetic cleanup once the
+                  fuller journey lands. */}
+              <Link to="/opportunities">
                 <LayoutDashboard />
                 <span>Dashboard</span>
               </Link>
@@ -267,6 +294,46 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
               </SidebarMenuItem>
             </Collapsible>
           )}
+
+          {can("admin") && (
+            <Collapsible open={rfpOpen} onOpenChange={setRfpOpen} className="group/rfp">
+              <SidebarMenuItem>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton
+                    isActive={onRfp}
+                    tooltip="RFP"
+                    className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+                  >
+                    <MessageSquareText />
+                    <span>RFP</span>
+                    <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/rfp:rotate-180" />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    {RFP_NAV.map((item) => {
+                      const active = pathname === item.to;
+                      return (
+                        <SidebarMenuSubItem key={item.to}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={active}
+                            className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+                          >
+                            <Link to={item.to}>
+                              <item.icon className="size-4" />
+                              <span>{item.label}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      );
+                    })}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </SidebarMenuItem>
+            </Collapsible>
+          )}
+
         </SidebarMenu>
       </SidebarContent>
     </Sidebar>
@@ -281,13 +348,23 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   const { currentUser, search, setSearch } = useStore();
   const [helpOpen, setHelpOpen] = useState(false);
   const pageTitle = usePageTitle();
+  // Pipeline and Admin overview are the two "home" screens — there's nothing
+  // logical to go back to from either, so the back button only shows once
+  // you've navigated somewhere deeper.
+  const isHome = location.pathname === "/opportunities" || location.pathname === "/admin";
 
   // roles is always [] against the real backend today (no role-name lookup
   // exposed via GraphQL yet — only an unresolved role_id) — this label
   // describes "no role name available," not an account-approval state.
-  const displayRole = roles[0] ? ROLE_LABEL[roles[0]] : "No role assigned";
-  const displayName = profile ? `${profile.first_name} ${profile.last_name}` : currentUser.name;
-  const initials = profile ? `${profile.first_name[0] ?? ""}${profile.last_name[0] ?? ""}`.toUpperCase() : currentUser.initials;
+  const displayRole = roles?.[0] ? ROLE_LABEL[roles[0]] : "No role assigned";
+  const displayName = profile
+    ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || currentUser.name
+    : currentUser.name;
+  // Indexed per character, so a profile stored by an older build (whose shape
+  // readStoredState casts blindly) can leave these undefined rather than "".
+  const initials = profile
+    ? `${profile.first_name?.[0] ?? ""}${profile.last_name?.[0] ?? ""}`.toUpperCase()
+    : currentUser.initials;
 
   return (
     <TooltipProvider delayDuration={120}>
@@ -295,6 +372,17 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
         <AppSidebar can={can} pathname={location.pathname} />
         <SidebarInset>
           <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b bg-card px-5">
+            {!isHome && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0"
+                aria-label="Back to previous page"
+                onClick={() => navigate(-1)}
+              >
+                <ArrowLeft className="size-4" />
+              </Button>
+            )}
             <h1 className="shrink-0 text-[15px] font-semibold tracking-tight">{pageTitle}</h1>
             <div className="relative mx-auto w-full max-w-md">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -307,12 +395,6 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {actions}
-              {/* Points at the dashboard until the Opportunity MFE has a real route to land on */}
-              <Button asChild size="icon" className="size-9 rounded-full" aria-label="New opportunity">
-                <Link to="/dashboard">
-                  <Plus className="size-[18px]" />
-                </Link>
-              </Button>
               <NotificationsPanel />
               <Button variant="ghost" size="icon" aria-label="Help" onClick={() => setHelpOpen((v) => !v)}>
                 <CircleHelp className="size-[18px]" />

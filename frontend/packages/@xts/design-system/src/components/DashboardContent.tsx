@@ -9,8 +9,9 @@ import { cn } from "@/lib/utils";
 
 export function DashboardContent() {
   useSetPageTitle("Dashboard");
-  const { visibleOpportunities, activities, approvals, role, userById, history, opportunities, decideApproval } = useStore();
-  const open = visibleOpportunities.filter((opportunity) => opportunity.stage !== "Closed");
+  const { visibleOpportunities, activities, approvals, pipelineRole, userById, history, opportunities, decideApproval } =
+    useStore();
+  const open = visibleOpportunities.filter((opportunity) => opportunity.stage !== "Won");
   const openValue = open.reduce((sum, opportunity) => sum + opportunity.value, 0);
   const weighted = open.reduce((sum, opportunity) => sum + (opportunity.value * opportunity.probability) / 100, 0);
   const closed = visibleOpportunities.filter((opportunity) => opportunity.closure);
@@ -25,7 +26,7 @@ export function DashboardContent() {
     ? activities.filter((activity) => (activity.type === "Follow-up" || activity.type === "Task") && !activity.done && activity.date < today).slice(0, 5)
     : [];
   const pending = approvals.filter((approval) => approval.status === "Pending");
-  const canApprove = role === "Sales Manager" || role === "Sales Head" || role === "System Admin";
+  const canApprove = pipelineRole === "Management";
   const kpis = [
     { label: "Open pipeline value", value: formatMoney(openValue) },
     { label: "Weighted forecast", value: formatMoney(weighted) },
@@ -50,7 +51,7 @@ export function DashboardContent() {
         <div className="card-surface p-4 lg:col-span-2">
           <h2 className="mb-3 text-[13px] font-semibold">Pipeline funnel</h2>
           <div className="space-y-2">
-            {STAGES.filter((stage) => stage !== "Closed").map((stage, index) => {
+            {STAGES.filter((stage) => stage !== "Won").map((stage, index) => {
               const list = open.filter((opportunity) => opportunity.stage === stage);
               const value = list.reduce((sum, opportunity) => sum + opportunity.value, 0);
               return (

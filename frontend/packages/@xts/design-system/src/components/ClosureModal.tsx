@@ -46,7 +46,10 @@ export function ClosureModal({
       return;
     }
     updateOpportunity(opportunityId, { closure: { outcome, ...f } });
-    moveStage(opportunityId, "Closed");
+    // Only "Won" has a terminal stage to move to. Lost/Hold are declined in
+    // place — the stage stays wherever it was (e.g. "Estimate Review" for a
+    // Gate 2 no-bid) and `closure` alone marks the opportunity decided.
+    if (outcome === "Won") moveStage(opportunityId, "Won");
     toast.success(`Opportunity closed as ${outcome}`);
     onOpenChange(false);
   };

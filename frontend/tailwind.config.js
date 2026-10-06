@@ -11,6 +11,10 @@ module.exports = {
     path.join(__dirname, "packages/@xts/design-system/src/**/*.{ts,tsx}"),
     path.join(__dirname, "packages/@xts/app-shell/src/**/*.{ts,tsx}"),
     path.join(__dirname, "packages/@xts/mfe-admin/src/**/*.{ts,tsx}"),
+    path.join(__dirname, "packages/@xts/mfe-opportunity/src/**/*.{ts,tsx}"),
+    path.join(__dirname, "packages/@xts/mfe-approval/src/**/*.{ts,tsx}"),
+    path.join(__dirname, "packages/@xts/mfe-dashboard/src/**/*.{ts,tsx}"),
+    path.join(__dirname, "packages/@xts/mfe-solution/src/**/*.{ts,tsx}"),
   ],
   theme: {
   	container: {

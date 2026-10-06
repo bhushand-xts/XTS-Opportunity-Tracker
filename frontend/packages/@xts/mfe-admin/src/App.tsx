@@ -6,6 +6,7 @@ import { AdminOverview } from "./components/AdminOverview";
 import { MenuMasterPage } from "./features/menu-management/MenuMasterPage";
 import { MenuPermissionMappingPage } from "./features/menu-permission-mapping/MenuPermissionMappingPage";
 import { PermissionMasterPage } from "./features/permission-management/PermissionMasterPage";
+import { RfpQuestionMasterPage } from "./features/rfp-question-management/RfpQuestionMasterPage";
 import { RoleMasterPage } from "./features/role-management/RoleMasterPage";
 import { RoleMenuPermissionAssignmentPage } from "./features/role-menu-permission-assignment/RoleMenuPermissionAssignmentPage";
 import { UserRoleAssignmentPage } from "./features/user-role-assignment/UserRoleAssignmentPage";
@@ -25,6 +26,7 @@ function AdminRoutes() {
         element={<RoleMenuPermissionAssignmentPage />}
       />
       <Route path="user-management/user-role-assignment" element={<UserRoleAssignmentPage />} />
+      <Route path="rfp-management/generic-rfp-question-master" element={<RfpQuestionMasterPage />} />
     </Routes>
   );
 }

@@ -18,13 +18,20 @@ import {
   FormLabel,
   FormMessage,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Textarea,
 } from "@xts/design-system";
 import { rfpQuestionFormSchema, type RfpQuestionFormValues } from "./rfpQuestion.schema";
+import { useRfpQuestionCategories } from "./rfpQuestionCategories";
 import { useRfpQuestionMutations } from "./useRfpQuestionMutations";
 
 const EMPTY: RfpQuestionFormValues = {
   question: "",
+  categoryId: "",
   description: "",
   displayOrder: "",
   isActive: true,
@@ -42,6 +49,7 @@ export function RfpQuestionFormDialog({
   allQuestions: RfpQuestion[];
 }) {
   const isEdit = question !== null;
+  const { categories } = useRfpQuestionCategories();
   const { createRfpQuestion, updateRfpQuestion, saving } = useRfpQuestionMutations();
 
   const form = useForm<RfpQuestionFormValues>({ resolver: zodResolver(rfpQuestionFormSchema), defaultValues: EMPTY });
@@ -52,6 +60,7 @@ export function RfpQuestionFormDialog({
       question
         ? {
             question: question.question,
+            categoryId: question.categoryId != null ? String(question.categoryId) : "",
             description: question.description ?? "",
             displayOrder: question.displayOrder != null ? String(question.displayOrder) : "",
             isActive: question.isActive,
@@ -62,9 +71,15 @@ export function RfpQuestionFormDialog({
 
   async function onSubmit(values: RfpQuestionFormValues) {
     const others = allQuestions.filter((q) => q.id !== question?.id);
+    const categoryId = Number(values.categoryId);
     const text = values.question.trim().toLowerCase();
-    if (others.some((q) => q.question.trim().toLowerCase() === text)) {
-      form.setError("question", { message: "This RFP question already exists." });
+
+    // Duplicates are scoped to the category: the same question may exist under
+    // a different one. Client-side only for now — the server still enforces a
+    // global unique index until it carries category_id.
+    const sameCategory = others.filter((q) => q.categoryId === categoryId);
+    if (sameCategory.some((q) => q.question.trim().toLowerCase() === text)) {
+      form.setError("question", { message: "A question with the same text already exists in this category." });
       return;
     }
 
@@ -82,7 +97,9 @@ export function RfpQuestionFormDialog({
       isActive: values.isActive,
     };
 
-    const ok = isEdit ? await updateRfpQuestion(question.id, input) : await createRfpQuestion(input);
+    const ok = isEdit
+      ? await updateRfpQuestion(question.id, input, categoryId)
+      : await createRfpQuestion(input, categoryId);
     if (ok) onOpenChange(false);
   }
 
@@ -90,7 +107,7 @@ export function RfpQuestionFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit RFP question" : "Add RFP question"}</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit RFP Question" : "Add RFP Question"}</DialogTitle>
           <DialogDescription>
             {isEdit ? "Update this question's details." : "Create a new standard question used in the RFP process."}
           </DialogDescription>
@@ -107,6 +124,31 @@ export function RfpQuestionFormDialog({
                   <FormControl>
                     <Textarea rows={3} placeholder="e.g. Describe your implementation methodology." autoFocus {...field} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="categoryId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Category</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a category" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {categories.map((category) => (
+                        <SelectItem key={category.id} value={String(category.id)}>
+                          {category.categoryName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -133,7 +175,7 @@ export function RfpQuestionFormDialog({
                 <FormItem>
                   <FormLabel>Display order</FormLabel>
                   <FormControl>
-                    <Input type="number" min={0} {...field} />
+                    <Input type="number" min={1} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

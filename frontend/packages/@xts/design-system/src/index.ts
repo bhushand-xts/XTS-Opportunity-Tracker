@@ -73,7 +73,6 @@ export * from "./components/LogActivityModal";
 export * from "./components/AuthGate";
 export * from "./components/LoginGate";
 export * from "./components/LoginView";
-export * from "./components/NewOpportunityDialog";
 export * from "./components/RegistrationPendingView";
 
 export * from "./lib/auth";
