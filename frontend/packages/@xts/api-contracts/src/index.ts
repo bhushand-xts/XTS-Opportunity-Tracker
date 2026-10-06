@@ -8,6 +8,8 @@ export * from "./reasonCode";
 export * from "./rfpQuestion";
 export * from "./role";
 export * from "./roleMenuPermission";
+export * from "./stage";
+export * from "./subStage";
 export * from "./user";
 export * from "./currency";
 export * from "./rateMaster";

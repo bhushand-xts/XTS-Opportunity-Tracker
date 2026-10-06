@@ -10,6 +10,7 @@ import {
   ClipboardList,
   FileQuestion,
   FlaskConical,
+  GitBranch,
   Key,
   KeyRound,
   Layers,
@@ -19,6 +20,7 @@ import {
   ListChecks,
   ListOrdered,
   Menu as MenuLucideIcon,
+  Milestone,
   Plus,
   Settings,
   Share2,
@@ -26,6 +28,7 @@ import {
   Table2,
   UserCog,
   Users,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -108,6 +111,14 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "Reason Code Master", to: "/admin/estimate-management/reason-code-master", icon: ListChecks },
       { label: "Account Type Master", to: "/admin/estimate-management/account-type-master", icon: Layers },
       { label: "Industry Master", to: "/admin/estimate-management/industry-master", icon: Building2 },
+    ],
+  },
+  {
+    label: "Stage Management",
+    icon: Workflow,
+    items: [
+      { label: "Stage Master", to: "/admin/stage-management/stage-master", icon: Milestone },
+      { label: "Sub Stage Master", to: "/admin/stage-management/sub-stage-master", icon: GitBranch },
     ],
   },
   {

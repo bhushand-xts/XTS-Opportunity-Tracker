@@ -25,11 +25,15 @@
 -- Pipeline master data
 -- ---------------------------------------------------------------------
 
+-- gate / display_order added for Stage Master (stages.repository.ts) --
+-- not in the original 2026-09-21 dump this file was sourced from.
 CREATE TABLE mst_stage (
   stage_id SERIAL PRIMARY KEY,
   stage_name VARCHAR(100),
   description TEXT,
   win_percentage NUMERIC(5,2),
+  gate VARCHAR(50),
+  display_order INTEGER,
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
@@ -37,12 +41,21 @@ CREATE TABLE mst_stage (
   is_active BOOLEAN DEFAULT TRUE
 );
 
+CREATE UNIQUE INDEX ux_mst_stage_stage_name ON mst_stage (LOWER(stage_name));
+
+-- History of mst_stage: one snapshot row per change, written in the same
+-- transaction as the change (see stages.repository.ts). No foreign key, so
+-- history survives the stage's deletion (if that's ever added). Column is
+-- stage_id here (the live table), not previous_stage_id as an earlier
+-- version of this file's own source dump had it.
 CREATE TABLE mst_stage_tracker (
   stage_tracker_id SERIAL PRIMARY KEY,
-  previous_stage_id INTEGER,
+  stage_id INTEGER,
   stage_name VARCHAR(100),
   description TEXT,
   win_percentage NUMERIC(5,2),
+  gate VARCHAR(50),
+  display_order INTEGER,
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
@@ -61,6 +74,12 @@ CREATE TABLE mst_sub_stage (
   is_active BOOLEAN DEFAULT TRUE
 );
 
+CREATE UNIQUE INDEX ux_mst_sub_stage_stage_name ON mst_sub_stage (stage_id, LOWER(sub_stage_name));
+
+-- History of mst_sub_stage (see sub-stages.repository.ts). Unlike every
+-- other tracker in this file, this one DOES carry foreign keys back to
+-- mst_stage and mst_sub_stage -- safe only because sub-stages are never
+-- deleted, only edited (and edits are themselves blocked while in use).
 CREATE TABLE mst_sub_stage_tracker (
   sub_stage_id_tracker SERIAL PRIMARY KEY,
   sub_stage_id INTEGER,

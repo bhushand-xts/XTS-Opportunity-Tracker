@@ -51,13 +51,17 @@ const base = `
 const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, rfpQuestionsTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes, currencyTypes, accountTypeTypes, industryTypes];
 
 const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, rfpQuestionsResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers, currencyResolvers, accountTypeResolvers, industryResolvers];
-const resolvers = parts.reduce(
-  (acc: any, p: any) => ({
-    Query: { ...acc.Query, ...(p.Query || {}) },
-    Mutation: { ...acc.Mutation, ...(p.Mutation || {}) },
-  }),
-  { Query: {}, Mutation: {} }
-);
+// Merges every top-level key each resolver file exports (Query, Mutation,
+// and any type-level field resolver like Stage.inUse) -- not just
+// Query/Mutation. A plain Query/Mutation-only file merges exactly the same
+// as before; this only adds support for the type resolvers newer features
+// need (see stages.resolver.ts / sub-stages.resolver.ts).
+const resolvers = parts.reduce((acc: any, p: any) => {
+  for (const typeName of Object.keys(p)) {
+    acc[typeName] = { ...(acc[typeName] || {}), ...p[typeName] };
+  }
+  return acc;
+}, { Query: {}, Mutation: {} });
 
 const schema = buildSubgraphSchema({ typeDefs: typeDefs.map((t: string) => parse(t)), resolvers });
 
