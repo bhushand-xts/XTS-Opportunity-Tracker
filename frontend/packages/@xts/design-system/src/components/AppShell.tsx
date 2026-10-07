@@ -406,6 +406,27 @@ function MidSidebarToggle() {
   );
 }
 
+/** The only way to open the sidebar on mobile — it renders as an off-canvas
+ * Sheet there, and MidSidebarToggle lives inside the Sidebar itself, so it's
+ * hidden along with everything else while the Sheet is closed. This sits in
+ * the main header instead (a sibling, not a descendant, of the Sidebar), so
+ * it's reachable even when the drawer is shut. Desktop already has
+ * MidSidebarToggle for this, so this one only shows below md. */
+function MobileSidebarTrigger() {
+  const { toggleSidebar } = useSidebar();
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="shrink-0 md:hidden"
+      aria-label="Open menu"
+      onClick={toggleSidebar}
+    >
+      <MenuLucideIcon className="size-5" />
+    </Button>
+  );
+}
+
 function AdminNavGroup({
   group,
   pathname,
@@ -575,8 +596,9 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
       <SidebarProvider>
         <AppSidebar can={can} hasMenuAccess={hasMenuAccess} pathname={location.pathname} />
         <SidebarInset>
-          <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b bg-card px-5">
-            <h1 className="shrink-0 text-[15px] font-semibold tracking-tight">{pageTitle}</h1>
+          <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-card px-3 sm:gap-4 sm:px-5">
+            <MobileSidebarTrigger />
+            <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight">{pageTitle}</h1>
             <div className="flex shrink-0 items-center gap-1 ml-auto">
               {actions}
               {/* Points at the dashboard until the Opportunity MFE has a real route to land on */}
@@ -591,13 +613,13 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="ml-1 flex items-center gap-2 rounded-full py-1 pl-1 pr-3 transition-colors hover:bg-muted">
+                  <button className="ml-1 flex items-center gap-2 rounded-full py-1 pl-1 pr-1 transition-colors hover:bg-muted sm:pr-3">
                     <Avatar className="size-7">
                       <AvatarFallback className="bg-accent text-[11px] font-semibold text-accent-foreground">
                         {initials}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-left leading-tight">
+                    <span className="hidden text-left leading-tight sm:inline">
                       <span className="block text-[12px] font-medium">{displayName}</span>
                       <span className="block text-[11px] text-muted-foreground">{displayRole}</span>
                     </span>
