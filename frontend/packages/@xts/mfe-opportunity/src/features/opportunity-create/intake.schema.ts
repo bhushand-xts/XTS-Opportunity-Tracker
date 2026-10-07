@@ -91,9 +91,17 @@ function checkSolicitationCrossFields(
   }
 }
 
+// The story for the Questionnaire path only requires Solicitation/reference
+// no., Issuing agency, Submission deadline, and Submission method — these 4
+// fields are required on the shared base (Generic's story still wants them),
+// so override just them here rather than relaxing solicitationBase itself.
 export const questionnaireIntakeSchema = z
   .object({
     ...solicitationBase,
+    issueDate: optionalDate(),
+    questionsDue: optionalDate(),
+    proposalDueDate: optionalDate(),
+    vendorDemonstrationRequired: z.string().optional().or(z.literal("")),
     contractTerm: optionalText(255),
     incumbentVendor: optionalText(255),
     preBidMeeting: z.string().optional().or(z.literal("")),

@@ -145,7 +145,7 @@ export function ProposalOutlinePage({ opportunity }: { opportunity: Opportunity 
       toast.error(`Can't finish yet — ${blockingIssues.join(" · ")}.`);
       return;
     }
-    navigate("/opportunities");
+    navigate(`/opportunities/${opportunity.id}`);
   }
 
   return (
@@ -164,7 +164,7 @@ export function ProposalOutlinePage({ opportunity }: { opportunity: Opportunity 
               Add section
             </Button>
             <Button variant="outline" onClick={handleSaveAndFinish}>
-              Save &amp; finish
+              Review &amp; save opportunity
             </Button>
           </>
         }

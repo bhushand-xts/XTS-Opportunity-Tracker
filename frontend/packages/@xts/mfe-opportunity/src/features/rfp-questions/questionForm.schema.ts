@@ -10,6 +10,7 @@ export const questionFormSchema = z.object({
   type: z.string().min(1, "Type is required"),
   category: z.string().min(1, "Category is required"),
   sectionId: z.string().optional().or(z.literal("")),
+  assigneeId: z.string().optional().or(z.literal("")),
   mandatory: z.boolean(),
   priority: z.string().min(1, "Priority is required"),
   reviewerNotes: z.string().trim().max(2000).optional().or(z.literal("")),

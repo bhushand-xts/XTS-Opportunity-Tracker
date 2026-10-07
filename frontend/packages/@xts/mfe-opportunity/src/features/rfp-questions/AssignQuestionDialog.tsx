@@ -9,6 +9,7 @@ import {
   DialogTitle,
   Input,
   Label,
+  RFP_QUESTION_TEAMS,
   Select,
   SelectContent,
   SelectItem,
@@ -39,6 +40,7 @@ export function AssignQuestionDialog({
   const { users, loading, error } = useRealUsers();
   const [assigneeId, setAssigneeId] = useState(UNSET);
   const [reviewerId, setReviewerId] = useState(UNSET);
+  const [team, setTeam] = useState(UNSET);
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -50,6 +52,7 @@ export function AssignQuestionDialog({
   function reset() {
     setAssigneeId(UNSET);
     setReviewerId(UNSET);
+    setTeam(UNSET);
     setDueDate("");
     setNotes("");
   }
@@ -59,6 +62,7 @@ export function AssignQuestionDialog({
     onAssign({
       assigneeId: assigneeId === UNSET ? undefined : assigneeId,
       reviewerId: reviewerId === UNSET ? undefined : reviewerId,
+      team: team === UNSET ? undefined : team,
       dueDate: dueDate || undefined,
       notes: notes.trim() || undefined,
     });
@@ -111,6 +115,22 @@ export function AssignQuestionDialog({
                 {users.map((u) => (
                   <SelectItem key={u.id} value={String(u.id)}>
                     {realUserName(u)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Team</Label>
+            <Select value={team} onValueChange={setTeam}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNSET}>No team</SelectItem>
+                {RFP_QUESTION_TEAMS.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
                   </SelectItem>
                 ))}
               </SelectContent>

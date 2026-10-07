@@ -141,7 +141,14 @@ export function Step1Details() {
   // intake pages' Back button, a refresh), which keeps those working
   // exactly as before.
   const [clientLocked, setClientLocked] = useState(false);
-  const [changeClientOpen, setChangeClientOpen] = useState(false);
+  // Doubles as the initial "pick a client first" gate (open by default,
+  // unless a client was already preselected via location.state — e.g. a
+  // future deep link) and the later "Change client" trigger from the locked
+  // summary below — same dialog, same flow, wherever this page was reached
+  // from (Pipeline board's "+ New opportunity" or the sidebar's "New
+  // Opportunity" link now both just navigate straight here).
+  const hasPreselectedCustomer = Boolean((location.state as { customerId?: string } | null)?.customerId);
+  const [clientDialogOpen, setClientDialogOpen] = useState(!hasPreselectedCustomer);
   const appliedPreselectedCustomer = useRef(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [viewMode, setViewMode] = useViewMode();
@@ -486,7 +493,7 @@ export function Step1Details() {
                 type="button"
                 variant="link"
                 className="h-auto p-0 text-xs"
-                onClick={() => setChangeClientOpen(true)}
+                onClick={() => setClientDialogOpen(true)}
               >
                 Change client
               </Button>
@@ -1131,19 +1138,19 @@ export function Step1Details() {
       </div>
 
       <SelectClientDialog
-        open={changeClientOpen}
-        onOpenChange={setChangeClientOpen}
+        open={clientDialogOpen}
+        onOpenChange={setClientDialogOpen}
         onSelectClient={(customer) => {
           form.setValue("accountName", customer.name);
           handleSelectCustomer(customer);
           setClientLocked(true);
-          setChangeClientOpen(false);
+          setClientDialogOpen(false);
         }}
         onNewClient={() => {
           form.setValue("accountName", "");
           setSelectedCustomerId(null);
           setClientLocked(false);
-          setChangeClientOpen(false);
+          setClientDialogOpen(false);
         }}
       />
 

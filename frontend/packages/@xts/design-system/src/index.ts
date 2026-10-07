@@ -76,6 +76,7 @@ export * from "./components/LoginView";
 export * from "./components/RegistrationPendingView";
 
 export * from "./lib/auth";
+export * from "./lib/access";
 export * from "./lib/store";
 export * from "./lib/mock-data";
 export * from "./lib/pageTitle";

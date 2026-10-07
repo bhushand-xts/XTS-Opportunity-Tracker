@@ -1,5 +1,4 @@
 import { Plus } from "lucide-react";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Avatar,
@@ -14,17 +13,29 @@ import {
   type Opportunity,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
-import { SelectClientDialog } from "../opportunity-create/SelectClientDialog";
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
-function OpportunityCard({ opportunity, owner, gate }: { opportunity: Opportunity; owner?: string; gate?: string }) {
+function OpportunityCard({
+  opportunity,
+  owner,
+  gate,
+  onClick,
+}: {
+  opportunity: Opportunity;
+  owner?: string;
+  gate?: string;
+  onClick: () => void;
+}) {
   const stageIndex = STAGES.indexOf(opportunity.stage);
   return (
-    <div className="cursor-pointer rounded-lg border bg-card p-3 shadow-sm transition-colors hover:border-primary/40">
+    <div
+      className="cursor-pointer rounded-lg border bg-card p-3 shadow-sm transition-colors hover:border-primary/40"
+      onClick={onClick}
+    >
       <div className="mb-1.5 flex items-center gap-1.5">
         {opportunity.rfpType && (
           <Badge variant={opportunity.rfpType === "Questionnaire" ? "default" : "secondary"} className="text-[10px]">
@@ -60,7 +71,6 @@ export function PipelineBoard() {
   useSetPageTitle("Pipeline");
   const navigate = useNavigate();
   const { opportunities, users } = useStore();
-  const [selectClientOpen, setSelectClientOpen] = useState(false);
 
   const open = opportunities.filter((o) => !o.closure);
   const openValue = open.reduce((sum, o) => sum + o.value, 0);
@@ -84,7 +94,7 @@ export function PipelineBoard() {
       <PageHeader
         description="All active opportunities across the qualification-to-close lifecycle."
         actions={
-          <Button onClick={() => setSelectClientOpen(true)}>
+          <Button onClick={() => navigate("/opportunities/new")}>
             <Plus className="mr-2 size-4" />
             New opportunity
           </Button>
@@ -124,6 +134,7 @@ export function PipelineBoard() {
                     opportunity={opportunity}
                     owner={ownerName(opportunity.ownerId)}
                     gate={column.gate}
+                    onClick={() => navigate(`/opportunities/${opportunity.id}`)}
                   />
                 ))}
               </div>
@@ -131,13 +142,6 @@ export function PipelineBoard() {
           );
         })}
       </div>
-
-      <SelectClientDialog
-        open={selectClientOpen}
-        onOpenChange={setSelectClientOpen}
-        onSelectClient={(customer) => navigate("/opportunities/new", { state: { customerId: customer.id } })}
-        onNewClient={() => navigate("/opportunities/new")}
-      />
     </div>
   );
 }

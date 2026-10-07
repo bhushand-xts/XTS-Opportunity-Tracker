@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Sparkles, Upload, Wand2 } from "lucide-react";
+import { Loader2, Sparkles, Upload, Wand2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
   Alert,
   AlertDescription,
@@ -22,6 +23,7 @@ import {
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
 import { useAddRfpQuestionItemsBulk, useRfpQuestionItems } from "../rfp-questions/rfpQuestionItem.mockHooks";
+import { useAddRfpSectionsBulk } from "../rfp-questions/rfpSection.mockHooks";
 import { ContextAndUploadCard } from "./ContextAndUploadCard";
 import { DocumentUpload } from "./DocumentUpload";
 import { questionnaireIntakeSchema, type QuestionnaireIntakeValues } from "./intake.schema";
@@ -33,13 +35,15 @@ import { useViewMode } from "./useViewMode";
 import { ViewModeToggle } from "./ViewModeToggle";
 
 // A stand-in for a real extraction service: seeds a handful of representative
-// questions so the UI has something real to review — never auto-approved
-// (reviewStatus starts "Under review" regardless of source, see mock-data.ts).
+// questions, grouped into representative sections, so the UI has something
+// real to review — never auto-approved (reviewStatus starts "Under review"
+// regardless of source, see mock-data.ts).
+const MOCK_EXTRACTED_SECTIONS = ["Company Qualifications", "Technical Approach"];
 const MOCK_EXTRACTED_QUESTIONS = [
-  { text: "Describe your company's experience delivering similar engagements in the last 5 years.", mandatory: true },
-  { text: "Provide your proposed implementation methodology and timeline.", mandatory: true },
-  { text: "List key personnel and their relevant qualifications.", mandatory: true },
-  { text: "Describe your approach to data security and compliance.", mandatory: false },
+  { text: "Describe your company's experience delivering similar engagements in the last 5 years.", mandatory: true, section: 0 },
+  { text: "Provide your proposed implementation methodology and timeline.", mandatory: true, section: 1 },
+  { text: "List key personnel and their relevant qualifications.", mandatory: true, section: 0 },
+  { text: "Describe your approach to data security and compliance.", mandatory: false, section: 1 },
 ];
 
 const EMPTY: QuestionnaireIntakeValues = {
@@ -107,21 +111,31 @@ export function QuestionnaireIntakePage({ opportunity }: { opportunity: Opportun
   const { updateOpportunity } = useStore();
   const { questions } = useRfpQuestionItems(opportunity.id);
   const [addQuestionsBulk] = useAddRfpQuestionItemsBulk();
+  const [addSectionsBulk] = useAddRfpSectionsBulk();
   const [uploadedDoc, setUploadedDoc] = useState<UploadedDocument | null>(opportunity.document ?? null);
   const [viewMode, setViewMode] = useViewMode();
+  const [isExtracting, setIsExtracting] = useState(false);
 
   const form = useForm<QuestionnaireIntakeValues>({ resolver: zodResolver(questionnaireIntakeSchema), defaultValues: EMPTY });
 
-  function onSubmit(values: QuestionnaireIntakeValues) {
+  async function onSubmit(values: QuestionnaireIntakeValues) {
+    if (!uploadedDoc) {
+      toast.error("Upload the RFP document before extracting questions.");
+      return;
+    }
+
+    setIsExtracting(true);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+
     updateOpportunity(opportunity.id, {
       solicitation: {
         solicitationNumber: values.solicitationNumber,
         issuingAgency: values.issuingAgency,
         procurementContact: values.procurementContact || "",
-        issueDate: values.issueDate,
+        issueDate: values.issueDate || undefined,
         version: values.version || undefined,
-        questionsDue: values.questionsDue,
-        proposalDueDate: values.proposalDueDate,
+        questionsDue: values.questionsDue || undefined,
+        proposalDueDate: values.proposalDueDate || undefined,
         submissionDeadline: values.submissionDeadline,
         additionalDeadline: values.additionalDeadline || undefined,
         additionalDeadlineLabel: values.additionalDeadlineLabel || undefined,
@@ -130,7 +144,7 @@ export function QuestionnaireIntakePage({ opportunity }: { opportunity: Opportun
         submissionEmail: values.submissionEmail || undefined,
         submissionAddress: values.submissionAddress || undefined,
         instructions: values.instructions || undefined,
-        vendorDemonstrationRequired: values.vendorDemonstrationRequired as VendorDemoOption,
+        vendorDemonstrationRequired: (values.vendorDemonstrationRequired || undefined) as VendorDemoOption | undefined,
         submissionRequirements: values.submissionRequirements || undefined,
         opportunityOverview: values.opportunityOverview || undefined,
         scopeOfWork: values.scopeOfWork || undefined,
@@ -149,6 +163,13 @@ export function QuestionnaireIntakePage({ opportunity }: { opportunity: Opportun
     const alreadyExtracted = questions.some((q) => !q.withdrawn);
     if (!alreadyExtracted) {
       const now = new Date().toISOString();
+      const createdSections = await addSectionsBulk(
+        MOCK_EXTRACTED_SECTIONS.map((name, index) => ({
+          opportunityId: opportunity.id,
+          name,
+          displayOrder: index,
+        }))
+      );
       void addQuestionsBulk(
         MOCK_EXTRACTED_QUESTIONS.map((q, index) => ({
           opportunityId: opportunity.id,
@@ -156,6 +177,7 @@ export function QuestionnaireIntakePage({ opportunity }: { opportunity: Opportun
           questionText: q.text,
           type: "Long Text" as const,
           category: "Technical",
+          sectionId: createdSections[q.section].id,
           mandatory: q.mandatory,
           priority: "Medium" as const,
           source: "AI Extracted" as const,
@@ -211,7 +233,12 @@ export function QuestionnaireIntakePage({ opportunity }: { opportunity: Opportun
             {viewMode === "horizontal" ? (
               <div className="grid gap-2 lg:grid-cols-2 [&_input]:h-8 [&_input]:text-xs [&_button[role=combobox]]:h-8 [&_button[role=combobox]]:text-xs [&_label]:text-xs">
                 <SolicitationDetailsCard variant="questionnaire" compact />
-                <ContextAndUploadCard document={uploadedDoc} onChange={setUploadedDoc} />
+                <ContextAndUploadCard
+                  document={uploadedDoc}
+                  onChange={setUploadedDoc}
+                  acceptedExtensions={[".pdf", ".doc", ".docx"]}
+                  maxSizeMB={50}
+                />
               </div>
             ) : (
               <>
@@ -226,7 +253,12 @@ export function QuestionnaireIntakePage({ opportunity }: { opportunity: Opportun
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <DocumentUpload document={uploadedDoc} onChange={setUploadedDoc} />
+                    <DocumentUpload
+                      document={uploadedDoc}
+                      onChange={setUploadedDoc}
+                      acceptedExtensions={[".pdf", ".doc", ".docx"]}
+                      maxSizeMB={50}
+                    />
                   </CardContent>
                 </Card>
               </>
@@ -244,7 +276,10 @@ export function QuestionnaireIntakePage({ opportunity }: { opportunity: Opportun
               <Button type="button" variant="outline" onClick={() => navigate("/opportunities/new")}>
                 Back
               </Button>
-              <Button type="submit">Extract questions</Button>
+              <Button type="submit" disabled={isExtracting}>
+                {isExtracting && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                {isExtracting ? "Extracting..." : "Extract questions"}
+              </Button>
             </div>
           </form>
         </Form>

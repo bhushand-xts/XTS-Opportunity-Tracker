@@ -9,6 +9,7 @@ export interface User {
   lastName: string | null;
   email: string;
   passwordHash: string;
+  roleId: number | null;
 }
 
 // A user as shown in the user list: no password hash, plus the assigned role.
@@ -55,7 +56,7 @@ async function setRole(userId: number, roleId: number | null, updatedBy: number)
 
 async function findByEmail(email: string): Promise<User | null> {
   const rows = await query<User>(
-    'SELECT user_id AS id, first_name AS "firstName", last_name AS "lastName", email, password_hash AS "passwordHash" FROM mst_user WHERE LOWER(email) = LOWER($1) AND is_active = TRUE',
+    'SELECT user_id AS id, first_name AS "firstName", last_name AS "lastName", email, password_hash AS "passwordHash", role_id AS "roleId" FROM mst_user WHERE LOWER(email) = LOWER($1) AND is_active = TRUE',
     [email]
   );
   return rows[0] ?? null;
@@ -63,7 +64,7 @@ async function findByEmail(email: string): Promise<User | null> {
 
 async function createUser(firstName: string, lastName: string, email: string, passwordHash: string): Promise<User> {
   const rows = await query<User>(
-    'INSERT INTO mst_user (first_name, last_name, email, password_hash) VALUES ($1, $2, LOWER($3), $4) RETURNING user_id AS id, first_name AS "firstName", last_name AS "lastName", email, password_hash AS "passwordHash"',
+    'INSERT INTO mst_user (first_name, last_name, email, password_hash) VALUES ($1, $2, LOWER($3), $4) RETURNING user_id AS id, first_name AS "firstName", last_name AS "lastName", email, password_hash AS "passwordHash", role_id AS "roleId"',
     [firstName, lastName, email, passwordHash]
   );
   return rows[0];

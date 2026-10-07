@@ -199,6 +199,15 @@ export function useStore() {
       setState({ sections: [...snapshot.sections, created] });
       return created;
     },
+    // Needed whenever more than one section must be created from a single
+    // snapshot (e.g. mock extraction seeding several sections at once) —
+    // calling addSection() repeatedly in the same tick would have each call
+    // close over the same stale snapshot.sections and overwrite the others.
+    addSectionsBulk(entries: Omit<RfpSection, "id">[]): RfpSection[] {
+      const created = entries.map((entry) => ({ ...entry, id: nextId("sec") }));
+      setState({ sections: [...snapshot.sections, ...created] });
+      return created;
+    },
     updateSection(id: string, patch: Partial<RfpSection>) {
       setState({ sections: snapshot.sections.map((s) => (s.id === id ? { ...s, ...patch } : s)) });
     },
@@ -208,7 +217,10 @@ export function useStore() {
         questions: snapshot.questions.map((q) => (q.sectionId === id ? { ...q, sectionId: undefined } : q)),
       });
     },
-    assignQuestion(id: string, assignment: { assigneeId?: string; reviewerId?: string; dueDate?: string; notes?: string }) {
+    assignQuestion(
+      id: string,
+      assignment: { assigneeId?: string; reviewerId?: string; dueDate?: string; notes?: string; team?: string }
+    ) {
       const question = snapshot.questions.find((q) => q.id === id);
       if (!question) return;
       const wasAssigned = question.assignmentStatus !== "Unassigned";
@@ -222,6 +234,7 @@ export function useStore() {
                 reviewerId: assignment.reviewerId,
                 dueDate: assignment.dueDate,
                 assignmentNotes: assignment.notes,
+                team: assignment.team,
                 assignmentStatus: wasAssigned ? "Reassigned" : "Assigned",
                 updatedAt: new Date().toISOString(),
               }
@@ -238,7 +251,10 @@ export function useStore() {
         ],
       });
     },
-    bulkAssignQuestions(ids: string[], assignment: { assigneeId?: string; reviewerId?: string; dueDate?: string; notes?: string }) {
+    bulkAssignQuestions(
+      ids: string[],
+      assignment: { assigneeId?: string; reviewerId?: string; dueDate?: string; notes?: string; team?: string }
+    ) {
       const assignee = snapshot.users.find((u) => u.id === assignment.assigneeId);
       const idSet = new Set(ids);
       const newHistory = snapshot.questions
@@ -258,6 +274,7 @@ export function useStore() {
                 reviewerId: assignment.reviewerId,
                 dueDate: assignment.dueDate,
                 assignmentNotes: assignment.notes,
+                team: assignment.team,
                 assignmentStatus: q.assignmentStatus !== "Unassigned" ? "Reassigned" : "Assigned",
                 updatedAt: new Date().toISOString(),
               }
@@ -293,13 +310,19 @@ export function useStore() {
       });
     },
     submitAnswer(id: string): boolean {
-      const question = snapshot.questions.find((q) => q.id === id);
+      // Reads the live state, not the `snapshot` this closure was created
+      // with — callers commonly call saveAnswerDraft() immediately before
+      // this in the same handler, and that draft's answerValue wouldn't be
+      // visible yet via the stale `snapshot`, incorrectly failing the
+      // mandatory-answer check right after the user just entered one.
+      const current = getSnapshot();
+      const question = current.questions.find((q) => q.id === id);
       if (!question) return false;
       if (question.mandatory && !questionHasAnswer(question)) return false;
 
       const resubmittingAfterRework = question.answerStatus === "Rework Required";
       setState({
-        questions: snapshot.questions.map((q) =>
+        questions: current.questions.map((q) =>
           q.id === id
             ? {
                 ...q,
@@ -310,7 +333,7 @@ export function useStore() {
             : q
         ),
         history: [
-          ...snapshot.history,
+          ...current.history,
           {
             id: nextId("hist"),
             opportunityId: question.opportunityId,

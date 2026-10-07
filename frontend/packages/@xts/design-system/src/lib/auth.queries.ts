@@ -1,10 +1,12 @@
 import { gql } from "@apollo/client";
 
-// Only fields the real backend's User type currently defines (id, email,
-// firstName, lastName) — it has no status/roles concept yet (mst_user has
-// is_active: boolean and a single role_id, not this richer shape). See
-// auth.ts's stateFromPayload for how profile.status/roles are synthesized
-// instead of read from the response.
+// roleId is already in the backend's User GraphQL type, but the login/
+// register resolvers don't populate it yet (see auth.service.ts) — it comes
+// back null until that's fixed, which is fine: stateFromPayload stores
+// whatever it gets, and the menu-access hook (lib/access.ts) already treats
+// a null roleId as "no access", so this is a safe no-op until then. See
+// auth.ts's stateFromPayload for how profile.status is synthesized instead
+// of read from the response (no status concept exists on User yet).
 const AUTH_PAYLOAD_FIELDS = gql`
   fragment AuthPayloadFields on AuthPayload {
     token
@@ -13,6 +15,7 @@ const AUTH_PAYLOAD_FIELDS = gql`
       email
       firstName
       lastName
+      roleId
     }
   }
 `;

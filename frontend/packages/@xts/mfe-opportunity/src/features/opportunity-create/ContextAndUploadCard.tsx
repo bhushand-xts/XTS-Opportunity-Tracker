@@ -11,9 +11,13 @@ import { SectionTitle } from "./SectionTitle";
 export function ContextAndUploadCard({
   document,
   onChange,
+  acceptedExtensions,
+  maxSizeMB,
 }: {
   document: UploadedDocument | null;
   onChange: (doc: UploadedDocument) => void;
+  acceptedExtensions?: string[];
+  maxSizeMB?: number;
 }) {
   return (
     <Card className="flex h-full flex-col">
@@ -24,7 +28,13 @@ export function ContextAndUploadCard({
             <SectionTitle icon={Upload}>Upload document</SectionTitle>
           </CardTitle>
           <div className="flex-1">
-            <DocumentUpload document={document} onChange={onChange} compact />
+            <DocumentUpload
+              document={document}
+              onChange={onChange}
+              compact
+              acceptedExtensions={acceptedExtensions}
+              maxSizeMB={maxSizeMB}
+            />
           </div>
         </div>
       </CardContent>

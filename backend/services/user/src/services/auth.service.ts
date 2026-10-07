@@ -8,7 +8,7 @@ const SESSION_LIFETIME_MS = 1000 * 60 * 60 * 24 * 7;
 
 export interface AuthResult {
   token: string;
-  user: { id: number; firstName: string | null; lastName: string | null; email: string };
+  user: { id: number; firstName: string | null; lastName: string | null; email: string; roleId: number | null };
 }
 
 function validateCredentials(email: string, password: string): void {
@@ -30,11 +30,11 @@ async function passwordMatches(password: string, stored: string): Promise<boolea
   return expected.length === key.length && timingSafeEqual(expected, key);
 }
 
-async function issueSession(user: { id: number; firstName: string | null; lastName: string | null; email: string }): Promise<AuthResult> {
+async function issueSession(user: { id: number; firstName: string | null; lastName: string | null; email: string; roleId: number | null }): Promise<AuthResult> {
   const token = randomBytes(32).toString('base64url');
   const tokenHash = createHash('sha256').update(token).digest('hex');
   await users.createSession(user.id, tokenHash, new Date(Date.now() + SESSION_LIFETIME_MS));
-  return { token, user: { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email } };
+  return { token, user: { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, roleId: user.roleId } };
 }
 
 async function register(firstName: string, lastName: string, email: string, password: string): Promise<AuthResult> {

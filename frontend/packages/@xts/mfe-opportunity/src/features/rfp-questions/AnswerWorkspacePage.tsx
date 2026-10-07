@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
   Checkbox,
+  getCurrentUserId,
   Input,
   Label,
   Select,
@@ -27,7 +28,7 @@ import { RequiredMark } from "../../components/RequiredMark";
 import { DocumentUpload } from "../opportunity-create/DocumentUpload";
 import { SectionTitle } from "../opportunity-create/SectionTitle";
 import { useReviewAnswer, useSaveAnswerDraft, useSubmitAnswer } from "./rfpAnswer.mockHooks";
-import { useRfpQuestionItems } from "./rfpQuestionItem.mockHooks";
+import { useAssignQuestion, useRfpQuestionItems } from "./rfpQuestionItem.mockHooks";
 import { useRfpSections } from "./rfpSection.mockHooks";
 import { findRealUserName, useRealUsers } from "./useRealUsers";
 
@@ -40,6 +41,7 @@ export function AnswerWorkspacePage({ opportunity, question }: { opportunity: Op
   const [saveDraft] = useSaveAnswerDraft();
   const [submitAnswer] = useSubmitAnswer();
   const [reviewAnswer] = useReviewAnswer();
+  const [assignQuestion] = useAssignQuestion();
 
   const ordered = useMemo(() => questions.filter((q) => !q.withdrawn).sort((a, b) => a.number - b.number), [questions]);
   const index = ordered.findIndex((q) => q.id === question.id);
@@ -84,17 +86,31 @@ export function AnswerWorkspacePage({ opportunity, question }: { opportunity: Op
     };
   }
 
+  // If nobody owns this question yet, whoever actually answers it becomes
+  // the owner — avoids leaving a question "Unassigned" after someone has
+  // already done the work. Only applies when unassigned; never overrides an
+  // existing, explicit assignment to someone else.
+  function maybeAutoAssign() {
+    const currentUserId = getCurrentUserId();
+    if (question.assignmentStatus === "Unassigned" && currentUserId !== null) {
+      void assignQuestion(question.id, { assigneeId: String(currentUserId) });
+    }
+  }
+
   function handleSaveDraft() {
     void saveDraft(question.id, currentDraft());
+    maybeAutoAssign();
   }
 
   function handleSaveAndNext() {
     void saveDraft(question.id, currentDraft());
+    maybeAutoAssign();
     if (next) navigate(`/opportunities/${opportunity.id}/questions/${next.id}/answer`);
   }
 
   async function handleSubmit() {
     await saveDraft(question.id, currentDraft());
+    maybeAutoAssign();
     const ok = await submitAnswer(question.id);
     setSubmitBlocked(!ok);
   }

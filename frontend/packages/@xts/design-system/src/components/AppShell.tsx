@@ -2,21 +2,25 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Bell,
+  Briefcase,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
+  Columns3,
   FileQuestion,
   Key,
   LayoutDashboard,
   Link2,
   List,
   MessageSquareText,
+  Plus,
   Search,
   Settings,
   Share2,
   Shield,
   Table2,
+  User,
   UserCog,
   Users,
 } from "lucide-react";
@@ -49,6 +53,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { OPPORTUNITY_MENU_KEY, useMenuAccess } from "@/lib/access";
 import { ROLE_LABEL, useAuth, type AppPermission } from "@/lib/auth";
 import { usePageTitle } from "@/lib/pageTitle";
 import { useStore } from "@/lib/store";
@@ -89,6 +94,15 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "User Role Assignment", to: "/admin/user-management/user-role-assignment", icon: UserCog },
     ],
   },
+];
+
+// Opportunities is core Sales/BD functionality, not an admin feature, so —
+// unlike Administration/RFP below — this group isn't gated behind can("admin").
+const OPPORTUNITIES_NAV: NavLeaf[] = [
+  { label: "All Opportunities", to: "/opportunities/all", icon: Table2 },
+  { label: "New Opportunity", to: "/opportunities/new", icon: Plus },
+  { label: "My Opportunities", to: "/opportunities/mine", icon: User },
+  { label: "Pipeline", to: "/opportunities", icon: Columns3 },
 ];
 
 // RFP gets its own top-level sidebar tab (alongside Dashboard and
@@ -219,15 +233,22 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
   // active-highlight and auto-expand don't both fire on an RFP page.
   const onRfp = pathname.startsWith("/admin/rfp-management");
   const onAdmin = pathname.startsWith("/admin") && !onRfp;
-  const onOpportunities = pathname.startsWith("/opportunities");
+  const onDashboard = pathname === "/opportunities/dashboard";
+  const onOpportunities = pathname.startsWith("/opportunities") && !onDashboard;
   const [adminOpen, setAdminOpen] = useState(onAdmin);
   const [rfpOpen, setRfpOpen] = useState(onRfp);
+  const [opportunitiesOpen, setOpportunitiesOpen] = useState(onOpportunities);
+  const { loading: accessLoading, hasAccess } = useMenuAccess();
+  const canSeeOpportunities = !accessLoading && hasAccess(OPPORTUNITY_MENU_KEY);
   useEffect(() => {
     if (onAdmin) setAdminOpen(true);
   }, [onAdmin]);
   useEffect(() => {
     if (onRfp) setRfpOpen(true);
   }, [onRfp]);
+  useEffect(() => {
+    if (onOpportunities) setOpportunitiesOpen(true);
+  }, [onOpportunities]);
   return (
     <Sidebar collapsible="icon">
       {/* No positioning wrapper here on purpose — absolute resolves against
@@ -252,23 +273,60 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu className="px-2 pt-2">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={onOpportunities}
-              tooltip="Dashboard"
-              className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
-            >
-              {/* Label/icon kept as "Dashboard" for this phase — the pipeline
-                  mockup's home screen (no separate dashboard) now renders
-                  here; renaming to "Pipeline" is cosmetic cleanup once the
-                  fuller journey lands. */}
-              <Link to="/opportunities">
-                <LayoutDashboard />
-                <span>Dashboard</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          {canSeeOpportunities && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={onDashboard}
+                tooltip="Dashboard"
+                className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+              >
+                <Link to="/opportunities/dashboard">
+                  <LayoutDashboard />
+                  <span>Dashboard</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+
+          {canSeeOpportunities && (
+            <Collapsible open={opportunitiesOpen} onOpenChange={setOpportunitiesOpen} className="group/opportunities">
+              <SidebarMenuItem>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton
+                    isActive={onOpportunities}
+                    tooltip="Opportunities"
+                    className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+                  >
+                    <Briefcase />
+                    <span>Opportunities</span>
+                    <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/opportunities:rotate-180" />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    {OPPORTUNITIES_NAV.map((item) => {
+                      const active = pathname === item.to;
+                      return (
+                        <SidebarMenuSubItem key={item.to}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={active}
+                            className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+                          >
+                            <Link to={item.to}>
+                              <item.icon className="size-4" />
+                              <span>{item.label}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      );
+                    })}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </SidebarMenuItem>
+            </Collapsible>
+          )}
 
           {can("admin") && (
             <Collapsible open={adminOpen} onOpenChange={setAdminOpen} className="group/admin">

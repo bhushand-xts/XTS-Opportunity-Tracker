@@ -56,6 +56,7 @@ export interface AssignmentInput {
   reviewerId?: string;
   dueDate?: string;
   notes?: string;
+  team?: string;
 }
 
 /** Mirrors: mutation assignRfpQuestionItem(id: Int!, input: AssignmentInput!): RfpQuestionItem! */

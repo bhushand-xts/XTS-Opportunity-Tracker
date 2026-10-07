@@ -1,11 +1,18 @@
 import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  AlertTriangle,
   BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
   Copy,
   Eye,
   FileCheck2,
-  ListChecks,
+  FileText,
+  Info,
   ListTree,
   MoreHorizontal,
   PenLine,
@@ -14,10 +21,11 @@ import {
   RotateCcw,
   Search,
   Trash2,
+  User,
   UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { RfpQuestion } from "@xts/api-contracts";
+import type { ManagedUser, RfpQuestion } from "@xts/api-contracts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +36,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   ANSWER_STATUSES,
+  Avatar,
+  AvatarFallback,
   Badge,
   Button,
   Card,
@@ -56,10 +66,11 @@ import {
   useSetPageTitle,
   type Opportunity,
   type RfpQuestionItem,
+  type UploadedDocument,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
 import { ProgressRing } from "../../components/ProgressRing";
-import { RfpStatsBanner } from "../../components/RfpStatsBanner";
+import { OpportunityCreateStepper } from "../opportunity-create/OpportunityCreateStepper";
 import { AddFromMasterDialog } from "./AddFromMasterDialog";
 import { AssignQuestionDialog } from "./AssignQuestionDialog";
 import { ManageSectionsDialog } from "./ManageSectionsDialog";
@@ -79,7 +90,7 @@ import {
 } from "./rfpQuestionItem.mockHooks";
 import { useFinalResponseReadiness } from "./rfpFinalResponse.mockHooks";
 import { useRfpSections } from "./rfpSection.mockHooks";
-import { findRealUserName, useRealUsers } from "./useRealUsers";
+import { findRealUserName, realUserName, useRealUsers } from "./useRealUsers";
 import { ViewQuestionDialog } from "./ViewQuestionDialog";
 import { ViewSourceDialog } from "./ViewSourceDialog";
 
@@ -106,6 +117,167 @@ function answerActionLabel(status: RfpQuestionItem["answerStatus"]): string {
     default:
       return "Answer";
   }
+}
+
+// Friendlier display labels for the same 5 answerStatus values — not a new
+// piece of state, just relabeling (Approved -> "Answered", Submitted ->
+// "Under review") to match the reference design. assignmentStatus isn't
+// folded in here — the Owner column already shows "Unassigned" separately.
+function answerStatusLabel(status: RfpQuestionItem["answerStatus"]): string {
+  switch (status) {
+    case "Approved":
+      return "Answered";
+    case "Submitted":
+      return "Under review";
+    case "In Progress":
+      return "In progress";
+    case "Rework Required":
+      return "Rework required";
+    case "Not Started":
+    default:
+      return "Not started";
+  }
+}
+
+function answerStatusVariant(status: RfpQuestionItem["answerStatus"]): "success" | "destructive" | "warning" | "outline" | "muted" {
+  switch (status) {
+    case "Approved":
+      return "success";
+    case "Rework Required":
+      return "destructive";
+    case "Submitted":
+      return "warning";
+    case "In Progress":
+      return "outline";
+    case "Not Started":
+    default:
+      return "muted";
+  }
+}
+
+function answerStatusIcon(status: RfpQuestionItem["answerStatus"]) {
+  switch (status) {
+    case "Approved":
+      return CheckCircle2;
+    case "Rework Required":
+      return AlertTriangle;
+    case "Submitted":
+    case "In Progress":
+      return Clock;
+    case "Not Started":
+    default:
+      return Info;
+  }
+}
+
+function answerStatusIconColor(status: RfpQuestionItem["answerStatus"]): string {
+  switch (status) {
+    case "Approved":
+      return "text-emerald-600";
+    case "Rework Required":
+      return "text-destructive";
+    case "Submitted":
+    case "In Progress":
+      return "text-amber-600";
+    case "Not Started":
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
+// A small fixed palette of soft avatar colors (same pastel style as the
+// Badge success/warning/muted variants), picked deterministically per user id
+// so the same owner always gets the same color across the table.
+const AVATAR_PALETTE = [
+  "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
+  "bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300",
+  "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+  "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
+  "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
+];
+
+function avatarColorClass(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+
+// Read-only inline expand panel — shows the same response data
+// AnswerWorkspacePage manages, without navigating away. No history array
+// exists on RfpQuestionItem (answerVersion overwrites, doesn't append), so
+// this only ever shows the single current response.
+function ResponseSummary({ question, realUsers }: { question: RfpQuestionItem; realUsers: ManagedUser[] }) {
+  if (question.answerStatus === "Not Started") {
+    return <p className="px-2 text-sm text-muted-foreground">No response yet.</p>;
+  }
+
+  const assignee = realUsers.find((u) => String(u.id) === question.assigneeId);
+  const responseText =
+    question.answerValue || (question.answerValues && question.answerValues.length > 0 ? question.answerValues.join(", ") : "");
+  const attachments = [question.answerDocument, question.supportingEvidence].filter(
+    (doc): doc is UploadedDocument => Boolean(doc)
+  );
+
+  return (
+    <div className="grid gap-4 px-2 sm:grid-cols-[1fr_200px_200px]">
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          Latest response
+          <Badge variant="outline">Version {question.answerVersion + 1}</Badge>
+          <span className="text-xs font-normal text-muted-foreground">{new Date(question.updatedAt).toLocaleString()}</span>
+        </div>
+        <div className="whitespace-pre-wrap rounded-lg border bg-card p-3 text-sm text-muted-foreground">
+          {responseText || "No response text."}
+        </div>
+      </div>
+      <div className="text-sm">
+        <p className="text-xs font-medium text-muted-foreground">Responded by</p>
+        {assignee ? (
+          <div className="mt-1 flex items-center gap-2">
+            <Avatar className="size-7">
+              <AvatarFallback className={`text-[10px] ${avatarColorClass(question.assigneeId!)}`}>
+                {initialsOf(realUserName(assignee))}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="truncate leading-tight">{realUserName(assignee)}</p>
+              <p className="truncate text-xs leading-tight text-muted-foreground">{assignee.email}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-1 text-muted-foreground">Not yet assigned</p>
+        )}
+      </div>
+      <div className="text-sm">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-muted-foreground">Attachments ({attachments.length})</p>
+          {attachments.length > 0 && <span className="text-xs text-primary">View all</span>}
+        </div>
+        {attachments.length === 0 ? (
+          <p className="mt-1 text-muted-foreground">No attachments</p>
+        ) : (
+          <ul className="mt-1.5 space-y-1.5">
+            {attachments.map((doc) => (
+              <li key={doc.id} className="flex items-center gap-2 rounded-lg border p-2">
+                <div className="grid size-8 shrink-0 place-items-center rounded-md bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
+                  <FileText className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium">{doc.fileName}</p>
+                  <p className="text-[11px] text-muted-foreground">{doc.fileSizeLabel}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }) {
@@ -140,15 +312,13 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
   const [viewingQuestion, setViewingQuestion] = useState<RfpQuestionItem | null>(null);
   const [viewingSource, setViewingSource] = useState<RfpQuestionItem | null>(null);
   const [withdrawing, setWithdrawing] = useState<RfpQuestionItem | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const active = useMemo(() => questions.filter((q) => !q.withdrawn), [questions]);
   const existingSourceIds = useMemo(
     () => new Set(active.filter((q) => q.sourceQuestionId !== undefined).map((q) => q.sourceQuestionId!)),
     [active]
   );
-  const assignedCount = useMemo(() => active.filter((q) => q.assignmentStatus !== "Unassigned").length, [active]);
-  const underReviewCount = useMemo(() => active.filter((q) => q.reviewStatus === "Under review").length, [active]);
-
   const answerStatusCounts = useMemo(() => {
     const counts = Object.fromEntries(ANSWER_STATUSES.map((s) => [s, 0])) as Record<RfpQuestionItem["answerStatus"], number>;
     active.forEach((q) => counts[q.answerStatus]++);
@@ -203,11 +373,14 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
   }
 
   function handleCreate(values: QuestionFormValues) {
+    const assigneeId = values.assigneeId && values.assigneeId !== "none" ? values.assigneeId : undefined;
     void addQuestion({
       ...baseFields(values),
       number: nextNumber(),
       source: "Manual",
       reviewStatus: "Under review",
+      assigneeId,
+      assignmentStatus: assigneeId ? "Assigned" : "Unassigned",
     });
   }
 
@@ -311,7 +484,7 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
       toast.error(`Can't finish yet — ${blockingIssues.join(" · ")}.`);
       return;
     }
-    navigate("/opportunities");
+    navigate(`/opportunities/${opportunity.id}`);
   }
 
   function toggleRow(id: string) {
@@ -364,84 +537,76 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
               Add question
             </Button>
             <Button variant="outline" onClick={handleSaveAndFinish}>
-              Save &amp; finish
+              Review &amp; save opportunity
             </Button>
           </>
         }
       />
 
-      <RfpStatsBanner
-        icon={ListChecks}
-        title={`Questions for ${opportunity.document?.fileName ?? "this RFP"}`}
-        subtitle="Assign owners, answer, and review each question before submission."
-        stats={[
-          { label: "Questions", value: active.length },
-          { label: "Assigned", value: assignedCount },
-          { label: "Under review", value: underReviewCount },
-          { label: "Deadline", value: opportunity.solicitation?.submissionDeadline || "—" },
-        ]}
-      />
+      <OpportunityCreateStepper current={2} />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-64">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search questions..."
-            className="pl-9"
-          />
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-96">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search questions..."
+              className="pl-9"
+            />
+          </div>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All categories</SelectItem>
+              {RFP_QUESTION_CATEGORIES.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={sectionFilter} onValueChange={setSectionFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All sections</SelectItem>
+              <SelectItem value={UNSECTIONED_GROUP}>Unsectioned</SelectItem>
+              {sections.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All sources</SelectItem>
+              {QUESTION_SOURCES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={mandatoryFilter} onValueChange={setMandatoryFilter}>
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Mandatory & optional</SelectItem>
+              <SelectItem value="mandatory">Mandatory only</SelectItem>
+              <SelectItem value="optional">Optional only</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All categories</SelectItem>
-            {RFP_QUESTION_CATEGORIES.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sectionFilter} onValueChange={setSectionFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All sections</SelectItem>
-            <SelectItem value={UNSECTIONED_GROUP}>Unsectioned</SelectItem>
-            {sections.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sourceFilter} onValueChange={setSourceFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All sources</SelectItem>
-            {QUESTION_SOURCES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={mandatoryFilter} onValueChange={setMandatoryFilter}>
-          <SelectTrigger className="w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Mandatory & optional</SelectItem>
-            <SelectItem value="mandatory">Mandatory only</SelectItem>
-            <SelectItem value="optional">Optional only</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
       {selected.size > 0 && (
@@ -478,8 +643,8 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+        <Card>
           <CardContent className="pt-6">
             <Table>
               <TableHeader>
@@ -487,7 +652,7 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
                   <TableHead className="w-10" />
                   <TableHead className="w-12">#</TableHead>
                   <TableHead>Question</TableHead>
-                  <TableHead>Review status</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Owner</TableHead>
                   <TableHead>Due date</TableHead>
                   <TableHead>Answer</TableHead>
@@ -523,53 +688,99 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
                         </TableCell>
                       </TableRow>
                     )}
-                    {group.rows.map((q) => (
-                      <TableRow key={q.id}>
-                        <TableCell>
+                    {group.rows.map((q) => {
+                      const expanded = expandedId === q.id;
+                      const StatusIcon = answerStatusIcon(q.answerStatus);
+                      return (
+                      <Fragment key={q.id}>
+                      <TableRow
+                        className="cursor-pointer"
+                        onClick={() => setExpandedId(expanded ? null : q.id)}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
                           <Checkbox checked={selected.has(q.id)} onCheckedChange={() => toggleRow(q.id)} />
                         </TableCell>
                         <TableCell className="text-muted-foreground tabular-nums">{q.number}</TableCell>
                         <TableCell className="max-w-sm font-medium">
-                          {q.questionText.length > QUESTION_PREVIEW_LENGTH ? (
-                            <>
-                              {q.questionText.slice(0, QUESTION_PREVIEW_LENGTH)}
-                              <button
-                                type="button"
-                                onClick={() => setViewingQuestion(q)}
-                                aria-label={`View full text of question ${q.number}`}
-                                className="ml-0.5 inline-flex rounded-full bg-blue-50 px-1.5 text-blue-700 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900"
-                              >
-                                ...
-                              </button>
-                            </>
-                          ) : (
-                            q.questionText
-                          )}
-                          {q.mandatory && <span className="ml-0.5 text-destructive">*</span>}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={q.reviewStatus === "Reviewed" ? "success" : "muted"}>{q.reviewStatus}</Badge>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">
-                          {q.assigneeId ? (findRealUserName(realUsers, q.assigneeId) ?? "—") : "Unassigned"}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">{q.dueDate ?? "—"}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              q.answerStatus === "Approved"
-                                ? "success"
-                                : q.answerStatus === "Rework Required"
-                                  ? "destructive"
-                                  : q.answerStatus === "Not Started"
-                                    ? "muted"
-                                    : "outline"
-                            }
-                          >
-                            {q.answerStatus}
+                          <div>
+                            {q.questionText.length > QUESTION_PREVIEW_LENGTH ? (
+                              <>
+                                {q.questionText.slice(0, QUESTION_PREVIEW_LENGTH)}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setViewingQuestion(q);
+                                  }}
+                                  aria-label={`View full text of question ${q.number}`}
+                                  className="ml-0.5 inline-flex rounded-full bg-blue-50 px-1.5 text-blue-700 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900"
+                                >
+                                  ...
+                                </button>
+                              </>
+                            ) : (
+                              q.questionText
+                            )}
+                            {q.mandatory && <span className="ml-0.5 text-destructive">*</span>}
+                          </div>
+                          <Badge variant="outline" className="mt-1 font-normal text-muted-foreground">
+                            {q.category}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell>
+                          <Badge variant={answerStatusVariant(q.answerStatus)}>{answerStatusLabel(q.answerStatus)}</Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {(() => {
+                            const ownerName = q.assigneeId ? findRealUserName(realUsers, q.assigneeId) : undefined;
+                            return (
+                              <div className="flex items-center gap-2">
+                                <Avatar className="size-6">
+                                  <AvatarFallback
+                                    className={ownerName ? `text-[10px] ${avatarColorClass(q.assigneeId!)}` : "text-muted-foreground"}
+                                  >
+                                    {ownerName ? initialsOf(ownerName) : <User className="size-3" />}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="text-muted-foreground">
+                                  {ownerName ?? "Unassigned"}
+                                  {q.team && <div className="text-[10px] text-muted-foreground/80">{q.team}</div>}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {q.dueDate ? (
+                            <span className="flex items-center gap-1.5">
+                              <CalendarDays className="size-3.5" />
+                              {q.dueDate}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <StatusIcon className={`size-3.5 ${answerStatusIconColor(q.answerStatus)}`} />
+                            {q.answerStatus === "Not Started" ? "No response" : "1 response"}
+                            {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              variant={q.answerStatus === "Not Started" ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => navigate(`/opportunities/${opportunity.id}/questions/${q.id}/answer`)}
+                            >
+                              {q.answerStatus === "Rework Required" ? (
+                                <RotateCcw className="mr-1.5 size-3.5" />
+                              ) : (
+                                <PenLine className="mr-1.5 size-3.5" />
+                              )}
+                              {answerActionLabel(q.answerStatus)}
+                            </Button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" aria-label={`Actions for question ${q.number}`}>
@@ -577,16 +788,6 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => navigate(`/opportunities/${opportunity.id}/questions/${q.id}/answer`)}
-                              >
-                                {q.answerStatus === "Rework Required" ? (
-                                  <RotateCcw className="mr-2 size-4" />
-                                ) : (
-                                  <PenLine className="mr-2 size-4" />
-                                )}
-                                {answerActionLabel(q.answerStatus)}
-                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => openAssign([q.id])}>
                                 <UserPlus className="mr-2 size-4" />
                                 Assign
@@ -618,9 +819,20 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      {expanded && (
+                        <TableRow className="bg-muted/20 hover:bg-muted/20">
+                          <TableCell />
+                          <TableCell colSpan={COLUMNS - 1} className="py-3">
+                            <ResponseSummary question={q} realUsers={realUsers} />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      </Fragment>
+                      );
+                    })}
                   </Fragment>
                 ))}
               </TableBody>
@@ -628,44 +840,46 @@ export function QuestionReviewPage({ opportunity }: { opportunity: Opportunity }
           </CardContent>
         </Card>
 
-        <div className="space-y-4 lg:col-span-1">
+        <div>
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Question progress</CardTitle>
+              <CardTitle className="text-center text-base">Question progress</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4">
-                <ProgressRing percent={completion} />
+            <CardContent className="flex flex-col gap-6">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <ProgressRing percent={completion} color="hsl(160 84% 39%)" size="lg" />
                 <p className="text-xs text-muted-foreground">
-                  {answerStatusCounts.Approved} of {active.length} questions approved.
+                  {answerStatusCounts.Approved} of {active.length} questions answered.
                 </p>
               </div>
-              <div className="mt-4 space-y-2 text-xs text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <span className="size-2.5 rounded-sm bg-emerald-600" />
-                  Approved — {answerStatusCounts.Approved}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-emerald-50 p-3 text-center dark:bg-emerald-950">
+                  <p className="text-xl font-semibold text-emerald-700 dark:text-emerald-300">
+                    {answerStatusCounts.Approved}
+                  </p>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300">Answered</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="size-2.5 rounded-sm bg-primary" />
-                  Submitted — {answerStatusCounts.Submitted}
+                <div className="rounded-lg bg-amber-50 p-3 text-center dark:bg-amber-950">
+                  <p className="text-xl font-semibold text-amber-700 dark:text-amber-300">{answerStatusCounts.Submitted}</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">Under review</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="size-2.5 rounded-sm bg-amber-500" />
-                  In progress — {answerStatusCounts["In Progress"]}
+                <div className="rounded-lg bg-red-50 p-3 text-center dark:bg-red-950">
+                  <p className="text-xl font-semibold text-red-700 dark:text-red-300">
+                    {answerStatusCounts["Rework Required"]}
+                  </p>
+                  <p className="text-xs text-red-700 dark:text-red-300">Rework required</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="size-2.5 rounded-sm bg-destructive" />
-                  Rework required — {answerStatusCounts["Rework Required"]}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="size-2.5 rounded-sm bg-muted" />
-                  Not started — {answerStatusCounts["Not Started"]}
+                <div className="rounded-lg bg-slate-100 p-3 text-center dark:bg-slate-800">
+                  <p className="text-xl font-semibold text-slate-600 dark:text-slate-300">
+                    {answerStatusCounts["Not Started"]}
+                  </p>
+                  <p className="text-xs text-slate-600 dark:text-slate-300">Not started</p>
                 </div>
               </div>
               <Button
                 variant="outline"
                 size="sm"
-                className="mt-4 w-full"
+                className="w-full"
                 disabled={active.length === 0}
                 onClick={() => navigate(`/opportunities/${opportunity.id}/progress`)}
               >

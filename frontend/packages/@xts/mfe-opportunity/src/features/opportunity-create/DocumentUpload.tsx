@@ -15,17 +15,41 @@ export function DocumentUpload({
   document,
   onChange,
   compact,
+  acceptedExtensions,
+  maxSizeMB,
 }: {
   document: UploadedDocument | null;
   onChange: (doc: UploadedDocument) => void;
   compact?: boolean;
+  /** Opt-in — omit to keep today's no-validation behavior (other callers). */
+  acceptedExtensions?: string[];
+  maxSizeMB?: number;
 }) {
   const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleFiles(files: FileList | null) {
     const file = files?.[0];
     if (!file) return;
+    setError(null);
+
+    if (file.size === 0) {
+      setError("This file appears to be empty or unreadable.");
+      return;
+    }
+    if (acceptedExtensions) {
+      const ext = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}`;
+      if (!acceptedExtensions.includes(ext)) {
+        setError(`Unsupported file type. Accepted: ${acceptedExtensions.map((e) => e.slice(1).toUpperCase()).join(", ")}.`);
+        return;
+      }
+    }
+    if (maxSizeMB && file.size > maxSizeMB * 1024 * 1024) {
+      setError(`File is too large — maximum size is ${maxSizeMB} MB.`);
+      return;
+    }
+
     onChange({
       id: crypto.randomUUID(),
       fileName: file.name,
@@ -65,8 +89,12 @@ export function DocumentUpload({
           </div>
           <h3 className={compact ? "text-xs font-semibold" : "text-[15px] font-semibold"}>Drop the RFP here, or browse</h3>
           <p className={compact ? "mx-auto mt-1 max-w-[220px] text-[11px] text-muted-foreground" : "mx-auto mt-1 max-w-sm text-[12.5px] text-muted-foreground"}>
-            PDF, DOCX or ZIP up to 50 MB. The system reads the document and pulls out each question.
+            {acceptedExtensions
+              ? `${acceptedExtensions.map((e) => e.slice(1).toUpperCase()).join(", ")} up to ${maxSizeMB ?? 50} MB.`
+              : "PDF, DOCX or ZIP up to 50 MB."}{" "}
+            The system reads the document and pulls out each question.
           </p>
+          {error && <p className="mx-auto mt-1.5 max-w-sm text-[11.5px] text-destructive">{error}</p>}
           <Button
             type="button"
             variant="outline"
@@ -80,7 +108,7 @@ export function DocumentUpload({
             ref={inputRef}
             type="file"
             className="hidden"
-            accept=".pdf,.doc,.docx,.zip"
+            accept={acceptedExtensions ? acceptedExtensions.join(",") : ".pdf,.doc,.docx,.zip"}
             onChange={(e) => handleFiles(e.target.files)}
           />
         </div>

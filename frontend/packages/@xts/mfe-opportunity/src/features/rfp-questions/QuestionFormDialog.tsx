@@ -31,8 +31,10 @@ import {
 import { RequiredMark } from "../../components/RequiredMark";
 import { formatAnswerOptions, questionFormSchema, type QuestionFormValues } from "./questionForm.schema";
 import { useRfpSections } from "./rfpSection.mockHooks";
+import { realUserName, useRealUsers } from "./useRealUsers";
 
 const UNSECTIONED = "none";
+const UNASSIGNED = "none";
 const SELECT_TYPES = ["Single Select", "Multi Select"];
 
 const EMPTY: QuestionFormValues = {
@@ -40,6 +42,7 @@ const EMPTY: QuestionFormValues = {
   type: "",
   category: "",
   sectionId: UNSECTIONED,
+  assigneeId: UNASSIGNED,
   mandatory: false,
   priority: "",
   reviewerNotes: "",
@@ -66,6 +69,7 @@ export function QuestionFormDialog({
 }) {
   const isEdit = question !== null;
   const { sections } = useRfpSections(opportunityId);
+  const { users: realUsers } = useRealUsers();
   const form = useForm<QuestionFormValues>({ resolver: zodResolver(questionFormSchema), defaultValues: EMPTY });
   const type = useWatch({ control: form.control, name: "type" });
 
@@ -78,6 +82,7 @@ export function QuestionFormDialog({
             type: question.type,
             category: question.category,
             sectionId: question.sectionId ?? UNSECTIONED,
+            assigneeId: UNASSIGNED,
             mandatory: question.mandatory,
             priority: question.priority,
             reviewerNotes: question.reviewerNotes ?? "",
@@ -229,6 +234,33 @@ export function QuestionFormDialog({
                   </FormItem>
                 )}
               />
+              {!isEdit && (
+                <FormField
+                  control={form.control}
+                  name="assigneeId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Owner</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                          {realUsers.map((u) => (
+                            <SelectItem key={u.id} value={String(u.id)}>
+                              {realUserName(u)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
             </div>
 
             {SELECT_TYPES.includes(type) && (

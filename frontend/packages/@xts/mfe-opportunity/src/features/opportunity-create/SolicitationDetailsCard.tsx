@@ -115,7 +115,7 @@ export function SolicitationDetailsCard({ variant, compact }: { variant: "questi
         <FormItem>
           <FormLabel>
             Issue date
-            <RequiredMark />
+            {variant === "generic" && <RequiredMark />}
           </FormLabel>
           <FormControl>
             <Input type="date" {...field} />
@@ -133,7 +133,7 @@ export function SolicitationDetailsCard({ variant, compact }: { variant: "questi
         <FormItem>
           <FormLabel>
             Questions due
-            <RequiredMark />
+            {variant === "generic" && <RequiredMark />}
           </FormLabel>
           <FormControl>
             <Input type="date" {...field} />
@@ -151,7 +151,7 @@ export function SolicitationDetailsCard({ variant, compact }: { variant: "questi
         <FormItem>
           <FormLabel>
             Proposal due date
-            <RequiredMark />
+            {variant === "generic" && <RequiredMark />}
           </FormLabel>
           <FormControl>
             <Input type="date" {...field} />
@@ -300,7 +300,7 @@ export function SolicitationDetailsCard({ variant, compact }: { variant: "questi
         <FormItem>
           <FormLabel>
             Vendor demonstration required
-            <RequiredMark />
+            {variant === "generic" && <RequiredMark />}
           </FormLabel>
           <Select value={field.value} onValueChange={field.onChange}>
             <FormControl>

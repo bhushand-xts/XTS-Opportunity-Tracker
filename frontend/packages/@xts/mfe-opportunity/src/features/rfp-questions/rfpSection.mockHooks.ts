@@ -24,6 +24,13 @@ export function useAddRfpSection() {
   return [mutate, { loading: false }] as const;
 }
 
+/** Mirrors: mutation createRfpSectionsBulk(entries: [CreateRfpSectionInput!]!): [RfpSection!]! */
+export function useAddRfpSectionsBulk() {
+  const { addSectionsBulk } = useStore();
+  const mutate = (entries: Omit<RfpSection, "id">[]) => Promise.resolve(addSectionsBulk(entries));
+  return [mutate, { loading: false }] as const;
+}
+
 /** Mirrors: mutation updateRfpSection(id: Int!, input: UpdateRfpSectionInput!): RfpSection! */
 export function useUpdateRfpSection() {
   const { updateSection } = useStore();

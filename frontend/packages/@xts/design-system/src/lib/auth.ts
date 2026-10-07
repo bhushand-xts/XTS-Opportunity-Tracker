@@ -34,6 +34,7 @@ interface Session {
   userId: string;
   email: string;
   token: string;
+  roleId: number | null;
 }
 
 interface AuthState {
@@ -63,7 +64,7 @@ function normalizeState(parsed: unknown): AuthState {
 
 function stateFromPayload({ user, token }: AuthPayload): AuthState {
   return {
-    session: { userId: String(user.id), email: user.email, token },
+    session: { userId: String(user.id), email: user.email, token, roleId: user.roleId },
     // The backend's User type has no status/roles yet (mst_user has
     // is_active: boolean and a single role_id), so they are not requested
     // (see auth.queries.ts). Synthesize safe defaults: status always passes
@@ -187,7 +188,7 @@ export function useAuth() {
     // real OIDC/SAML flow before shipping.
     signInWithSso() {
       const next: AuthState = {
-        session: { userId: "sso-demo", email: "bdixit@xtsworld.in", token: "demo-sso-token" },
+        session: { userId: "sso-demo", email: "bdixit@xtsworld.in", token: "demo-sso-token", roleId: null },
         profile: { first_name: "B", last_name: "Dixit", status: "approved" },
         roles: ["System Admin"],
       };

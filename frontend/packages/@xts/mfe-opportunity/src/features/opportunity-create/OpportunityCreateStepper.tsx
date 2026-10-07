@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 import { cn } from "@xts/design-system";
 
-const STEPS = ["Details & type", "Intake", "Review"] as const;
+const STEPS = ["Details & Type", "Upload & Extract", "Respond"] as const;
 
 export function OpportunityCreateStepper({ current }: { current: 0 | 1 | 2 }) {
   return (

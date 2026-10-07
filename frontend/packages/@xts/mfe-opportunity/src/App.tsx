@@ -2,8 +2,12 @@ import { ApolloProvider } from "@apollo/client";
 import { BrowserRouter, Navigate, Route, Routes, useInRouterContext } from "react-router-dom";
 import { getApolloClient } from "@xts/api-client";
 import { AppShell, AuthGate, Toaster } from "@xts/design-system";
+import { OpportunityAccessGate } from "./OpportunityAccessGate";
+import { DashboardPlaceholderPage } from "./features/dashboard/DashboardPlaceholderPage";
 import { IntakeRouter } from "./features/opportunity-create/IntakeRouter";
 import { Step1Details } from "./features/opportunity-create/Step1Details";
+import { OpportunityDetailRoute } from "./features/opportunity-detail/OpportunityDetailRoute";
+import { OpportunityListPage } from "./features/pipeline/OpportunityListPage";
 import { PipelineBoard } from "./features/pipeline/PipelineBoard";
 import { ProposalOutlineRoute } from "./features/proposal-outline/ProposalOutlineRoute";
 import { AnswerWorkspaceRoute } from "./features/rfp-questions/AnswerWorkspaceRoute";
@@ -19,16 +23,22 @@ import { QuestionReviewRoute } from "./features/rfp-questions/QuestionReviewRout
 // addresses it by id — no wizard-context hand-off needed past Step 1.
 function OpportunityRoutes() {
   return (
-    <Routes>
-      <Route index element={<PipelineBoard />} />
-      <Route path="new" element={<Step1Details />} />
-      <Route path=":opportunityId/intake" element={<IntakeRouter />} />
-      <Route path=":opportunityId/questions" element={<QuestionReviewRoute />} />
-      <Route path=":opportunityId/questions/:questionId/answer" element={<AnswerWorkspaceRoute />} />
-      <Route path=":opportunityId/final-response" element={<FinalResponseRoute />} />
-      <Route path=":opportunityId/progress" element={<ProgressDashboardRoute />} />
-      <Route path=":opportunityId/proposal-outline" element={<ProposalOutlineRoute />} />
-    </Routes>
+    <OpportunityAccessGate>
+      <Routes>
+        <Route index element={<PipelineBoard />} />
+        <Route path="new" element={<Step1Details />} />
+        <Route path="dashboard" element={<DashboardPlaceholderPage />} />
+        <Route path="all" element={<OpportunityListPage mineOnly={false} />} />
+        <Route path="mine" element={<OpportunityListPage mineOnly={true} />} />
+        <Route path=":opportunityId" element={<OpportunityDetailRoute />} />
+        <Route path=":opportunityId/intake" element={<IntakeRouter />} />
+        <Route path=":opportunityId/questions" element={<QuestionReviewRoute />} />
+        <Route path=":opportunityId/questions/:questionId/answer" element={<AnswerWorkspaceRoute />} />
+        <Route path=":opportunityId/final-response" element={<FinalResponseRoute />} />
+        <Route path=":opportunityId/progress" element={<ProgressDashboardRoute />} />
+        <Route path=":opportunityId/proposal-outline" element={<ProposalOutlineRoute />} />
+      </Routes>
+    </OpportunityAccessGate>
   );
 }
 

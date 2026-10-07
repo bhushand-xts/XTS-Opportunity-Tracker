@@ -180,10 +180,10 @@ export interface SolicitationDetails {
   solicitationNumber: string;
   issuingAgency: string;
   procurementContact: string;
-  issueDate: string;
+  issueDate?: string;
   version?: string;
-  questionsDue: string;
-  proposalDueDate: string;
+  questionsDue?: string;
+  proposalDueDate?: string;
   submissionDeadline: string;
   additionalDeadline?: string;
   additionalDeadlineLabel?: string;
@@ -192,7 +192,7 @@ export interface SolicitationDetails {
   submissionEmail?: string;
   submissionAddress?: string;
   instructions?: string;
-  vendorDemonstrationRequired: VendorDemoOption;
+  vendorDemonstrationRequired?: VendorDemoOption;
   submissionRequirements?: string;
   opportunityOverview?: string;
   scopeOfWork?: string;
@@ -267,6 +267,18 @@ export interface RfpSection {
 export const ASSIGNMENT_STATUSES = ["Unassigned", "Assigned", "Reassigned"] as const;
 export type AssignmentStatus = (typeof ASSIGNMENT_STATUSES)[number];
 
+/** The team/department a question is routed to, alongside its individual
+ * owner — no backend field for this exists yet (real users carry no team),
+ * so this is a standalone fixed list, same as RFP_QUESTION_CATEGORIES. */
+export const RFP_QUESTION_TEAMS = [
+  "Engineering",
+  "Sales",
+  "Legal / Compliance",
+  "Finance",
+  "Product",
+  "Operations",
+] as const;
+
 // The answer's own lifecycle (Stages 8-9) — distinct from `reviewStatus`
 // (is the question itself vetted) and `assignmentStatus` (is it assigned to
 // someone). Collapses the business spec's ANSWER_SUBMITTED/UNDER_REVIEW into
@@ -305,6 +317,7 @@ export interface RfpQuestionItem {
   dueDate?: string;
   assignmentNotes?: string;
   assignmentStatus: AssignmentStatus;
+  team?: string;
   // Answer Workspace / Internal Review (Stages 8-9). answerOptions configures
   // Single/Multi Select's picker; answerValues is Multi Select only, every
   // other text-like type (including Structured Table's simplified fallback)
