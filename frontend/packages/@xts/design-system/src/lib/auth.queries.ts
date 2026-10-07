@@ -1,12 +1,11 @@
 import { gql } from "@apollo/client";
 
-// roleId is already in the backend's User GraphQL type, but the login/
-// register resolvers don't populate it yet (see auth.service.ts) — it comes
-// back null until that's fixed, which is fine: stateFromPayload stores
-// whatever it gets, and the menu-access hook (lib/access.ts) already treats
-// a null roleId as "no access", so this is a safe no-op until then. See
-// auth.ts's stateFromPayload for how profile.status is synthesized instead
-// of read from the response (no status concept exists on User yet).
+// Only fields the real backend's User type currently defines (id, email,
+// firstName, lastName, roleId) — it has no status concept yet (mst_user has
+// is_active: boolean, not this richer shape). See auth.ts's stateFromPayload
+// for how profile.status is synthesized instead of read from the response.
+// roleId identifies a row in the admin service's mst_roles — resolved to a
+// display name separately via ROLE_NAME, since it lives in another subgraph.
 const AUTH_PAYLOAD_FIELDS = gql`
   fragment AuthPayloadFields on AuthPayload {
     token
@@ -36,4 +35,50 @@ export const REGISTER = gql`
     }
   }
   ${AUTH_PAYLOAD_FIELDS}
+`;
+
+// Changes the signed-in user's own password. Always targets the caller — the
+// server derives who's calling from the login token, not a client-supplied id.
+export const CHANGE_PASSWORD = gql`
+  mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
+    changePassword(currentPassword: $currentPassword, newPassword: $newPassword)
+  }
+`;
+
+// Emails a reset link if the address has an account. Always resolves the same
+// way (true) regardless of whether the email exists — see auth.service.ts.
+export const REQUEST_PASSWORD_RESET = gql`
+  mutation RequestPasswordReset($email: String!) {
+    requestPasswordReset(email: $email)
+  }
+`;
+
+// Completes a reset using the token from the emailed link.
+export const RESET_PASSWORD = gql`
+  mutation ResetPassword($token: String!, $newPassword: String!) {
+    resetPassword(token: $token, newPassword: $newPassword)
+  }
+`;
+
+// The signed-in user's role name, resolved from the admin service by roleId.
+export const ROLE_NAME = gql`
+  query RoleName($id: Int!) {
+    role(id: $id) {
+      roleName
+    }
+  }
+`;
+
+// Every (menu, permission) grant the signed-in user's role holds — the real
+// data behind hasPermission()/hasMenuAccess() in auth.ts. menuKey/permissionKey
+// (not the numeric ids) are what the app keys its checks on, since those stay
+// stable across environments while ids don't (see mst_menus.menu_key,
+// mst_permissions.permission_key).
+export const ROLE_ACCESS = gql`
+  query RoleAccessForAuth($roleId: Int!) {
+    roleAccess(roleId: $roleId) {
+      menuKey
+      permissionKey
+    }
+  }
 `;

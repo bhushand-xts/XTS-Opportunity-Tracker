@@ -1,6 +1,9 @@
+import { useMemo } from "react";
 import type { Permission, PermissionHistory } from "@xts/api-contracts";
 import { Badge } from "@xts/design-system";
 import { HistoryDialog, type HistoryField } from "../../components/HistoryDialog";
+import { buildUserResolver } from "../../lib/format";
+import { useUsers } from "../user-role-assignment/useUsers";
 import { usePermissionHistory } from "./usePermissionHistory";
 
 const FIELDS: HistoryField<PermissionHistory>[] = [
@@ -22,6 +25,8 @@ export function PermissionHistoryDialog({
   onClose: () => void;
 }) {
   const { history, loading, error } = usePermissionHistory(permission?.permissionId);
+  const { users } = useUsers();
+  const resolveUser = useMemo(() => buildUserResolver(users), [users]);
 
   return (
     <HistoryDialog
@@ -32,6 +37,7 @@ export function PermissionHistoryDialog({
       fields={FIELDS}
       loading={loading}
       error={error}
+      resolveUser={resolveUser}
     />
   );
 }

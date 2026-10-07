@@ -1,6 +1,9 @@
+import { useMemo } from "react";
 import type { RfpQuestion, RfpQuestionHistory } from "@xts/api-contracts";
 import { Badge } from "@xts/design-system";
 import { HistoryDialog, type HistoryField } from "../../components/HistoryDialog";
+import { buildUserResolver } from "../../lib/format";
+import { useUsers } from "../user-role-assignment/useUsers";
 import { useRfpQuestionHistory } from "./useRfpQuestionHistory";
 
 const FIELDS: HistoryField<RfpQuestionHistory>[] = [
@@ -16,6 +19,8 @@ const FIELDS: HistoryField<RfpQuestionHistory>[] = [
 
 export function RfpQuestionHistoryDialog({ question, onClose }: { question: RfpQuestion | null; onClose: () => void }) {
   const { history, loading, error } = useRfpQuestionHistory(question?.id);
+  const { users } = useUsers();
+  const resolveUser = useMemo(() => buildUserResolver(users), [users]);
 
   return (
     <HistoryDialog
@@ -26,6 +31,7 @@ export function RfpQuestionHistoryDialog({ question, onClose }: { question: RfpQ
       fields={FIELDS}
       loading={loading}
       error={error}
+      resolveUser={resolveUser}
     />
   );
 }

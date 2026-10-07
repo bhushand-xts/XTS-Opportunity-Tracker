@@ -14,7 +14,7 @@ module.exports = {
     // at a different origin/port) that load it via remoteEntry.js. A
     // root-relative "/" would resolve this remote's own chunk requests
     // against whichever page is hosting it, not against this dev server.
-    publicPath: "http://localhost:3001/",
+    publicPath: `${process.env.ADMIN_REMOTE_URL || "http://localhost:3001"}/`,
     clean: true,
   },
   devServer: {

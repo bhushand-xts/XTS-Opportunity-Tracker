@@ -28,3 +28,17 @@ CREATE TABLE auth_session (
 );
 
 CREATE INDEX idx_auth_session_token_hash ON auth_session(token_hash);
+
+-- Forgot-password tokens. Same shape as auth_session (only a hash of the raw
+-- token is ever stored) — see auth.service.ts's requestPasswordReset/resetPassword.
+-- used_at makes a token single-use; expires_at gives it a short lifetime.
+CREATE TABLE password_reset_token (
+  token_id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES mst_user(user_id) ON DELETE CASCADE,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP,
+  created_dt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_password_reset_token_hash ON password_reset_token(token_hash);

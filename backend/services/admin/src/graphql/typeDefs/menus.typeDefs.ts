@@ -7,6 +7,7 @@ export const menuTypeDefs = `#graphql
     icon: String
     parentId: Int
     sortOrder: Int!
+    routePath: String
     createdDt: String!
     createdBy: Int!
     updatedDt: String
@@ -21,6 +22,7 @@ export const menuTypeDefs = `#graphql
     icon: String
     parentId: Int
     sortOrder: Int!
+    routePath: String
     createdBy: Int
   }
 
@@ -30,6 +32,7 @@ export const menuTypeDefs = `#graphql
     icon: String
     parentId: Int
     sortOrder: Int
+    routePath: String
     updatedBy: Int
   }
 

@@ -1,6 +1,9 @@
+import { useMemo } from "react";
 import type { Role, RoleHistory } from "@xts/api-contracts";
 import { Badge } from "@xts/design-system";
 import { HistoryDialog, type HistoryField } from "../../components/HistoryDialog";
+import { buildUserResolver } from "../../lib/format";
+import { useUsers } from "../user-role-assignment/useUsers";
 import { useRoleHistory } from "./useRoleHistory";
 
 const FIELDS: HistoryField<RoleHistory>[] = [
@@ -16,6 +19,8 @@ const FIELDS: HistoryField<RoleHistory>[] = [
 
 export function RoleHistoryDialog({ role, onClose }: { role: Role | null; onClose: () => void }) {
   const { history, loading, error } = useRoleHistory(role?.id);
+  const { users } = useUsers();
+  const resolveUser = useMemo(() => buildUserResolver(users), [users]);
 
   return (
     <HistoryDialog
@@ -26,6 +31,7 @@ export function RoleHistoryDialog({ role, onClose }: { role: Role | null; onClos
       fields={FIELDS}
       loading={loading}
       error={error}
+      resolveUser={resolveUser}
     />
   );
 }

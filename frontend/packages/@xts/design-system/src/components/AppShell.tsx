@@ -1,21 +1,28 @@
+import { useQuery } from "@apollo/client";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Bell,
-  Briefcase,
+  Building2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
-  Columns3,
+  ClipboardList,
   FileQuestion,
+  FlaskConical,
+  GitBranch,
   Key,
+  KeyRound,
+  Layers,
   LayoutDashboard,
   Link2,
   List,
-  MessageSquareText,
+  ListChecks,
+  ListOrdered,
+  Menu as MenuLucideIcon,
+  Milestone,
   Plus,
-  Search,
   Settings,
   Share2,
   Shield,
@@ -23,12 +30,14 @@ import {
   User,
   UserCog,
   Users,
+  Workflow,
+  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,8 +62,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { OPPORTUNITY_MENU_KEY, useMenuAccess } from "@/lib/access";
-import { ROLE_LABEL, useAuth, type AppPermission } from "@/lib/auth";
+import { useAuth, type AppPermission } from "@/lib/auth";
+import { GET_NAV_MENUS } from "@/lib/nav.queries";
 import { usePageTitle } from "@/lib/pageTitle";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -94,28 +103,248 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "User Role Assignment", to: "/admin/user-management/user-role-assignment", icon: UserCog },
     ],
   },
-];
-
-// Opportunities is core Sales/BD functionality, not an admin feature, so —
-// unlike Administration/RFP below — this group isn't gated behind can("admin").
-const OPPORTUNITIES_NAV: NavLeaf[] = [
-  { label: "All Opportunities", to: "/opportunities/all", icon: Table2 },
-  { label: "New Opportunity", to: "/opportunities/new", icon: Plus },
-  { label: "My Opportunities", to: "/opportunities/mine", icon: User },
-  { label: "Pipeline", to: "/opportunities", icon: Columns3 },
-];
-
-// RFP gets its own top-level sidebar tab (alongside Dashboard and
-// Administration) rather than living inside Administration's submenu — a
-// product decision, not a permissions change, so it still uses the same
-// can("admin") gate as Administration.
-const RFP_NAV: NavLeaf[] = [
   {
-    label: "Generic RFP Question Master",
-    to: "/admin/rfp-management/generic-rfp-question-master",
+    label: "Estimate Management",
+    icon: ClipboardList,
+    items: [
+      { label: "Estimate Phase Master", to: "/admin/estimate-management/estimate-phase-master", icon: ListOrdered },
+      { label: "Currency Master", to: "/admin/estimate-management/currency-master", icon: Table2 },
+      { label: "Technical Roles and Rate Master", to: "/admin/estimate-management/rate-master", icon: Table2 },
+      { label: "Reason Code Master", to: "/admin/estimate-management/reason-code-master", icon: ListChecks },
+      { label: "Account Type Master", to: "/admin/estimate-management/account-type-master", icon: Layers },
+      { label: "Industry Master", to: "/admin/estimate-management/industry-master", icon: Building2 },
+    ],
+  },
+  {
+    label: "Stage Management",
+    icon: Workflow,
+    items: [
+      { label: "Stage Master", to: "/admin/stage-management/stage-master", icon: Milestone },
+      { label: "Sub Stage Master", to: "/admin/stage-management/sub-stage-master", icon: GitBranch },
+    ],
+  },
+  {
+    label: "RFP Management",
     icon: FileQuestion,
+    items: [
+      { label: "Generic RFP Question Master", to: "/admin/rfp-management/generic-rfp-question-master", icon: FileQuestion },
+    ],
   },
 ];
+
+// ---------------------------------------------------------------------
+// Dynamic Nav (Preview) — built live from mst_menus (via the Menu Master
+// admin screen) instead of the hand-written ADMIN_NAV above. Runs alongside
+// the static nav so the two can be compared menu-by-menu before ADMIN_NAV is
+// deleted and this becomes the only nav. Visible only behind the ?devNav=1
+// flag (see useDevNavPreview) — regular users never see it.
+// ---------------------------------------------------------------------
+
+interface NavMenuNode {
+  menuId: number;
+  menuName: string;
+  menuKey: string;
+  icon: string | null;
+  parentId: number | null;
+  sortOrder: number;
+  routePath: string | null;
+  isActive: boolean;
+  children?: NavMenuNode[];
+}
+
+/** Curated lookup for mst_menus.icon, mirroring mfe-admin's Menu Master (its
+ * own copy, in ICON_OPTIONS there) — design-system can't import from an MFE.
+ * Includes every icon the real admin menus use, so the preview matches the
+ * static sidebar's icons exactly. */
+const DYNAMIC_NAV_ICONS: Record<string, LucideIcon> = {
+  LayoutDashboard,
+  Settings,
+  ShieldCheck: Shield,
+  Shield,
+  Users,
+  ListChecks,
+  Layers,
+  Menu: MenuLucideIcon,
+  Table2,
+  Key,
+  Link2,
+  Share2,
+  UserCog,
+  ClipboardList,
+  ListOrdered,
+  FileQuestion,
+};
+function resolveDynamicNavIcon(name: string | null): LucideIcon {
+  return (name && DYNAMIC_NAV_ICONS[name]) || List;
+}
+
+/** Keeps a menu (and its children, recursively) only if it's active and
+ * either directly accessible (has a route and the role holds a permission on
+ * it) or has at least one accessible descendant — so a group isn't hidden
+ * just because it has no permission of its own. */
+function filterAccessibleTree(menu: NavMenuNode, hasMenuAccess: (menuKey: string) => boolean): NavMenuNode | null {
+  if (!menu.isActive) return null;
+  const children = (menu.children ?? [])
+    .map((child) => filterAccessibleTree(child, hasMenuAccess))
+    .filter((child): child is NavMenuNode => child !== null)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const selfAccessible = Boolean(menu.routePath) && hasMenuAccess(menu.menuKey);
+  if (!selfAccessible && children.length === 0) return null;
+  return { ...menu, children };
+}
+
+/** On, only for this browser, once `?devNav=1` has been visited — `?devNav=0`
+ * turns it back off. Lets you flip it on while testing without a code change,
+ * while regular users (and you, by default) never see the preview section. */
+function useDevNavPreview(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const flag = new URLSearchParams(window.location.search).get("devNav");
+    if (flag === "1") window.localStorage.setItem("devNavPreview", "1");
+    if (flag === "0") window.localStorage.removeItem("devNavPreview");
+    setOn(window.localStorage.getItem("devNavPreview") === "1");
+  }, []);
+  return on;
+}
+
+/** Whether `pathname` matches this menu's own route or any descendant's —
+ * used to auto-expand a branch that contains the current page, same as the
+ * static nav's activeGroupLabel does for AdminNavGroup. */
+function containsRoute(menu: NavMenuNode, pathname: string): boolean {
+  if (menu.routePath === pathname) return true;
+  return (menu.children ?? []).some((child) => containsRoute(child, pathname));
+}
+
+/** One node of the dynamic tree: a link if it has no children, otherwise a
+ * collapsible group — same expand/collapse interaction as AdminNavGroup in
+ * the static nav. Top-level siblings are accordioned one-open-at-a-time by
+ * DynamicNavPreview (via the optional open/onOpenChange below); a node
+ * rendering its own children lower in the tree falls back to independent,
+ * self-managed state, since only the top level had this requested. Starts
+ * open when the current page is somewhere inside it, and re-expands if
+ * navigation moves into it. */
+function DynamicNavNode({
+  menu,
+  pathname,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+}: {
+  menu: NavMenuNode;
+  pathname: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const Icon = resolveDynamicNavIcon(menu.icon);
+  const children = menu.children ?? [];
+  const hasChildren = children.length > 0;
+  const active = !hasChildren && menu.routePath !== null && pathname === menu.routePath;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(() => containsRoute(menu, pathname));
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = controlledOnOpenChange ?? setUncontrolledOpen;
+  useEffect(() => {
+    if (containsRoute(menu, pathname)) setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, menu.menuId]);
+
+  if (!hasChildren) {
+    return (
+      <li>
+        <Link
+          to={menu.routePath ?? "#"}
+          className={cn(
+            "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors",
+            active ? "bg-sidebar-accent font-medium text-rail-active" : "text-sidebar-foreground hover:bg-sidebar-accent",
+          )}
+        >
+          <Icon className="size-4 shrink-0" />
+          <span className="truncate">{menu.menuName}</span>
+        </Link>
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <Collapsible open={open} onOpenChange={setOpen} className="group/dyn-node">
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-sidebar-foreground hover:bg-sidebar-accent"
+          >
+            <Icon className="size-4 shrink-0" />
+            <span className="flex-1 truncate text-left">{menu.menuName}</span>
+            <ChevronDown className="size-3.5 shrink-0 transition-transform group-data-[state=open]/dyn-node:rotate-180" />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <ul className="ml-3.5 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2.5">
+            {children.map((child) => (
+              <DynamicNavNode key={child.menuId} menu={child} pathname={pathname} />
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </Collapsible>
+    </li>
+  );
+}
+
+function DynamicNavPreview({
+  pathname,
+  hasMenuAccess,
+}: {
+  pathname: string;
+  hasMenuAccess: (menuKey: string) => boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const { data } = useQuery<{ menus: NavMenuNode[] }>(GET_NAV_MENUS, { fetchPolicy: "cache-and-network" });
+
+  const tree = (data?.menus ?? [])
+    .map((menu) => filterAccessibleTree(menu, hasMenuAccess))
+    .filter((menu): menu is NavMenuNode => menu !== null)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Accordion across top-level menus only — opening one closes whichever
+  // other top-level menu was open, same one-at-a-time behavior as the
+  // static nav's AdminNavGroup siblings.
+  const activeTopMenuId = tree.find((menu) => containsRoute(menu, pathname))?.menuId ?? null;
+  const [openTopMenuId, setOpenTopMenuId] = useState<number | null>(activeTopMenuId);
+  useEffect(() => {
+    if (activeTopMenuId !== null) setOpenTopMenuId(activeTopMenuId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="group/dynnav mt-2 border-t border-sidebar-border pt-2">
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuButton tooltip="Dynamic Nav (Preview)">
+            <FlaskConical />
+            <span>Dynamic Nav (Preview)</span>
+            <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/dynnav:rotate-180" />
+          </SidebarMenuButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <ul className="ml-2 mt-1 flex flex-col gap-0.5 px-2">
+            {tree.length === 0 && (
+              <li className="px-2 py-1.5 text-[13px] text-sidebar-foreground/60">
+                Nothing to show — no menu has both a Route Path and a permission granted to this role yet.
+              </li>
+            )}
+            {tree.map((menu) => (
+              <DynamicNavNode
+                key={menu.menuId}
+                menu={menu}
+                pathname={pathname}
+                open={openTopMenuId === menu.menuId}
+                onOpenChange={(isOpen) => setOpenTopMenuId(isOpen ? menu.menuId : null)}
+              />
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
+  );
+}
 
 function NotificationsPanel() {
   const { notifications, markAllRead } = useStore();
@@ -125,9 +354,7 @@ function NotificationsPanel() {
       <SheetTrigger asChild>
         <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
           <Bell className="size-[18px]" />
-          {unread > 0 && (
-            <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />
-          )}
+          {unread > 0 && <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />}
         </Button>
       </SheetTrigger>
       <SheetContent className="w-[380px] p-0">
@@ -181,21 +408,45 @@ function MidSidebarToggle() {
   );
 }
 
-function AdminNavGroup({ group, pathname }: { group: NavGroup; pathname: string }) {
-  const hasActiveItem = group.items.some((item) => pathname === item.to);
-  // Open on its own when you land on one of its pages (from a link, a
-  // redirect or a reload), but stay under your control afterwards.
-  const [open, setOpen] = useState(hasActiveItem);
-  useEffect(() => {
-    if (hasActiveItem) setOpen(true);
-  }, [hasActiveItem]);
+/** The only way to open the sidebar on mobile — it renders as an off-canvas
+ * Sheet there, and MidSidebarToggle lives inside the Sidebar itself, so it's
+ * hidden along with everything else while the Sheet is closed. This sits in
+ * the main header instead (a sibling, not a descendant, of the Sidebar), so
+ * it's reachable even when the drawer is shut. Desktop already has
+ * MidSidebarToggle for this, so this one only shows below md. */
+function MobileSidebarTrigger() {
+  const { toggleSidebar } = useSidebar();
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="group/nav-group">
+    <Button
+      variant="ghost"
+      size="icon"
+      className="shrink-0 md:hidden"
+      aria-label="Open menu"
+      onClick={toggleSidebar}
+    >
+      <MenuLucideIcon className="size-5" />
+    </Button>
+  );
+}
+
+function AdminNavGroup({
+  group,
+  pathname,
+  open,
+  onOpenChange,
+}: {
+  group: NavGroup;
+  pathname: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange} className="group/nav-group">
       <SidebarMenuSubItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuSubButton className="h-auto min-h-7 cursor-pointer whitespace-normal py-1.5">
-            <group.icon className="size-4" />
-            <span className="flex-1">{group.label}</span>
+          <SidebarMenuSubButton className="h-auto min-h-7 cursor-pointer py-1.5 text-[13px] font-medium tracking-tight">
+            <group.icon className="size-4 shrink-0" />
+            <span className="flex-1 truncate">{group.label}</span>
             <ChevronDown className="size-3.5 shrink-0 transition-transform group-data-[state=open]/nav-group:rotate-180" />
           </SidebarMenuSubButton>
         </CollapsibleTrigger>
@@ -208,14 +459,14 @@ function AdminNavGroup({ group, pathname }: { group: NavGroup; pathname: string 
                   <Link
                     to={item.to}
                     className={cn(
-                      "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                      "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors",
                       active
-                        ? "bg-rail-active/15 font-medium text-rail-active"
+                        ? "bg-sidebar-accent font-medium text-rail-active"
                         : "text-sidebar-foreground hover:bg-sidebar-accent",
                     )}
                   >
                     <item.icon className="size-4 shrink-0" />
-                    {item.label}
+                    <span className="truncate">{item.label}</span>
                   </Link>
                 </li>
               );
@@ -227,14 +478,16 @@ function AdminNavGroup({ group, pathname }: { group: NavGroup; pathname: string 
   );
 }
 
-function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boolean; pathname: string }) {
-  // RFP routes are still mounted under /admin/* (mfe-admin owns the page),
-  // but RFP is its own sidebar tab now — excluded here so the two tabs'
-  // active-highlight and auto-expand don't both fire on an RFP page.
-  const onRfp = pathname.startsWith("/admin/rfp-management");
-  const onAdmin = pathname.startsWith("/admin") && !onRfp;
-  const onDashboard = pathname === "/opportunities/dashboard";
-  const onOpportunities = pathname.startsWith("/opportunities") && !onDashboard;
+function AppSidebar({
+  can,
+  hasMenuAccess,
+  pathname,
+}: {
+  can: (permission: AppPermission) => boolean;
+  hasMenuAccess: (menuKey: string) => boolean;
+  pathname: string;
+}) {
+  const onAdmin = pathname.startsWith("/admin");
   const [adminOpen, setAdminOpen] = useState(onAdmin);
   const [rfpOpen, setRfpOpen] = useState(onRfp);
   const [opportunitiesOpen, setOpportunitiesOpen] = useState(onOpportunities);
@@ -243,12 +496,17 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
   useEffect(() => {
     if (onAdmin) setAdminOpen(true);
   }, [onAdmin]);
+  const showDynamicPreview = useDevNavPreview();
+
+  // Accordion: at most one Administration sub-group open at a time. Landing
+  // on one of its pages switches to that group and closes the others; opening
+  // a group by hand also closes whichever one was open.
+  const activeGroupLabel = ADMIN_NAV.find((group) => group.items.some((item) => pathname === item.to))?.label ?? null;
+  const [openGroupLabel, setOpenGroupLabel] = useState<string | null>(activeGroupLabel);
   useEffect(() => {
-    if (onRfp) setRfpOpen(true);
-  }, [onRfp]);
-  useEffect(() => {
-    if (onOpportunities) setOpportunitiesOpen(true);
-  }, [onOpportunities]);
+    if (activeGroupLabel) setOpenGroupLabel(activeGroupLabel);
+  }, [activeGroupLabel]);
+
   return (
     <Sidebar collapsible="icon">
       {/* No positioning wrapper here on purpose — absolute resolves against
@@ -262,8 +520,8 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
           at the sidebar's edge, reading as one continuous top bar. */}
       <SidebarHeader className="flex h-14 flex-row items-center gap-2 border-b border-sidebar-border px-3 py-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
         <Link
-          to="/opportunities"
-          className="grid size-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-from to-brand-to text-[13px] font-bold text-brand-foreground"
+          to="/dashboard"
+          className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-from text-[13px] font-bold text-brand-foreground"
         >
           XTS
         </Link>
@@ -273,60 +531,19 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu className="px-2 pt-2">
-          {canSeeOpportunities && (
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={onDashboard}
-                tooltip="Dashboard"
-                className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
-              >
-                <Link to="/opportunities/dashboard">
-                  <LayoutDashboard />
-                  <span>Dashboard</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          )}
-
-          {canSeeOpportunities && (
-            <Collapsible open={opportunitiesOpen} onOpenChange={setOpportunitiesOpen} className="group/opportunities">
-              <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton
-                    isActive={onOpportunities}
-                    tooltip="Opportunities"
-                    className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
-                  >
-                    <Briefcase />
-                    <span>Opportunities</span>
-                    <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/opportunities:rotate-180" />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {OPPORTUNITIES_NAV.map((item) => {
-                      const active = pathname === item.to;
-                      return (
-                        <SidebarMenuSubItem key={item.to}>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={active}
-                            className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
-                          >
-                            <Link to={item.to}>
-                              <item.icon className="size-4" />
-                              <span>{item.label}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      );
-                    })}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
-          )}
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith("/dashboard")}
+              tooltip="Dashboard"
+              className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
+            >
+              <Link to="/dashboard">
+                <LayoutDashboard />
+                <span>Dashboard</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
 
           {can("admin") && (
             <Collapsible open={adminOpen} onOpenChange={setAdminOpen} className="group/admin">
@@ -335,7 +552,7 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
                   <SidebarMenuButton
                     isActive={onAdmin}
                     tooltip="Administration"
-                    className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
+                    className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
                   >
                     <Settings />
                     <span>Administration</span>
@@ -345,7 +562,13 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
                 <CollapsibleContent>
                   <SidebarMenuSub>
                     {ADMIN_NAV.map((group) => (
-                      <AdminNavGroup key={group.label} group={group} pathname={pathname} />
+                      <AdminNavGroup
+                        key={group.label}
+                        group={group}
+                        pathname={pathname}
+                        open={openGroupLabel === group.label}
+                        onOpenChange={(open) => setOpenGroupLabel(open ? group.label : null)}
+                      />
                     ))}
                   </SidebarMenuSub>
                 </CollapsibleContent>
@@ -353,45 +576,7 @@ function AppSidebar({ can, pathname }: { can: (permission: AppPermission) => boo
             </Collapsible>
           )}
 
-          {can("admin") && (
-            <Collapsible open={rfpOpen} onOpenChange={setRfpOpen} className="group/rfp">
-              <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton
-                    isActive={onRfp}
-                    tooltip="RFP"
-                    className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
-                  >
-                    <MessageSquareText />
-                    <span>RFP</span>
-                    <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/rfp:rotate-180" />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {RFP_NAV.map((item) => {
-                      const active = pathname === item.to;
-                      return (
-                        <SidebarMenuSubItem key={item.to}>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={active}
-                            className="data-[active=true]:bg-rail-active/15 data-[active=true]:text-rail-active"
-                          >
-                            <Link to={item.to}>
-                              <item.icon className="size-4" />
-                              <span>{item.label}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      );
-                    })}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
-          )}
-
+          {can("admin") && showDynamicPreview && <DynamicNavPreview pathname={pathname} hasMenuAccess={hasMenuAccess} />}
         </SidebarMenu>
       </SidebarContent>
     </Sidebar>
@@ -402,56 +587,29 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
   const location = useLocation();
   const navigate = useNavigate();
   // Who may see the app at all is decided by <AuthGate> in front of this component.
-  const { profile, roles, signOut, can } = useAuth();
-  const { currentUser, search, setSearch } = useStore();
+  const { profile, roleName, signOut, can, hasMenuAccess } = useAuth();
+  const { currentUser } = useStore();
   const [helpOpen, setHelpOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const pageTitle = usePageTitle();
   // Pipeline and Admin overview are the two "home" screens — there's nothing
   // logical to go back to from either, so the back button only shows once
   // you've navigated somewhere deeper.
   const isHome = location.pathname === "/opportunities" || location.pathname === "/admin";
 
-  // roles is always [] against the real backend today (no role-name lookup
-  // exposed via GraphQL yet — only an unresolved role_id) — this label
-  // describes "no role name available," not an account-approval state.
-  const displayRole = roles?.[0] ? ROLE_LABEL[roles[0]] : "No role assigned";
-  const displayName = profile
-    ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || currentUser.name
-    : currentUser.name;
-  // Indexed per character, so a profile stored by an older build (whose shape
-  // readStoredState casts blindly) can leave these undefined rather than "".
-  const initials = profile
-    ? `${profile.first_name?.[0] ?? ""}${profile.last_name?.[0] ?? ""}`.toUpperCase()
-    : currentUser.initials;
+  const displayRole = roleName ?? "No role assigned";
+  const displayName = profile ? `${profile.first_name} ${profile.last_name}` : currentUser.name;
+  const initials = profile ? `${profile.first_name[0] ?? ""}${profile.last_name[0] ?? ""}`.toUpperCase() : currentUser.initials;
 
   return (
     <TooltipProvider delayDuration={120}>
       <SidebarProvider>
-        <AppSidebar can={can} pathname={location.pathname} />
+        <AppSidebar can={can} hasMenuAccess={hasMenuAccess} pathname={location.pathname} />
         <SidebarInset>
-          <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b bg-card px-5">
-            {!isHome && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 shrink-0"
-                aria-label="Back to previous page"
-                onClick={() => navigate(-1)}
-              >
-                <ArrowLeft className="size-4" />
-              </Button>
-            )}
-            <h1 className="shrink-0 text-[15px] font-semibold tracking-tight">{pageTitle}</h1>
-            <div className="relative mx-auto w-full max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search opportunities, customers, contacts"
-                className="h-9 rounded-full pl-9 text-[13px]"
-              />
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
+          <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-card px-3 sm:gap-4 sm:px-5">
+            <MobileSidebarTrigger />
+            <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight">{pageTitle}</h1>
+            <div className="flex shrink-0 items-center gap-1 ml-auto">
               {actions}
               <NotificationsPanel />
               <Button variant="ghost" size="icon" aria-label="Help" onClick={() => setHelpOpen((v) => !v)}>
@@ -459,13 +617,13 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="ml-1 flex items-center gap-2 rounded-full py-1 pl-1 pr-3 transition-colors hover:bg-muted">
+                  <button className="ml-1 flex items-center gap-2 rounded-full py-1 pl-1 pr-1 transition-colors hover:bg-muted sm:pr-3">
                     <Avatar className="size-7">
                       <AvatarFallback className="bg-accent text-[11px] font-semibold text-accent-foreground">
                         {initials}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-left leading-tight">
+                    <span className="hidden text-left leading-tight sm:inline">
                       <span className="block text-[12px] font-medium">{displayName}</span>
                       <span className="block text-[11px] text-muted-foreground">{displayRole}</span>
                     </span>
@@ -475,6 +633,10 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
                   <DropdownMenuLabel className="text-xs text-muted-foreground">Signed in account</DropdownMenuLabel>
                   <DropdownMenuItem disabled className="text-[13px]">{displayRole}</DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-[13px]" onClick={() => setChangePasswordOpen(true)}>
+                    <KeyRound className="mr-2 size-4" />
+                    Change password
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-[13px]"
                     onClick={() => {
@@ -495,6 +657,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
           <main className="min-w-0 flex-1">{children}</main>
         </SidebarInset>
       </SidebarProvider>
+      <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
     </TooltipProvider>
   );
 }

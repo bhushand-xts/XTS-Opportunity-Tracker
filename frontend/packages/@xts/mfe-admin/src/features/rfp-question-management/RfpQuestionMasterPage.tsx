@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Ban, CheckCircle2, History, Pencil, Plus, Search } from "lucide-react";
+import { Ban, CheckCircle2, History, Lock, Pencil, Plus, Search } from "lucide-react";
 import type { RfpQuestion } from "@xts/api-contracts";
 import {
   AlertDialog,
@@ -14,6 +14,11 @@ import {
   Button,
   Card,
   CardContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   Select,
   SelectContent,
@@ -26,6 +31,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useAuth,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -38,12 +44,17 @@ import { useRfpQuestions } from "./useRfpQuestions";
 
 const COLUMNS = 7;
 const ALL = "all";
+const MENU_KEY = "generic_rfp_question_master";
 
 export function RfpQuestionMasterPage() {
   useSetPageTitle("Generic RFP Question Master");
   const { questions, loading, error } = useRfpQuestions();
   const { categories } = useRfpQuestionCategories();
   const { setQuestionActive } = useRfpQuestionMutations();
+  const { hasPermission } = useAuth();
+  const canView = hasPermission(MENU_KEY, "view");
+  const canAdd = hasPermission(MENU_KEY, "add");
+  const canEdit = hasPermission(MENU_KEY, "edit");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<RfpQuestion | null>(null);
   const [historyQuestion, setHistoryQuestion] = useState<RfpQuestion | null>(null);
@@ -123,98 +134,119 @@ export function RfpQuestionMasterPage() {
                 <SelectItem value="inactive">Inactive</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 size-4" />
-              Add Question
-            </Button>
+            {canAdd && (
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 size-4" />
+                Add Question
+              </Button>
+            )}
           </>
         }
       />
 
       {error && <ErrorNotice error={error} title="Unable to load generic RFP questions" />}
 
-      <Card>
-        <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">#</TableHead>
-                <TableHead>Question</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Description / Guidance</TableHead>
-                <TableHead>Display order</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading && <TableLoadingRows columns={COLUMNS} />}
-              {!loading && !error && questions.length === 0 && (
-                <TableEmptyRow columns={COLUMNS} message="No generic RFP questions found. Add the first one." />
-              )}
-              {!loading && questions.length > 0 && visibleQuestions.length === 0 && (
+      {!canView ? (
+        <Card>
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Lock />
+                </EmptyMedia>
+                <EmptyTitle>No view access</EmptyTitle>
+                <EmptyDescription>Your role doesn&apos;t have permission to view Generic RFP Question Master.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={COLUMNS} className="h-24 text-center text-sm text-muted-foreground">
-                    <p>No questions match your current filters.</p>
-                    <Button variant="link" className="h-auto p-0 text-sm" onClick={clearFilters}>
-                      Clear filters
-                    </Button>
-                  </TableCell>
+                  <TableHead className="w-12">#</TableHead>
+                  <TableHead>Question</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Description / Guidance</TableHead>
+                  <TableHead>Display order</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
-              )}
-              {visibleQuestions.map((item, index) => (
-                <TableRow key={item.id} className={item.isActive ? undefined : "text-muted-foreground"}>
-                  <TableCell className="text-muted-foreground tabular-nums">{index + 1}</TableCell>
-                  <TableCell className="max-w-md font-medium">{item.question}</TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">{item.categoryName ?? "—"}</TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">{item.description ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground tabular-nums">{item.displayOrder ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant={item.isActive ? "success" : "muted"}>{item.isActive ? "Active" : "Inactive"}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`History of question "${item.question}"`}
-                      onClick={() => setHistoryQuestion(item)}
-                    >
-                      <History className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Edit question "${item.question}"`}
-                      onClick={() => openEdit(item)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    {item.isActive ? (
+              </TableHeader>
+              <TableBody>
+                {loading && <TableLoadingRows columns={COLUMNS} />}
+                {!loading && !error && questions.length === 0 && (
+                  <TableEmptyRow columns={COLUMNS} message="No generic RFP questions found. Add the first one." />
+                )}
+                {!loading && questions.length > 0 && visibleQuestions.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={COLUMNS} className="h-24 text-center text-sm text-muted-foreground">
+                      <p>No questions match your current filters.</p>
+                      <Button variant="link" className="h-auto p-0 text-sm" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {visibleQuestions.map((item, index) => (
+                  <TableRow key={item.id} className={item.isActive ? undefined : "text-muted-foreground"}>
+                    <TableCell className="text-muted-foreground tabular-nums">{index + 1}</TableCell>
+                    <TableCell className="max-w-md font-medium">{item.question}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{item.categoryName ?? "—"}</TableCell>
+                    <TableCell className="max-w-xs truncate text-muted-foreground">{item.description ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">{item.displayOrder ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={item.isActive ? "success" : "muted"}>{item.isActive ? "Active" : "Inactive"}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`Deactivate question "${item.question}"`}
-                        onClick={() => setDeactivatingQuestion(item)}
+                        aria-label={`History of question "${item.question}"`}
+                        onClick={() => setHistoryQuestion(item)}
                       >
-                        <Ban className="size-4 text-destructive" />
+                        <History className="size-4" />
                       </Button>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Activate question "${item.question}"`}
-                        onClick={() => void setQuestionActive(item.id, true)}
-                      >
-                        <CheckCircle2 className="size-4 text-emerald-600" />
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Edit question "${item.question}"`}
+                          onClick={() => openEdit(item)}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                      )}
+                      {canEdit &&
+                        (item.isActive ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Deactivate question "${item.question}"`}
+                            onClick={() => setDeactivatingQuestion(item)}
+                          >
+                            <Ban className="size-4 text-destructive" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Activate question "${item.question}"`}
+                            onClick={() => void setQuestionActive(item.id, true)}
+                          >
+                            <CheckCircle2 className="size-4 text-emerald-600" />
+                          </Button>
+                        ))}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <RfpQuestionFormDialog
         open={dialogOpen}

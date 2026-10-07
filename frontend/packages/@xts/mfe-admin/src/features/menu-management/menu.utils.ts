@@ -1,10 +1,19 @@
 import {
+  ClipboardList,
+  FileQuestion,
+  Key,
   Layers,
   LayoutDashboard,
+  Link2,
   ListChecks,
+  ListOrdered,
   Menu as MenuIcon,
   Settings,
+  Share2,
+  Shield,
   ShieldCheck,
+  Table2,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -19,15 +28,25 @@ export function slugify(value: string, separator = "-"): string {
 }
 
 /** Curated lookup for the Icon column. Icon names outside this set are shown
- * as plain text — extend the list as more icons are needed. */
+ * as plain text — extend the list as more icons are needed. Includes every
+ * icon the real admin menus use, matching AppShell's static sidebar. */
 const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard,
   Settings,
   ShieldCheck,
+  Shield,
   Users,
   ListChecks,
   Layers,
   Menu: MenuIcon,
+  Table2,
+  Key,
+  Link2,
+  Share2,
+  UserCog,
+  ClipboardList,
+  ListOrdered,
+  FileQuestion,
 };
 
 export function resolveIcon(name: string | null): LucideIcon | null {
@@ -62,6 +81,13 @@ export function flattenMenus(menus: Menu[]): MenuRow[] {
   };
   visit(null, 0, new Set());
   return rows;
+}
+
+/** The next free sort order for a new menu under the given parent (one past
+ * the highest sort order already used by its siblings). */
+export function nextSortOrder(menus: Menu[], parentId: number | null): number {
+  const siblings = menus.filter((m) => m.parentId === parentId);
+  return siblings.length === 0 ? 1 : Math.max(...siblings.map((m) => m.sortOrder)) + 1;
 }
 
 /** The menu itself plus every menu beneath it — none of these may become the
