@@ -36,6 +36,10 @@ import accessTypes from './graphql/typeDefs/access.typeDefs';
 import accessResolvers from './graphql/resolvers/access.resolver';
 import currencyTypes from './graphql/typeDefs/currency.typeDefs';
 import currencyResolvers from './graphql/resolvers/currency.resolver';
+import accountTypeTypes from './graphql/typeDefs/account-type.typeDefs';
+import accountTypeResolvers from './graphql/resolvers/account-type.resolver';
+import industryTypes from './graphql/typeDefs/industry.typeDefs';
+import industryResolvers from './graphql/resolvers/industry.resolver';
 
 // Administration — master data and access control
 
@@ -44,16 +48,20 @@ const base = `
   type Mutation { _empty: String }
 `;
 
-const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, rfpQuestionsTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes, currencyTypes];
+const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, rfpQuestionsTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes, currencyTypes, accountTypeTypes, industryTypes];
 
-const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, rfpQuestionsResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers, currencyResolvers];
-const resolvers = parts.reduce(
-  (acc: any, p: any) => ({
-    Query: { ...acc.Query, ...(p.Query || {}) },
-    Mutation: { ...acc.Mutation, ...(p.Mutation || {}) },
-  }),
-  { Query: {}, Mutation: {} }
-);
+const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, rfpQuestionsResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers, currencyResolvers, accountTypeResolvers, industryResolvers];
+// Merges every top-level key each resolver file exports (Query, Mutation,
+// and any type-level field resolver like Stage.inUse) -- not just
+// Query/Mutation. A plain Query/Mutation-only file merges exactly the same
+// as before; this only adds support for the type resolvers newer features
+// need (see stages.resolver.ts / sub-stages.resolver.ts).
+const resolvers = parts.reduce((acc: any, p: any) => {
+  for (const typeName of Object.keys(p)) {
+    acc[typeName] = { ...(acc[typeName] || {}), ...p[typeName] };
+  }
+  return acc;
+}, { Query: {}, Mutation: {} });
 
 const schema = buildSubgraphSchema([
   { typeDefs: concatAST(typeDefs.map((t: string) => parse(t))), resolvers },

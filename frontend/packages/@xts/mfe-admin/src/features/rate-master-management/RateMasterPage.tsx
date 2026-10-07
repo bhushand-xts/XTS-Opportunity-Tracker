@@ -1,11 +1,16 @@
 import { useMemo, useState } from "react";
-import { Pencil, Plus, Search } from "lucide-react";
+import { Lock, Pencil, Plus, Search } from "lucide-react";
 import type { RateMaster } from "@xts/api-contracts";
 import {
   Badge,
   Button,
   Card,
   CardContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Input,
   Switch,
   Table,
@@ -14,6 +19,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useAuth,
   useSetPageTitle,
 } from "@xts/design-system";
 import { PageHeader } from "../../components/PageHeader";
@@ -28,6 +34,7 @@ import { useRateMasterMutations } from "./useRateMasterMutations";
 import { useCurrencies } from "../currency-management/useCurrencies";
 
 const COLUMNS = 8;
+const MENU_KEY = "technical_roles_and_rate_master";
 
 export function RateMasterPage() {
   useSetPageTitle("Technical Roles and Rate Master");
@@ -35,6 +42,10 @@ export function RateMasterPage() {
   const { rateMasters, loading, error } = useRateMasters();
   const { setRateMasterActive } = useRateMasterMutations();
   const { currencies } = useCurrencies();
+  const { hasPermission } = useAuth();
+  const canView = hasPermission(MENU_KEY, "view");
+  const canAdd = hasPermission(MENU_KEY, "add");
+  const canEdit = hasPermission(MENU_KEY, "edit");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRateMaster, setEditingRateMaster] =
@@ -93,10 +104,12 @@ export function RateMasterPage() {
               />
             </div>
 
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 size-4" />
-              Add rate
-            </Button>
+            {canAdd && (
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 size-4" />
+                Add technical role
+              </Button>
+            )}
           </>
         }
       />
@@ -105,106 +118,125 @@ export function RateMasterPage() {
         <ErrorNotice error={error} title="Couldn't load rate masters" />
       )}
 
-      <Card>
-        <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Technical role</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>Currency</TableHead>
-                <TableHead>Rate type</TableHead>
-                <TableHead>Default rate</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
+      {!canView ? (
+        <Card>
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Lock />
+                </EmptyMedia>
+                <EmptyTitle>No view access</EmptyTitle>
+                <EmptyDescription>Your role doesn&apos;t have permission to view Technical Roles and Rate Master.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Technical role</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Currency</TableHead>
+                  <TableHead>Rate type</TableHead>
+                  <TableHead>Default rate</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
 
-            <TableBody>
-              {loading && <TableLoadingRows columns={COLUMNS} />}
+              <TableBody>
+                {loading && <TableLoadingRows columns={COLUMNS} />}
 
-              {!loading && !error && rateMasters.length === 0 && (
-                <TableEmptyRow
-                  columns={COLUMNS}
-                  message="No rate masters yet. Add the first one."
-                />
-              )}
-
-              {!loading &&
-                rateMasters.length > 0 &&
-                visibleRateMasters.length === 0 && (
+                {!loading && !error && rateMasters.length === 0 && (
                   <TableEmptyRow
                     columns={COLUMNS}
-                    message="No rate masters match your search."
+                    message="No rate masters yet. Add the first one."
                   />
                 )}
 
-              {visibleRateMasters.map((rateMaster) => {
-                const currency = getCurrency(rateMaster.currencyId);
+                {!loading &&
+                  rateMasters.length > 0 &&
+                  visibleRateMasters.length === 0 && (
+                    <TableEmptyRow
+                      columns={COLUMNS}
+                      message="No rate masters match your search."
+                    />
+                  )}
 
-                return (
-                  <TableRow key={rateMaster.ratemasterId}>
-                    <TableCell className="font-medium">
-                      {rateMaster.roleName}
-                    </TableCell>
+                {visibleRateMasters.map((rateMaster) => {
+                  const currency = getCurrency(rateMaster.currencyId);
 
-                    <TableCell className="font-mono text-xs">
-                      {rateMaster.roleCode}
-                    </TableCell>
+                  return (
+                    <TableRow key={rateMaster.ratemasterId}>
+                      <TableCell className="font-medium">
+                        {rateMaster.roleName}
+                      </TableCell>
 
-                    <TableCell>
-                      {currency
-                        ? `${currency.currencyName} (${currency.currencyCode})`
-                        : "—"}
-                    </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {rateMaster.roleCode}
+                      </TableCell>
 
-                    <TableCell>{rateMaster.rateType}</TableCell>
+                      <TableCell>
+                        {currency
+                          ? `${currency.currencyName} (${currency.currencyCode})`
+                          : "—"}
+                      </TableCell>
 
-                    <TableCell>{rateMaster.defaultRate}</TableCell>
+                      <TableCell>{rateMaster.rateType}</TableCell>
 
-                    <TableCell>
-                      {rateMaster.location ?? "—"}
-                    </TableCell>
+                      <TableCell>{rateMaster.defaultRate}</TableCell>
 
-                    <TableCell>
-                      <Badge
-                        variant={
-                          rateMaster.isActive ? "success" : "muted"
-                        }
-                      >
-                        {rateMaster.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </TableCell>
+                      <TableCell>
+                        {rateMaster.location ?? "—"}
+                      </TableCell>
 
-                    <TableCell className="text-right">
-                      <Switch
-                        checked={rateMaster.isActive}
-                        aria-label={`${rateMaster.isActive ? "Deactivate" : "Activate"} ${rateMaster.roleName}`}
-                        onCheckedChange={(checked) =>
-                          void setRateMasterActive(
-                            rateMaster.ratemasterId,
-                            checked
-                          )
-                        }
-                      />
+                      <TableCell>
+                        <Badge
+                          variant={
+                            rateMaster.isActive ? "success" : "muted"
+                          }
+                        >
+                          {rateMaster.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Edit ${rateMaster.roleName}`}
-                        onClick={() => openEdit(rateMaster)}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                      <TableCell className="text-right">
+                        <Switch
+                          checked={rateMaster.isActive}
+                          disabled={!canEdit}
+                          aria-label={`${rateMaster.isActive ? "Deactivate" : "Activate"} ${rateMaster.roleName}`}
+                          onCheckedChange={(checked) =>
+                            void setRateMasterActive(
+                              rateMaster.ratemasterId,
+                              checked
+                            )
+                          }
+                        />
+
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Edit ${rateMaster.roleName}`}
+                            onClick={() => openEdit(rateMaster)}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <RateMasterFormDialog
         open={dialogOpen}

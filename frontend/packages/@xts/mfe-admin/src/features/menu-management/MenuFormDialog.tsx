@@ -174,9 +174,13 @@ export function MenuFormDialog({
                 <FormItem>
                   <FormLabel>Menu key</FormLabel>
                   <FormControl>
-                    <Input className="font-mono text-sm" placeholder="e.g. user_management" {...field} />
+                    <Input className="font-mono text-sm" placeholder="e.g. user_management" disabled={isEdit} {...field} />
                   </FormControl>
-                  <FormDescription>Unique identifier. Lowercase letters, numbers, hyphens and underscores.</FormDescription>
+                  <FormDescription>
+                    {isEdit
+                      ? "Locked once a menu exists — this key is hardcoded into that page's permission checks, so changing it here would break access until the code is updated too."
+                      : "Unique identifier. Lowercase letters, numbers, hyphens and underscores."}
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

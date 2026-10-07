@@ -3,8 +3,9 @@
 --
 -- Admin-owned tables: master data + access control.
 --   master data     mst_stage, mst_sub_stage, mst_estimation_phases, mst_rate,
---                   tbl_reason_codes, mst_proposal_section, mst_rfp_questions
---                   (+ their trackers)
+--                   tbl_reason_codes, mst_proposal_section, mst_rfp_questions,
+--                   mst_account_type, mst_industry (no tracker)
+--                   (+ trackers for the rest)
 --   access control  mst_menus, mst_permissions, mst_roles (+ trackers),
 --                   tbl_menuwise_permission, tbl_role_menu_permission
 --
@@ -24,11 +25,15 @@
 -- Pipeline master data
 -- ---------------------------------------------------------------------
 
+-- gate / display_order added for Stage Master (stages.repository.ts) --
+-- not in the original 2026-09-21 dump this file was sourced from.
 CREATE TABLE mst_stage (
   stage_id SERIAL PRIMARY KEY,
   stage_name VARCHAR(100),
   description TEXT,
   win_percentage NUMERIC(5,2),
+  gate VARCHAR(50),
+  display_order INTEGER,
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
@@ -36,12 +41,21 @@ CREATE TABLE mst_stage (
   is_active BOOLEAN DEFAULT TRUE
 );
 
+CREATE UNIQUE INDEX ux_mst_stage_stage_name ON mst_stage (LOWER(stage_name));
+
+-- History of mst_stage: one snapshot row per change, written in the same
+-- transaction as the change (see stages.repository.ts). No foreign key, so
+-- history survives the stage's deletion (if that's ever added). Column is
+-- stage_id here (the live table), not previous_stage_id as an earlier
+-- version of this file's own source dump had it.
 CREATE TABLE mst_stage_tracker (
   stage_tracker_id SERIAL PRIMARY KEY,
-  previous_stage_id INTEGER,
+  stage_id INTEGER,
   stage_name VARCHAR(100),
   description TEXT,
   win_percentage NUMERIC(5,2),
+  gate VARCHAR(50),
+  display_order INTEGER,
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
@@ -60,6 +74,12 @@ CREATE TABLE mst_sub_stage (
   is_active BOOLEAN DEFAULT TRUE
 );
 
+CREATE UNIQUE INDEX ux_mst_sub_stage_stage_name ON mst_sub_stage (stage_id, LOWER(sub_stage_name));
+
+-- History of mst_sub_stage (see sub-stages.repository.ts). Unlike every
+-- other tracker in this file, this one DOES carry foreign keys back to
+-- mst_stage and mst_sub_stage -- safe only because sub-stages are never
+-- deleted, only edited (and edits are themselves blocked while in use).
 CREATE TABLE mst_sub_stage_tracker (
   sub_stage_id_tracker SERIAL PRIMARY KEY,
   sub_stage_id INTEGER,
@@ -130,12 +150,63 @@ CREATE TABLE tbl_reason_codes (
   reason_name VARCHAR(100),
   reason_category VARCHAR(100),
   description TEXT,
+  display_order INTEGER,
   is_active BOOLEAN DEFAULT TRUE,
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
   updated_by INTEGER
 );
+
+CREATE UNIQUE INDEX ux_tbl_reason_codes_reason_name ON tbl_reason_codes (LOWER(reason_name));
+
+-- History of tbl_reason_codes: one snapshot row per change, written in the
+-- same transaction as the change (see reason-codes.repository.ts). No
+-- foreign key to tbl_reason_codes, so history survives a reason code's
+-- deletion. Unlike some sibling trackers (e.g. tbl_estimation_phases_tracker),
+-- is_active here is a real tracked column, not an is_current stand-in.
+CREATE TABLE tbl_reason_codes_tracker (
+  tracker_id SERIAL PRIMARY KEY,
+  reason_code_id INTEGER NOT NULL,
+  reason_name VARCHAR(100) NOT NULL,
+  description TEXT,
+  display_order INTEGER,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER,
+  is_active BOOLEAN DEFAULT TRUE NOT NULL
+);
+
+-- Account type (Account Type Master) — no history tracker for this one,
+-- deliberately (see account-type.repository.ts).
+CREATE TABLE mst_account_type (
+  account_type_id SERIAL PRIMARY KEY,
+  account_name VARCHAR(100),
+  description VARCHAR(500),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER
+);
+
+CREATE UNIQUE INDEX ux_mst_account_type_account_name ON mst_account_type (LOWER(account_name));
+
+-- Industry (Industry Master) — no history tracker for this one either (same
+-- Add/Edit/toggle-status pattern as mst_account_type, see industry.repository.ts).
+CREATE TABLE mst_industry (
+  industry_id SERIAL PRIMARY KEY,
+  industry_name VARCHAR(100),
+  description VARCHAR(500),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER
+);
+
+CREATE UNIQUE INDEX ux_mst_industry_industry_name ON mst_industry (LOWER(industry_name));
 
 CREATE TABLE mst_proposal_section (
   proposal_section_id SERIAL PRIMARY KEY,

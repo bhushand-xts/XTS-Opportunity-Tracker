@@ -13,6 +13,11 @@ import { RoleMenuPermissionAssignmentPage } from "./features/role-menu-permissio
 import { UserRoleAssignmentPage } from "./features/user-role-assignment/UserRoleAssignmentPage";
 import { CurrencyMasterPage } from "./features/currency-management/CurrencyMasterPage";
 import { RateMasterPage } from "./features/rate-master-management/RateMasterPage";
+import { ReasonCodeMasterPage } from "./features/reason-code-management/ReasonCodeMasterPage";
+import { AccountTypeMasterPage } from "./features/account-type-management/AccountTypeMasterPage";
+import { IndustryMasterPage } from "./features/industry-management/IndustryMasterPage";
+import { StageMasterPage } from "./features/stage-management/StageMasterPage";
+import { SubStageMasterPage } from "./features/sub-stage-management/SubStageMasterPage";
 
 // The pages of this MFE. Their links (and the sidebar's) are absolute paths
 // under /admin, so these routes are always mounted at /admin/*.
@@ -23,6 +28,11 @@ function AdminRoutes() {
       <Route path="estimate-management/estimate-phase-master" element={<EstimatePhaseMasterPage />} />
       <Route path="estimate-management/currency-master" element={<CurrencyMasterPage />}/>
       <Route path="estimate-management/rate-master" element={<RateMasterPage />}/>
+      <Route path="estimate-management/reason-code-master" element={<ReasonCodeMasterPage />}/>
+      <Route path="estimate-management/account-type-master" element={<AccountTypeMasterPage />}/>
+      <Route path="estimate-management/industry-master" element={<IndustryMasterPage />}/>
+      <Route path="stage-management/stage-master" element={<StageMasterPage />}/>
+      <Route path="stage-management/sub-stage-master" element={<SubStageMasterPage />}/>
       <Route path="menu-management/menu-master" element={<MenuMasterPage />} />
       <Route path="menu-management/permission-master" element={<PermissionMasterPage />} />
       <Route path="menu-management/menu-permission-mapping" element={<MenuPermissionMappingPage />} />
