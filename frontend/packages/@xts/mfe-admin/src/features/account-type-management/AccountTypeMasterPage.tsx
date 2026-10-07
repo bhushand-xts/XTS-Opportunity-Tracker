@@ -77,7 +77,7 @@ export function AccountTypeMasterPage() {
         description="Create and manage account types."
         actions={
           <>
-            <div className="relative w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
