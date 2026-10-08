@@ -3,12 +3,14 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Bell,
+  Briefcase,
   Building2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
   ClipboardList,
+  Columns3,
   FileQuestion,
   FlaskConical,
   GitBranch,
@@ -62,6 +64,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { OPPORTUNITY_MENU_KEY, useMenuAccess } from "@/lib/access";
 import { useAuth, type AppPermission } from "@/lib/auth";
 import { GET_NAV_MENUS } from "@/lib/nav.queries";
 import { usePageTitle } from "@/lib/pageTitle";
@@ -130,6 +133,18 @@ const ADMIN_NAV: NavGroup[] = [
       { label: "Generic RFP Question Master", to: "/admin/rfp-management/generic-rfp-question-master", icon: FileQuestion },
     ],
   },
+];
+
+// Opportunities is core Sales/BD functionality, not an admin feature, so —
+// unlike Administration above — this group isn't gated behind can("admin").
+// Its visibility is instead driven by the signed-in role's grant on the
+// "opportunities" menu (OPPORTUNITY_MENU_KEY, mst_menus.menu_id 12) — see
+// canSeeOpportunities in AppSidebar below.
+const OPPORTUNITIES_NAV: NavLeaf[] = [
+  { label: "All Opportunities", to: "/opportunities/all", icon: Table2 },
+  { label: "New Opportunity", to: "/opportunities/new", icon: Plus },
+  { label: "My Opportunities", to: "/opportunities/mine", icon: User },
+  { label: "Pipeline", to: "/opportunities", icon: Columns3 },
 ];
 
 // ---------------------------------------------------------------------
@@ -488,14 +503,17 @@ function AppSidebar({
   pathname: string;
 }) {
   const onAdmin = pathname.startsWith("/admin");
+  const onOpportunities = pathname.startsWith("/opportunities");
   const [adminOpen, setAdminOpen] = useState(onAdmin);
-  const [rfpOpen, setRfpOpen] = useState(onRfp);
   const [opportunitiesOpen, setOpportunitiesOpen] = useState(onOpportunities);
-  const { loading: accessLoading, hasAccess } = useMenuAccess();
-  const canSeeOpportunities = !accessLoading && hasAccess(OPPORTUNITY_MENU_KEY);
+  const { loading: opportunityAccessLoading, hasAccess } = useMenuAccess();
+  const canSeeOpportunities = !opportunityAccessLoading && hasAccess(OPPORTUNITY_MENU_KEY);
   useEffect(() => {
     if (onAdmin) setAdminOpen(true);
   }, [onAdmin]);
+  useEffect(() => {
+    if (onOpportunities) setOpportunitiesOpen(true);
+  }, [onOpportunities]);
   const showDynamicPreview = useDevNavPreview();
 
   // Accordion: at most one Administration sub-group open at a time. Landing
@@ -544,6 +562,45 @@ function AppSidebar({
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
+
+          {canSeeOpportunities && (
+            <Collapsible open={opportunitiesOpen} onOpenChange={setOpportunitiesOpen} className="group/opportunities">
+              <SidebarMenuItem>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton
+                    isActive={onOpportunities}
+                    tooltip="Opportunities"
+                    className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
+                  >
+                    <Briefcase />
+                    <span>Opportunities</span>
+                    <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/opportunities:rotate-180" />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    {OPPORTUNITIES_NAV.map((item) => {
+                      const active = pathname === item.to;
+                      return (
+                        <SidebarMenuSubItem key={item.to}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={active}
+                            className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
+                          >
+                            <Link to={item.to}>
+                              <item.icon className="size-4" />
+                              <span>{item.label}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      );
+                    })}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </SidebarMenuItem>
+            </Collapsible>
+          )}
 
           {can("admin") && (
             <Collapsible open={adminOpen} onOpenChange={setAdminOpen} className="group/admin">

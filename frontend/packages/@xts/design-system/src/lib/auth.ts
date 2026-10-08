@@ -65,23 +65,9 @@ type AuthResult = { ok: true } | { ok: false; error: string };
 const EMPTY_STATE: AuthState = { session: null, profile: null, roleId: null, roleName: null, access: {} };
 const STORAGE_KEY = "authState";
 
-// Storage holds whatever shape a previous build wrote — a field this build
-// expects (e.g. roles) can be missing entirely, not just empty, if the value
-// predates it. Every read goes through this rather than trusting the parsed
-// JSON's shape directly, so a stale value degrades to safe defaults instead
-// of crashing render (see AppShell's use of roles[0]).
-function normalizeState(parsed: unknown): AuthState {
-  const candidate = (parsed && typeof parsed === "object" ? parsed : {}) as Partial<AuthState>;
-  return {
-    session: candidate.session ?? null,
-    profile: candidate.profile ?? null,
-    roles: Array.isArray(candidate.roles) ? candidate.roles : [],
-  };
-}
-
 function stateFromPayload({ user, token }: AuthPayload): AuthState {
   return {
-    session: { userId: String(user.id), email: user.email, token },
+    session: { userId: String(user.id), email: user.email, token, roleId: user.roleId ?? null },
     // The backend's User type has no status concept yet (mst_user has
     // is_active: boolean, not this richer shape), so it's not requested (see
     // auth.queries.ts). Synthesize a safe default: status always passes the

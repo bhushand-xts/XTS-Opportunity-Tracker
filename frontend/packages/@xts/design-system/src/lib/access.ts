@@ -5,11 +5,11 @@ import { GET_MENUS_FOR_ACCESS, GET_ROLE_ACCESS } from "./access.queries";
 /** The menu_key (mst_menus.menu_key) that gates this frontend's Opportunity
  * tracker (Pipeline, Question Review, Answer Workspace, Progress Dashboard,
  * etc.) — kept as one named constant so pointing the gate at a different
- * menu later is a one-line change, not a rewire. This is a menu the Super
- * Admin created via Menu Master specifically for this app — not the older
- * "Opportunities" menu that predates this feature and may belong to a
- * different, unrelated planned module. */
-export const OPPORTUNITY_MENU_KEY = "opportunity_tracking";
+ * menu later is a one-line change, not a rewire. Points at the existing
+ * "Opportunities" menu (mst_menus.menu_id 12), created via Menu Master —
+ * reused rather than a separate menu, so Role Menu Permission Assignment
+ * has one row to grant, not two. */
+export const OPPORTUNITY_MENU_KEY = "opportunities";
 
 const SSO_DEMO_USER_ID = "sso-demo";
 

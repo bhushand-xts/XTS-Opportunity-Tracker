@@ -36,7 +36,8 @@ interface CurrentUser {
 
 interface StoreState {
   currentUser: CurrentUser;
-  role: Role;
+  pipelineRole: PipelineRole;
+  search: string;
   customers: Customer[];
   users: StoreUser[];
   opportunities: Opportunity[];
@@ -61,9 +62,10 @@ const USERS: StoreUser[] = [
 
 let state: StoreState = {
   currentUser: { id: "u1", name: "Bhushan Dixit", initials: "BD", team: "Enterprise West" },
-  role: "Sales Manager",
-  customers: [{ id: "cust-1", name: "Acme Corp", contactName: "Sam Rivera" }],
-  users: [{ id: "u1", name: "Bhushan Dixit", team: "Enterprise West" }],
+  pipelineRole: "Sales",
+  search: "",
+  customers: [],
+  users: USERS,
   opportunities: [],
   questions: [],
   sections: [],
@@ -139,6 +141,12 @@ export function useStore() {
     ...snapshot,
     visibleOpportunities: snapshot.opportunities,
 
+    setSearch(value: string) {
+      setState({ search: value });
+    },
+    setPipelineRole(role: PipelineRole) {
+      setState({ pipelineRole: role });
+    },
     markAllRead() {
       setState({ notifications: snapshot.notifications.map((n) => ({ ...n, read: true })) });
     },
