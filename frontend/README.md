@@ -15,7 +15,8 @@ Everything lives in `packages/@xts/`. One `npm install` in this folder installs 
 | `design-system` | Shared UI: shadcn components, `AppShell`, `LoginView`, auth store, Tailwind tokens. |
 | `api-client` | The Apollo Client — gateway URL, auth header, cache. |
 | `api-contracts` | TypeScript types that mirror the backend's GraphQL types. |
-| `mfe-opportunity`, `mfe-solution`, `mfe-approval`, `mfe-dashboard` | Placeholders for later. Not loaded by the shell yet. |
+| `mfe-opportunity` | Opportunity workspace (port **3002**), loaded by the shell at `/opportunity`. |
+| `mfe-solution`, `mfe-approval`, `mfe-dashboard` | Placeholders for later. Not loaded by the shell yet. |
 
 Inside `mfe-admin/src/features/` each screen has the same layout:
 
@@ -125,3 +126,29 @@ then restart both apps (it is read at build time).
 | Blank page or no sidebar after an update | An old login is stored in the browser. Hard-refresh (`Ctrl+Shift+R`); if it persists, run `localStorage.clear()` in the browser console and reload. The app now clears a stale login by itself and shows the login screen. |
 | "Please sign in with a registered account to make changes" | You are signed in with the demo SSO button. Log out and use a real account. |
 | "Port 3000 is already in use" | Another copy of the app is running. Stop it, or close the old terminal. |
+
+## Opportunity MFE
+
+From `frontend/`, run `npm run dev:opportunity` in its own terminal alongside
+`npm run dev:shell`. Open http://localhost:3000 and select **Opportunity** in the
+sidebar. The entry discovers existing Opportunity records through `menus(asTree: false)`
+using their menu keys, names and routes. Active records with role access feed one
+sidebar entry; the name and icon come from an authorized record. Role Menu Permission
+Assignment controls each record's actual `menuKey`, and Opportunity access checks
+consider grants across all matching active records.
+On the local gateway checked on 2026-10-12, active **12 / Opportunities** and
+**29 / Opportunity Management** are connected. **28 / Opportunity Tracking** is
+excluded while inactive, and **5 / Permission Master** belongs to Administration.
+The MFE opens at `/opportunity`; `/opportunities` is supported as an alias.
+No fixed menu ID, duplicate menu or database change is required.
+
+For standalone development, open http://localhost:3002; the app provides the
+same authentication, sidebar, header, and `/opportunity` routing as the shell.
+The MFE includes Pipeline, intake, Details, response assignment, scope/estimation
+and approval review views. Missing workflow integrations are reported explicitly;
+see `../docs/opportunity/implementation-audit.md` and the GraphQL handoff.
+The shared Apollo client is configured for the gateway.
+
+Use `OPPORTUNITY_REMOTE_URL` to override the default remote origin when building
+the shell and Opportunity MFE. Build with
+`npm run build --workspace=@xts/mfe-opportunity`.

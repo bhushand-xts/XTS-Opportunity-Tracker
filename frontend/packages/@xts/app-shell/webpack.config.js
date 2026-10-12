@@ -60,7 +60,7 @@ module.exports = {
       filename: "remoteEntry.js",
       remotes: {
         admin: `admin@${process.env.ADMIN_REMOTE_URL || "http://localhost:3001"}/remoteEntry.js`,
-        opportunity: "opportunity@http://localhost:3002/remoteEntry.js",
+        opportunity: `opportunity@${process.env.OPPORTUNITY_REMOTE_URL || "http://localhost:3002"}/remoteEntry.js`,
         solution: "solution@http://localhost:3003/remoteEntry.js",
         approval: "approval@http://localhost:3004/remoteEntry.js",
         dashboard: "dashboard@http://localhost:3005/remoteEntry.js",
@@ -69,6 +69,7 @@ module.exports = {
         react: { singleton: true, requiredVersion: "^18.2.0" },
         "react-dom": { singleton: true, requiredVersion: "^18.2.0" },
         "react-router-dom": { singleton: true, requiredVersion: "^7.18.3" },
+        sonner: { singleton: true, requiredVersion: "^2.0.8" },
         "@xts/design-system": { singleton: true },
         "@xts/api-contracts": { singleton: true },
         "@xts/api-client": { singleton: true },

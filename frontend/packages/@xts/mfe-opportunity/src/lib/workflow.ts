@@ -1,0 +1,113 @@
+import type { Action, Decimal, DirectoryUser, EstimateRow, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
+
+export const STATE_LABELS = {
+  PREPARATION_PENDING: 'Pending', IN_PROGRESS: 'In progress', SALES_REVIEW: 'Sales Head review', GATE1_PENDING: 'Gate 1 pending',
+  GATE1_GO: 'Gate 1 Go', SALES_REJECTED: 'Rejected by Sales Head', GATE1_NO_GO: 'Closed · No-Go',
+};
+export const RESPONSE_LABELS = { UNASSIGNED: 'Unassigned', ASSIGNED: 'Assigned', DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested' };
+export const SECTION_CATALOG = [
+  { key: 'understanding', title: 'Understanding of requirements', category: 'Overview', description: 'Interpretation of client needs and intended outcomes.' },
+  { key: 'references', title: 'Experience & references', category: 'Overview', description: 'Relevant engagements and customer references.' },
+  { key: 'summary', title: 'Executive summary', category: 'Overview', description: 'Understanding of the client and proposed value.' },
+  { key: 'company', title: 'Company credentials', category: 'Overview', description: 'Experience, capabilities and relevant references.' },
+  { key: 'plan', title: 'Project plan & timeline', category: 'Technical', description: 'Schedule, milestones and delivery phases.' },
+  { key: 'team', title: 'Team & key personnel', category: 'Technical', description: 'Roles, skills and staffing approach.' },
+  { key: 'scope', title: 'Scope & deliverables', category: 'Technical', description: 'Proposed solution, boundaries and deliverables.' },
+  { key: 'approach', title: 'Technical approach & solution', category: 'Technical', description: 'Methodology, milestones and dependencies.' },
+  { key: 'security', title: 'Security & compliance', category: 'Technical', description: 'Controls, standards and risk management.' },
+  { key: 'assumptions', title: 'Assumptions & dependencies', category: 'Commercial', description: 'Dependencies, exclusions and key assumptions.' },
+  { key: 'pricing', title: 'Pricing & commercials', category: 'Commercial', description: 'Cost breakdown, terms and assumptions.' },
+  { key: 'support', title: 'Support & service levels', category: 'Commercial', description: 'Support model, commitments and escalation.' },
+] as const;
+export const CONTEXT_FIELDS = { instructions: 'Instructions', submissionRequirements: 'Submission requirements', opportunityOverview: 'Opportunity overview', scopeOfWork: 'Scope of work', requirements: 'Key technical / functional requirements', notes: 'Notes' };
+export const SCOPE_FIELDS = { objective: 'Objective', deliverables: 'Deliverables', inclusions: 'Inclusions', exclusions: 'Exclusions', dependencies: 'Dependencies / assumptions', acceptance: 'Acceptance criteria' };
+
+/** Snapshot templates into this opportunity; editing copies never edits masters. */
+export function addMasterQuestionTemplates(questions: PreparedQuestion[], templates: RfpQuestion[]): PreparedQuestion[] {
+  const selected = new Set(questions.flatMap(question => question.masterQuestionId == null ? [] : [question.masterQuestionId]));
+  const additions: PreparedQuestion[] = [];
+  for (const template of templates) {
+    if (!template.isActive || selected.has(template.id) || !template.question.trim()) continue;
+    selected.add(template.id);
+    additions.push({ id: `draft-${crypto.randomUUID()}`, masterQuestionId: template.id, text: template.question, sourceReference: `Question Master #${template.id}`, validated: false });
+  }
+  return [...questions, ...additions];
+}
+
+export function newDraft(ownerId: string): OpportunityDraft {
+  return {
+    title: '', estimatedValue: '', currencyId: '', serviceLine: '', leadSource: '', ownerId, priority: 'MEDIUM', description: '', clientId: null,
+    solicitation: { reference: '', version: '', issuingAgency: '', procurementContact: '', submissionMethod: 'PORTAL', vendorDemo: 'UNCONFIRMED', portalUrl: '', submissionEmail: '', deliveryInstructions: '', contractTerm: '', incumbentVendor: '', preBidMeeting: 'UNCONFIRMED', submissionTimezone: 'Asia/Kolkata' },
+    dates: { issueDate: '', questionsDue: '', proposalDue: '', submissionDeadline: '', additionalDeadline: '', additionalDeadlineLabel: '' },
+    context: { instructions: '', submissionRequirements: '', opportunityOverview: '', scopeOfWork: '', requirements: '', notes: '' },
+    rfp: { type: null, source: null, extraction: null, questions: [], sections: [], submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', pageRules: '', evaluation: '' },
+  };
+}
+export function isPreparing(o: OpportunityDetail) { return o.state === 'PREPARATION_PENDING' || o.state === 'IN_PROGRESS'; }
+export function may(o: OpportunityDetail, action: Action) { return o.allowedActions.includes(action); }
+export function canAnswer(o: OpportunityDetail, r: ResponseItem, userId: string | undefined) {
+  return isPreparing(o) && r.owner?.active === true && r.owner.id === userId && ['ASSIGNED', 'DRAFT', 'CHANGES_REQUESTED'].includes(r.state);
+}
+export function canReview(o: OpportunityDetail, r: ResponseItem, userId: string | undefined) {
+  return isPreparing(o) && r.state === 'SUBMITTED' && r.reviewer?.active === true && r.reviewer.id === userId && r.owner?.id !== userId && r.submittedRevision === r.revision;
+}
+export function userLabel(user: DirectoryUser | null) { return user ? `${user.name || user.email}${user.active ? '' : ' (inactive)'}` : 'Unassigned'; }
+export function pendingSaveErrors(form: OpportunityDraft): string[] {
+  const errors: string[] = [];
+  if (!form.title.trim()) errors.push('Enter an opportunity name.');
+  if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValue)) errors.push('Enter a non-negative estimated value with at most two decimals.');
+  if (!form.currencyId) errors.push('Select a currency.');
+  if (!form.serviceLine.trim()) errors.push('Enter the service line.');
+  if (!form.ownerId) errors.push('Select an opportunity owner.');
+  if (!form.clientId) errors.push('Select a client.');
+  for (const [field, value] of Object.entries(form.dates)) {
+    if (field !== 'additionalDeadlineLabel' && value && !validDate(value)) errors.push(`Enter a valid date for ${field}.`);
+  }
+  try { new Intl.DateTimeFormat('en', { timeZone: form.solicitation.submissionTimezone }); } catch { errors.push('Enter a valid IANA submission timezone.'); }
+  return errors;
+}
+export function readinessErrors(o: OpportunityDetail): string[] {
+  const f = o.form, errors = pendingSaveErrors(f);
+  if (!f.rfp.type) errors.push('Choose an RFP type.');
+  if (!f.solicitation.reference.trim() || !f.solicitation.issuingAgency.trim()) errors.push('Complete the reference number and issuing agency.');
+  if (!f.dates.submissionDeadline) errors.push('Set a submission deadline.');
+  const destination = f.solicitation.submissionMethod === 'PORTAL' ? f.solicitation.portalUrl : f.solicitation.submissionMethod === 'EMAIL' ? f.solicitation.submissionEmail : f.solicitation.deliveryInstructions;
+  if (!destination.trim()) errors.push('Complete the submission destination.');
+  if (f.solicitation.submissionMethod === 'EMAIL' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination)) errors.push('Enter a valid submission email.');
+  if (f.solicitation.submissionMethod === 'PORTAL' && !/^https?:\/\/\S+$/.test(destination)) errors.push('Enter an HTTP or HTTPS submission portal URL.');
+  const responses = o.responses ?? [];
+  if (!responses.length) errors.push('Prepare at least one response item.');
+  if (responses.some(r => !r.sourceValidated)) errors.push('Validate all source questions.');
+  if (responses.some(r => !r.owner?.active || !r.reviewer?.active || r.owner.id === r.reviewer.id || !r.dueDate)) errors.push('Assign active owners, independent reviewers and due dates.');
+  if (responses.some(r => r.state !== 'APPROVED' || r.approvedRevision !== r.revision)) errors.push('Approve every current response revision.');
+  return [...new Set([...errors, ...o.readiness.issues])];
+}
+export function validDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  const days = [31, (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return y > 0 && m >= 1 && m <= 12 && d >= 1 && d <= days[m - 1];
+}
+/** Exact fixed-point calculation; round each row to currency minor units. */
+export function rowAmount(row: EstimateRow): Decimal {
+  const scaled = (v: string) => { if (!/^\d+(\.\d{1,4})?$/.test(v)) throw new Error('Use non-negative decimals with at most four decimal places.'); const [a, b = ''] = v.split('.'); return BigInt(a) * 10000n + BigInt(b.padEnd(4, '0')); };
+  if (!Number.isSafeInteger(row.people) || row.people < 1) throw new Error('People must be a positive whole number.');
+  const minor = (scaled(row.hours) * scaled(row.hourlyRate) * BigInt(row.people) + 500000n) / 1000000n;
+  return `${minor / 100n}.${String(minor % 100n).padStart(2, '0')}`;
+}
+export function estimateTotal(rows: EstimateRow[]): Decimal {
+  const cents = rows.reduce((sum, row) => sum + BigInt(rowAmount(row).replace('.', '')), 0n);
+  return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
+}
+export function money(value: Decimal, code: string) {
+  try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(Number(value)); }
+  catch { return `${code} ${value}`; }
+}
+export function decisionError(o: OpportunityDetail, decision: Action, reason: string, confirmed: boolean): string | null {
+  if (!may(o, decision)) return 'You are not permitted to make this decision.';
+  if ((decision.startsWith('SALES_') && o.state !== 'SALES_REVIEW') || (decision.startsWith('GATE1_') && o.state !== 'GATE1_PENDING')) return 'This package is no longer awaiting this decision. Refresh the opportunity.';
+  if (o.packageRevision === null) return 'There is no submitted package to review.';
+  if (!confirmed) return 'Confirm that you reviewed this package revision.';
+  if ((decision === 'SALES_REJECT' || decision === 'GATE1_NO_GO') && !reason.trim()) return 'Enter a reason for this decision.';
+  return null;
+}
