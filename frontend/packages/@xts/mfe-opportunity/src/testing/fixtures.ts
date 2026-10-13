@@ -2,7 +2,8 @@
  * The production service never falls back to these synthetic records. */
 import type { Action, ClientDraft, DirectoryUser, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseItem, ReasonCode, RfpQuestion, SourceDocument, VersionCommand } from '@xts/api-contracts';
 import { activeReasonCodes, type OpportunityService } from '../services/OpportunityService';
-import { canAnswer, canReview, estimateTotal, isPreparing, isSalesDecisionStage, isCeoDecisionStage, requiresDecisionReason, newDraft, pendingSaveErrors, SECTION_CATALOG, validDate } from '../lib/workflow';
+import { clientFieldErrors, opportunityFieldErrors, normalizedTitle } from '../lib/intakeValidation';
+import { canAnswer, canReview, estimateTotal, isPreparing, isSalesDecisionStage, isCeoDecisionStage, requiresDecisionReason, newDraft, SECTION_CATALOG, validDate } from '../lib/workflow';
 
 export const TEST_LOOKUPS: OpportunityLookups = { currencies: [{ id: '1', label: 'INR · Indian rupee', code: 'INR' }], industries: [{ id: '1', label: 'Technology' }], accountTypes: [{ id: '1', label: 'Enterprise' }] };
 export const TEST_REASON_CODES: ReasonCode[] = [
@@ -13,7 +14,7 @@ export function fixtureOpportunity(overrides: Partial<OpportunityDetail> = {}): 
   const owner = { id: '101', name: 'Test Owner', email: 'owner@example.test', roles: ['Test role'], active: true };
   const reviewer = { id: '102', name: 'Test Reviewer', email: 'reviewer@example.test', roles: ['Test review role'], active: true };
   const form = newDraft(owner.id);
-  Object.assign(form, { title: 'Cloud transformation', estimatedValue: '250000.00', currencyId: '1', serviceLine: 'Digital engineering', clientId: '201', description: 'Modernize the delivery platform.' });
+  Object.assign(form, { title: 'Cloud transformation', estimatedValue: '250000.00', currencyId: '1', serviceLine: 'Digital engineering', leadSource: 'Referral', clientId: '201', description: 'Modernize the delivery platform.' });
   Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement', portalUrl: 'https://procurement.example.test' });
   form.dates.submissionDeadline = '2026-11-25'; form.rfp.type = 'QUESTIONNAIRE'; form.rfp.questions = [{ id: '301', text: 'Describe the delivery approach.', sourceReference: 'Page 1', validated: true }];
   const client = { id: '201', revision: 1, name: 'Test Client', relationship: 'Existing customer', accountTypeId: '1', industryId: '1', accountTypeName: 'Enterprise', industryName: 'Technology', website: 'https://example.test', address: 'Display postal address', country: 'India', stateProvince: 'Maharashtra', city: 'Pune', streetAddress: 'Building 1, Test Street', primaryContact: { name: 'Test Contact', title: 'Procurement lead', email: 'contact@example.test', phone: '+91 0000000000', decisionRole: 'Decision maker' }, additionalContacts: [], allowedActions: ['CLIENT_UPDATE'] as OpportunityDetail['allowedActions'] };
@@ -259,7 +260,10 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
     },
     save: command => mutate('save', command, state => {
       if (!permitted(actor().id, command.id === null ? 'add' : 'edit')) throw new Error('Your current role cannot create or edit opportunities.');
-      const errors = pendingSaveErrors(command.form); if (errors.length) throw new Error(errors.join(' '));
+      const existing = command.id ? state.records[command.id]?.detail.form : undefined;
+      const errors = opportunityFieldErrors(command.form, lookups, state.clients[command.form.clientId!] ?? null, existing);
+      if (Object.keys(errors).length) throw new Error(Object.values(errors).join(' '));
+      if (Object.values(state.records).some(record => record.detail.id !== command.id && normalizedTitle(record.detail.title) === normalizedTitle(command.form.title))) throw new Error('An opportunity with this title already exists.');
       if (!user(command.form.ownerId).active || !permitted(command.form.ownerId, 'view') || !permitted(command.form.ownerId, 'edit')) throw new Error('Select an active Opportunity owner with edit permission.');
       if (!state.clients[command.form.clientId!] || !lookups.currencies.some(item => item.id === command.form.currencyId)) throw new Error('Select a valid mock client and currency.');
       const form = mockCopy(command.form);
@@ -381,9 +385,6 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
   };
 }
 function mockValidateClient(form: ClientDraft, lookups = TEST_LOOKUPS) {
-  if (![form.name, form.country, form.stateProvince, form.city, form.primaryContact.name, form.primaryContact.title, form.primaryContact.email, form.primaryContact.phone, form.primaryContact.decisionRole].every(value => value.trim())) throw new Error('Complete required client and contact fields.');
-  if (!lookups.accountTypes.some(item => item.id === form.accountTypeId) || !lookups.industries.some(item => item.id === form.industryId)) throw new Error('Select mock account type and industry.');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.primaryContact.email)) throw new Error('Enter a valid contact email.');
-  if (form.website && !/^https?:\/\/\S+$/.test(form.website)) throw new Error('Enter an HTTP or HTTPS website.');
-  if (form.additionalContacts.some(contact => ![contact.name, contact.title, contact.email, contact.phone, contact.decisionRole].every(value => value?.trim()) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email))) throw new Error('Complete all additional contact fields with valid emails.');
+  const errors = clientFieldErrors(form, lookups);
+  if (Object.keys(errors).length) throw new Error(Object.values(errors).join(' '));
 }

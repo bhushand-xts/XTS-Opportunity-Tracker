@@ -480,7 +480,7 @@ function AdminNavGroup({
 }
 
 // All real active Opportunity menu records can grant access to this MFE.
-// Keep one navigation surface and use the first accessible record's label/icon.
+// Use primary menu metadata for display; keep authorization tied to actual role grants.
 function OpportunityMenuLink({
   pathname,
   hasMenuAccess,
@@ -503,19 +503,20 @@ function OpportunityMenuLink({
   );
   if (!menu) return null;
   const granted = (permission: string) => hasOpportunityPermission(menus, hasPermission, permission);
-  const Icon = menu.icon ? resolveDynamicNavIcon(menu.icon) : Briefcase;
+  const displayMenu = menus[0] ?? menu;
+  const Icon = displayMenu.icon ? resolveDynamicNavIcon(displayMenu.icon) : ListChecks;
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         asChild
         isActive={pathname === "/opportunity" || pathname.startsWith("/opportunity/")}
-        tooltip={menu.menuName}
+        tooltip="Opportunities"
         className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
       >
         <Link to="/opportunity">
           <Icon />
-          <span>{menu.menuName}</span>
+          <span>Opportunities</span>
         </Link>
       </SidebarMenuButton>
       <SidebarMenuSub>
@@ -571,7 +572,7 @@ function AppSidebar({
           XTS
         </Link>
         <span className="truncate text-sm font-semibold text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-          XTS Opportunity Tracker
+          Opportunity Tracker
         </span>
       </SidebarHeader>
       <SidebarContent>

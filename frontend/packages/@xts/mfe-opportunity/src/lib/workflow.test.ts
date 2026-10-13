@@ -38,11 +38,13 @@ describe('workflow boundaries', () => {
     expect(canReview({ ...o, state: 'SALES_REVIEW' }, submitted, '102')).toBe(true);
     expect(canReview({ ...o, state: 'GATE1_PENDING' }, submitted, '102')).toBe(false);
   });
-  it('reports optional response preparation gaps without blocking basic opportunity saves', () => {
+  it('requires an RFP type on save while reporting separate response preparation gaps', () => {
     const o = fixtureOpportunity();
     o.form.rfp.type = null;
-    expect(pendingSaveErrors(o.form)).toEqual([]);
+    expect(pendingSaveErrors(o.form)).toEqual(['Choose an RFP type.']);
     expect(readinessErrors(o)).toContain('Choose an RFP type.');
+    o.form.rfp.type = 'QUESTIONNAIRE';
+    expect(pendingSaveErrors(o.form)).toEqual([]);
     o.responses![0].state = 'APPROVED'; o.responses![0].approvedRevision = 0;
     expect(readinessErrors(o)).toContain('Approve every current response revision.');
   });
@@ -70,13 +72,14 @@ function mockResponse(detail: OpportunityDetail, index = 0): ResponseCommand { c
 describe('explicit mock service on the existing Opportunity workflow', () => {
   it('queues a minimal new opportunity to Sales immediately and automatically routes approval to CEO', async () => {
     const h = mockHarness(), form = newDraft('101');
-    Object.assign(form, { title: 'New mock workflow', estimatedValue: '10.00', currencyId: '1', serviceLine: 'Mock consulting', clientId: '201' });
+    Object.assign(form, { title: 'New mock workflow', estimatedValue: '10.00', currencyId: '1', serviceLine: 'Consulting', leadSource: 'Referral', clientId: '201' });
+    form.rfp.type = 'QUESTIONNAIRE';
     Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
     form.dates.submissionDeadline = '2026-11-25';
     h.store.reset(false);
     let detail = await h.service.save({ id: null, expectedRevision: null, idempotencyKey: 'create-mock', form });
     expect(detail.state).toBe('SALES_REVIEW'); expect(detail.packageRevision).toBe(1); expect(detail.responsible?.id).toBe('104'); expect(detail.allowedActions).toContain('EDIT');
-    expect(detail.form.rfp.type).toBeNull(); expect(detail.responses).toEqual([]); expect(detail.readiness.ready).toBe(true);
+    expect(detail.form.rfp.type).toBe('QUESTIONNAIRE'); expect(detail.responses).toEqual([]); expect(detail.readiness.ready).toBe(true);
     const approvals = { queue: 'MY_APPROVALS' as const, search: '', after: null, first: 20 };
     h.actAs('104'); expect((await h.service.list(approvals)).nodes.map(item => item.id)).toEqual([detail.id]);
     h.actAs('105');
@@ -263,7 +266,8 @@ function realLoginHarness() {
   let freshLoads = 0;
   const session = () => createLocalOpportunityService(createLocalOpportunityStore(storage, directory, 'test-gateway'), async fresh => { if (fresh) freshLoads++; return { ...directory, actorId }; });
   const form = newDraft(actorId);
-  Object.assign(form, { title: 'Opportunity across real logins', estimatedValue: '100.00', currencyId: '14', serviceLine: 'Consulting', clientId: 'local-test-client' });
+  Object.assign(form, { title: 'Opportunity across real logins', estimatedValue: '100.00', currencyId: '14', serviceLine: 'Consulting', leadSource: 'Referral', clientId: 'local-test-client' });
+    form.rfp.type = 'QUESTIONNAIRE';
   Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
   form.dates.submissionDeadline = '2026-11-25';
   return { directory, entries, form, session, signInAs: (id: string) => { actorId = id; }, freshLoads: () => freshLoads };

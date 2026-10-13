@@ -44,7 +44,7 @@ function testClient(result: FetchResult, inspect?: (variables: Record<string, un
 }
 
 function pendingSaveFixture() {
-  const form = { ...newDraft('owner-1'), title: 'Pending opportunity', estimatedValue: '100000.00', currencyId: '7', serviceLine: 'Implementation', clientId: 'client-1' };
+  const form = { ...newDraft('owner-1'), title: 'Pending opportunity', estimatedValue: '100000.00', currencyId: '7', serviceLine: 'Implementation', leadSource: 'Referral', clientId: 'client-1' };
   Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
   form.dates.submissionDeadline = '2026-11-25';
   form.rfp.type = 'QUESTIONNAIRE';

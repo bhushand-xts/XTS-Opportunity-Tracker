@@ -52,27 +52,34 @@ export function canReview(o: OpportunityDetail, r: ResponseItem, userId: string 
   return isPreparing(o) && r.state === 'SUBMITTED' && r.reviewer?.active === true && r.reviewer.id === userId && r.owner?.id !== userId && r.submittedRevision === r.revision;
 }
 export function userLabel(user: DirectoryUser | null) { return user ? `${user.name || user.email}${user.active ? '' : ' (inactive)'}` : 'Unassigned'; }
-export function pendingSaveErrors(form: OpportunityDraft): string[] {
-  const errors: string[] = [];
-  if (!form.title.trim()) errors.push('Enter an opportunity name.');
-  if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValue)) errors.push('Enter a non-negative estimated value with at most two decimals.');
-  if (!form.currencyId) errors.push('Select a currency.');
-  if (!form.serviceLine.trim()) errors.push('Select a service line.');
-  if (!form.ownerId) errors.push('Select an opportunity owner.');
-  if (!form.clientId) errors.push('Select a client.');
-  if (!form.solicitation.reference.trim()) errors.push('Enter a solicitation / reference number.');
-  if (!form.solicitation.issuingAgency.trim()) errors.push('Enter an issuing agency / department.');
-  if (!['PORTAL', 'EMAIL', 'PHYSICAL'].includes(form.solicitation.submissionMethod)) errors.push('Select a submission method.');
-  if (!form.dates.submissionDeadline) errors.push('Set a submission deadline.');
+export function pendingSaveFieldErrors(form: OpportunityDraft): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!form.title.trim()) errors.title = 'Enter an opportunity name.';
+  if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValue) || !/[1-9]/.test(form.estimatedValue)) errors.estimatedValue = 'Enter an estimated value greater than zero with at most two decimals.';
+  if (!form.currencyId) errors.currencyId = 'Select a currency.';
+  if (!form.serviceLine.trim()) errors.serviceLine = 'Select a service line.';
+  if (!form.leadSource.trim()) errors.leadSource = 'Select a lead source.';
+  if (!form.ownerId) errors.ownerId = 'Select an opportunity owner.';
+  if (!form.rfp.type) errors['rfp.type'] = 'Choose an RFP type.';
+  if (!form.clientId) errors.clientId = 'Select a client.';
+  if (!form.solicitation.reference.trim()) errors['solicitation.reference'] = 'Enter a solicitation / reference number.';
+  if (!form.solicitation.issuingAgency.trim()) errors['solicitation.issuingAgency'] = 'Enter an issuing agency / department.';
+  if (!['PORTAL', 'EMAIL', 'PHYSICAL'].includes(form.solicitation.submissionMethod)) errors['solicitation.submissionMethod'] = 'Select a submission method.';
+  if (!form.dates.submissionDeadline) errors['dates.submissionDeadline'] = 'Set a submission deadline.';
   for (const field of ['questionsDue', 'submissionDeadline'] as const) {
     const value = form.dates[field];
-    if (value && !validDate(value)) errors.push(`Enter a valid date for ${field}.`);
+    if (value && !validDate(value)) errors[`dates.${field}`] = `Enter a valid date for ${field}.`;
+  }
+  if (validDate(form.dates.questionsDue) && validDate(form.dates.submissionDeadline) && form.dates.questionsDue > form.dates.submissionDeadline) {
+    errors['dates.questionsDue'] = 'Questions due date cannot be later than the submission deadline.';
   }
   return errors;
 }
+export function pendingSaveErrors(form: OpportunityDraft): string[] {
+  return Object.values(pendingSaveFieldErrors(form));
+}
 export function readinessErrors(o: OpportunityDetail): string[] {
   const f = o.form, errors = pendingSaveErrors(f);
-  if (!f.rfp.type) errors.push('Choose an RFP type.');
   const destination = f.solicitation.submissionMethod === 'PORTAL' ? f.solicitation.portalUrl : f.solicitation.submissionMethod === 'EMAIL' ? f.solicitation.submissionEmail : f.solicitation.deliveryInstructions;
   if (f.solicitation.submissionMethod !== 'PORTAL' && !destination.trim()) errors.push('Complete the submission destination.');
   if (f.solicitation.submissionMethod === 'EMAIL' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination)) errors.push('Enter a valid submission email.');
