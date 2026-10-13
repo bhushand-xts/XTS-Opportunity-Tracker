@@ -71,6 +71,8 @@ describe('explicit mock service on the existing Opportunity workflow', () => {
   it('queues a minimal new opportunity to Sales immediately and automatically routes approval to CEO', async () => {
     const h = mockHarness(), form = newDraft('101');
     Object.assign(form, { title: 'New mock workflow', estimatedValue: '10.00', currencyId: '1', serviceLine: 'Mock consulting', clientId: '201' });
+    Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
+    form.dates.submissionDeadline = '2026-11-25';
     h.store.reset(false);
     let detail = await h.service.save({ id: null, expectedRevision: null, idempotencyKey: 'create-mock', form });
     expect(detail.state).toBe('SALES_REVIEW'); expect(detail.packageRevision).toBe(1); expect(detail.responsible?.id).toBe('104'); expect(detail.allowedActions).toContain('EDIT');
@@ -220,12 +222,26 @@ describe('explicit mock service on the existing Opportunity workflow', () => {
   });
   it('prepares generic section responses and supports client creation/search without backend calls', async () => {
     const h = mockHarness(); let detail = await h.service.detail('401');
-    const client = await h.service.saveClient({ id: null, expectedRevision: null, idempotencyKey: crypto.randomUUID(), form: { ...detail.client!, name: 'Second mock client' } });
-    expect((await h.service.clients('second', null)).nodes[0].id).toBe(client.id);
+    const contact = { ...detail.client!.primaryContact, name: 'Additional Contact', email: 'additional@example.test', title: 'Director', phone: '+91 1234567890', decisionRole: 'Influencer' };
+    const client = await h.service.saveClient({ id: null, expectedRevision: null, idempotencyKey: crypto.randomUUID(), form: { ...detail.client!, name: 'Second mock client', relationship: '', additionalContacts: [contact] } });
+    expect((await h.service.clients('second', null)).nodes[0]).toMatchObject({ id: client.id, additionalContacts: [contact] });
     const form = structuredClone(detail.form); form.clientId = client.id; form.rfp.type = 'GENERIC'; form.rfp.questions = []; form.rfp.sections = [{ key: 'summary', instructions: 'Mock executive summary' }, { key: 'approach', instructions: '' }];
     detail = await h.service.save({ id: detail.id, expectedRevision: detail.revision, idempotencyKey: crypto.randomUUID(), form });
     expect(detail.responses?.map(item => item.id)).toEqual(['section-summary', 'section-approach']); expect(detail.responses?.every(item => item.sourceValidated && item.state === 'UNASSIGNED')).toBe(true);
     expect((await h.service.eligibleUsers({ opportunityId: detail.id, purpose: 'REVIEWER', search: '', after: null })).nodes.map(user => user.id)).toEqual(['103']);
+  });
+  it('keeps Generic questions alongside sections and permits answers without the removed source-validation field', async () => {
+    const h = mockHarness(); let detail = await h.service.detail('401');
+    const form = structuredClone(detail.form);
+    form.rfp.type = 'GENERIC'; form.rfp.sections = [{ key: 'summary', instructions: '' }];
+    form.rfp.questions = [{ id: 'draft-manual', text: 'Describe transition support.', sourceReference: '', validated: false }];
+    detail = await h.service.save({ id: detail.id, expectedRevision: detail.revision, idempotencyKey: crypto.randomUUID(), form });
+    expect(detail.responses?.map(item => item.title)).toEqual(['Executive summary', 'Describe transition support.']);
+    expect(detail.responses![1].sourceValidated).toBe(false);
+    detail = await h.service.assign({ ...mockResponse(detail, 1), ownerId: '101', reviewerId: '103', dueDate: '2026-11-20' });
+    detail = await h.service.answer({ ...mockResponse(detail, 1), answer: 'We provide a transition team.', submit: true });
+    expect(detail.responses![1]).toMatchObject({ state: 'SUBMITTED', sourceValidated: false });
+    expect((await h.service.detail(detail.id)).form.rfp.questions).toHaveLength(1);
   });
 });
 
@@ -248,6 +264,8 @@ function realLoginHarness() {
   const session = () => createLocalOpportunityService(createLocalOpportunityStore(storage, directory, 'test-gateway'), async fresh => { if (fresh) freshLoads++; return { ...directory, actorId }; });
   const form = newDraft(actorId);
   Object.assign(form, { title: 'Opportunity across real logins', estimatedValue: '100.00', currencyId: '14', serviceLine: 'Consulting', clientId: 'local-test-client' });
+  Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
+  form.dates.submissionDeadline = '2026-11-25';
   return { directory, entries, form, session, signInAs: (id: string) => { actorId = id; }, freshLoads: () => freshLoads };
 }
 const approvalFilter = { queue: 'MY_APPROVALS' as const, search: '', after: null, first: 50 };

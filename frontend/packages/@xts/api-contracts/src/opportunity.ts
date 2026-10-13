@@ -7,7 +7,7 @@ export type Module = 'overview' | 'responses' | 'estimation' | 'scope' | 'assign
 export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
 export interface DirectoryUser { id: string; name: string; email: string; roles: string[]; active: boolean; }
 export interface Contact { id?: string; name: string; title: string; email: string; phone: string; decisionRole: string; }
-export interface AdditionalContact { id?: string; name: string; email: string; }
+export type AdditionalContact = Contact;
 export interface ClientDraft {
   name: string; relationship: string; accountTypeId: string; industryId: string; website: string;
   address: string; country: string; stateProvince: string; city: string; streetAddress: string;

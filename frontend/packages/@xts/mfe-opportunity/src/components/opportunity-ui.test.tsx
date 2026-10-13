@@ -13,6 +13,7 @@ import { OpportunityFormPage } from './OpportunityFormPage';
 import { OpportunityDetailsPage } from './OpportunityDetailsPage';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY } from '../services/userDirectory.queries';
 import { newDraft } from '../lib/workflow';
+import { toast } from 'sonner';
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -43,6 +44,63 @@ function testService(initial = fixtureOpportunity()): OpportunityService {
     save: vi.fn(async (command: SaveCommand) => { record = { ...record, id: command.id ?? record.id, form: structuredClone(command.form), title: command.form.title, state: 'SALES_REVIEW', packageRevision: (record.packageRevision ?? 0) + 1, revision: record.revision + 1 }; return record; }),
   };
 }
+describe('RFP preparation', () => {
+  it.each(['QUESTIONNAIRE', 'GENERIC'] as const)('selects a document and exposes extraction only for Questionnaire: %s', async type => {
+    const initial = fixtureOpportunity(); initial.form.rfp.type = type;
+    const service = testService(initial), notification = vi.spyOn(toast, 'info');
+    service.upload = vi.fn(); service.extract = vi.fn(); service.extractionStatus = vi.fn();
+    mount(service, '/opportunity/401/edit');
+    const input = await screen.findByLabelText(type === 'GENERIC' ? 'Source document / brief' : 'Source questionnaire');
+    expect(input).toBeEnabled();
+    fireEvent.change(input, { target: { files: [new File(['document bytes'], 'brief.pdf', { type: 'application/pdf' })] } });
+    if (type === 'QUESTIONNAIRE') {
+      fireEvent.click(screen.getByRole('button', { name: 'Extract questions' }));
+      expect(notification).toHaveBeenCalledWith('AI question extraction is currently under development.');
+    } else {
+      expect(screen.queryByRole('button', { name: 'Extract questions' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/AI extraction/)).not.toBeInTheDocument();
+      expect(notification).not.toHaveBeenCalled();
+    }
+    expect(screen.getByText('brief.pdf (selected)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the delivery approach.');
+    expect(service.save).not.toHaveBeenCalled(); expect(service.upload).not.toHaveBeenCalled(); expect(service.extract).not.toHaveBeenCalled(); expect(service.extractionStatus).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Save & upload|Save & extract|Upload document/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add from Question Master' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Question 1 source reference/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Validated against source' })).not.toBeInTheDocument();
+  });
+  it('allows document selection on a new opportunity without saving it', async () => {
+    const service = testService(); mount(service, '/opportunity/new');
+    await waitFor(() => expect(screen.getByLabelText('Opportunity owner')).toHaveTextContent('Test Owner'));
+    fireEvent.click(screen.getByRole('button', { name: /Generic RFP/ }));
+    const input = screen.getByLabelText('Source document / brief'); expect(input).toBeEnabled();
+    fireEvent.change(input, { target: { files: [new File(['document'], 'brief.docx')] } });
+    expect(screen.getByText('brief.docx (selected)')).toBeInTheDocument();
+    expect(service.save).not.toHaveBeenCalled();
+  });
+  it('shows one Generic section panel and saves manual questions without reference or validation controls', async () => {
+    const initial = fixtureOpportunity(); initial.form.rfp.type = 'GENERIC'; initial.form.rfp.questions = [];
+    const service = testService(initial); mount(service, '/opportunity/401/edit');
+    const sections = await screen.findByRole('group', { name: /Required proposal sections/ });
+    expect(within(sections).getAllByRole('checkbox')).toHaveLength(12);
+    expect(screen.queryByRole('tab', { name: 'Commercial' })).not.toBeInTheDocument();
+    fireEvent.click(within(sections).getByRole('checkbox', { name: 'Executive summary' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
+    fireEvent.change(screen.getByLabelText('Question 1 text'), { target: { value: 'Describe the transition plan.' } });
+    expect(screen.queryByLabelText(/Question 1 source reference/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Validated against source' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue' }));
+    await waitFor(() => expect(service.save).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(service.save).mock.calls[0][0].form.rfp).toMatchObject({ type: 'GENERIC', sections: [{ key: 'summary' }], questions: [{ text: 'Describe the transition plan.', validated: false, sourceReference: '' }] });
+  });
+  it('keeps document and question controls read-only when editing is not permitted', async () => {
+    mount(testService(fixtureOpportunity({ allowedActions: [] })), '/opportunity/401/edit');
+    expect(await screen.findByLabelText('Source questionnaire')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Extract questions' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '+ Add question' })).toBeDisabled();
+    expect(screen.getByLabelText('Question 1 text')).toBeDisabled();
+  });
+});
 describe('Opportunity UI using test-only service fixtures', () => {
   it('shows a true empty Pipeline only for a successful empty backend response', async () => {
     const service = testService(); service.list = vi.fn(async () => ({ nodes: [], totalCount: 0, endCursor: null, hasNextPage: false }));
@@ -134,6 +192,8 @@ describe('Opportunity UI using test-only service fixtures', () => {
     let service = session();
     const form = newDraft(actorId);
     Object.assign(form, { title: 'Automatic approval flow', estimatedValue: '100.00', currencyId: '1', serviceLine: 'Consulting', clientId: 'local-test-client' });
+    Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
+    form.dates.submissionDeadline = '2026-11-25';
     const created = await service.save({ id: null, expectedRevision: null, idempotencyKey: 'ui-auto-create', form });
     actorId = '2017'; service = session(); mount(service, '/opportunity/approvals', actorId);
     fireEvent.click(await screen.findByRole('link', { name: 'View Automatic approval flow' }));
@@ -165,10 +225,18 @@ describe('Opportunity UI using test-only service fixtures', () => {
   it('creates with a real client ID and Pending save, then Save & Continue never creates a duplicate', async () => {
     const service = testService(); mount(service, '/opportunity/new');
     expect(service.lookups).toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText(/Opportunity name/), { target: { value: 'New real draft' } }); fireEvent.change(screen.getByLabelText(/Estimated value/), { target: { value: '12345.67' } }); fireEvent.change(screen.getByLabelText(/Service line/), { target: { value: 'Consulting' } });
+    fireEvent.change(screen.getByLabelText(/Opportunity name/), { target: { value: 'New real draft' } }); fireEvent.change(screen.getByLabelText(/Estimated value/), { target: { value: '12345.67' } }); fireEvent.keyDown(screen.getByLabelText('Service line'), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('option', { name: 'Consulting' }));
     fireEvent.keyDown(screen.getByLabelText(/Currency/), { key: 'Enter' }); const currencyOption = await screen.findByText(TEST_LOOKUPS.currencies[0].label); fireEvent.click(currencyOption); 
     fireEvent.focus(screen.getByLabelText('Search client')); fireEvent.change(screen.getByLabelText('Search client'), { target: { value: 'Test' } });
-    fireEvent.click(await screen.findByText('Test Client')); 
+    fireEvent.click(await screen.findByText('Test Client'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue' }));
+    expect(service.save).not.toHaveBeenCalled();
+    expect(screen.getByText(/Enter a solicitation \/ reference number/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Submission method')).toHaveAttribute('aria-required', 'true');
+    fireEvent.change(screen.getByLabelText(/Solicitation \/ reference number/), { target: { value: 'RFP-NEW-1' } });
+    fireEvent.change(screen.getByLabelText(/Issuing agency \/ department/), { target: { value: 'Client procurement' } });
+    fireEvent.change(screen.getByLabelText(/Submission deadline/), { target: { value: '2026-11-25' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save & Continue' }));
     await waitFor(() => expect(service.save).toHaveBeenCalledTimes(1)); await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/opportunity/401/edit'));
     expect(vi.mocked(service.save).mock.calls[0][0]).toMatchObject({ id: null, expectedRevision: null, form: { clientId: '201', ownerId: '101', estimatedValue: '12345.67' } });

@@ -66,7 +66,6 @@ const LocalEnvironment = USE_LOCAL_WORKFLOW ? lazy(() => import("./testing/fixtu
     if (runtime.error) return <Notice title="Unable to load your Opportunity access" error={runtime.error} retry={runtime.reload} />;
     if (!runtime.data || runtime.data.actorId !== actorId || runtime.data.token !== token) return <Loading label="Loading your user and role permissions..." />;
     return <OpportunityServiceContext.Provider value={runtime.data.service}><div key={actorId}>
-      <p role="status" className="opp-notice mx-5 mt-4">UI test data is stored in this browser. Use your normal sign out and login to test each real user&apos;s role. Keep using the same browser and app address.</p>
       {children}
     </div></OpportunityServiceContext.Provider>;
   },

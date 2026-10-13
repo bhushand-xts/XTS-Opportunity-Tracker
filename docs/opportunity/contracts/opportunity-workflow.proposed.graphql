@@ -17,7 +17,7 @@ enum WorkflowDecision { SALES_APPROVE SALES_REJECT GATE1_GO GATE1_NO_GO }
 
 type WorkflowUser { id: ID! name: String! email: String! roles: [String!]! active: Boolean! }
 type WorkflowContact { id: ID name: String! title: String! email: String! phone: String! decisionRole: String! }
-type WorkflowAdditionalContact { id: ID name: String! email: String! }
+type WorkflowAdditionalContact { id: ID name: String! title: String! email: String! phone: String! decisionRole: String! }
 type WorkflowClient { id: ID! revision: Int! name: String! relationship: String! accountTypeId: ID! industryId: ID! accountTypeName: String! industryName: String! website: String! address: String! country: String! stateProvince: String! city: String! streetAddress: String! primaryContact: WorkflowContact! additionalContacts: [WorkflowAdditionalContact!]! allowedActions: [WorkflowAction!]! }
 type WorkflowSolicitation { reference: String! version: String! issuingAgency: String! procurementContact: String! submissionMethod: WorkflowSubmissionMethod! vendorDemo: WorkflowConfirmation! portalUrl: String! submissionEmail: String! deliveryInstructions: String! contractTerm: String! incumbentVendor: String! preBidMeeting: WorkflowConfirmation! submissionTimezone: String! }
 type WorkflowDates { issueDate: String! questionsDue: String! proposalDue: String! submissionDeadline: String! additionalDeadline: String! additionalDeadlineLabel: String! }
@@ -42,7 +42,7 @@ type WorkflowClientPage { nodes: [WorkflowClient!]! totalCount: Int! endCursor: 
 type WorkflowUserPage { nodes: [WorkflowUser!]! totalCount: Int! endCursor: String hasNextPage: Boolean! }
 
 input WorkflowContactInput { id: ID name: String! title: String! email: String! phone: String! decisionRole: String! }
-input WorkflowAdditionalContactInput { id: ID name: String! email: String! }
+input WorkflowAdditionalContactInput { id: ID name: String! title: String! email: String! phone: String! decisionRole: String! }
 input WorkflowSolicitationInput { reference: String! version: String! issuingAgency: String! procurementContact: String! submissionMethod: WorkflowSubmissionMethod! vendorDemo: WorkflowConfirmation! portalUrl: String! submissionEmail: String! deliveryInstructions: String! contractTerm: String! incumbentVendor: String! preBidMeeting: WorkflowConfirmation! submissionTimezone: String! }
 input WorkflowDatesInput { issueDate: String! questionsDue: String! proposalDue: String! submissionDeadline: String! additionalDeadline: String! additionalDeadlineLabel: String! }
 input WorkflowContextInput { instructions: String! submissionRequirements: String! opportunityOverview: String! scopeOfWork: String! requirements: String! notes: String! }

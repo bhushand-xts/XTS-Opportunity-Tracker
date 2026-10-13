@@ -57,27 +57,27 @@ export function pendingSaveErrors(form: OpportunityDraft): string[] {
   if (!form.title.trim()) errors.push('Enter an opportunity name.');
   if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValue)) errors.push('Enter a non-negative estimated value with at most two decimals.');
   if (!form.currencyId) errors.push('Select a currency.');
-  if (!form.serviceLine.trim()) errors.push('Enter the service line.');
+  if (!form.serviceLine.trim()) errors.push('Select a service line.');
   if (!form.ownerId) errors.push('Select an opportunity owner.');
   if (!form.clientId) errors.push('Select a client.');
-  for (const [field, value] of Object.entries(form.dates)) {
-    if (field !== 'additionalDeadlineLabel' && value && !validDate(value)) errors.push(`Enter a valid date for ${field}.`);
+  if (!form.solicitation.reference.trim()) errors.push('Enter a solicitation / reference number.');
+  if (!form.solicitation.issuingAgency.trim()) errors.push('Enter an issuing agency / department.');
+  if (!['PORTAL', 'EMAIL', 'PHYSICAL'].includes(form.solicitation.submissionMethod)) errors.push('Select a submission method.');
+  if (!form.dates.submissionDeadline) errors.push('Set a submission deadline.');
+  for (const field of ['questionsDue', 'submissionDeadline'] as const) {
+    const value = form.dates[field];
+    if (value && !validDate(value)) errors.push(`Enter a valid date for ${field}.`);
   }
-  try { new Intl.DateTimeFormat('en', { timeZone: form.solicitation.submissionTimezone }); } catch { errors.push('Enter a valid IANA submission timezone.'); }
   return errors;
 }
 export function readinessErrors(o: OpportunityDetail): string[] {
   const f = o.form, errors = pendingSaveErrors(f);
   if (!f.rfp.type) errors.push('Choose an RFP type.');
-  if (!f.solicitation.reference.trim() || !f.solicitation.issuingAgency.trim()) errors.push('Complete the reference number and issuing agency.');
-  if (!f.dates.submissionDeadline) errors.push('Set a submission deadline.');
   const destination = f.solicitation.submissionMethod === 'PORTAL' ? f.solicitation.portalUrl : f.solicitation.submissionMethod === 'EMAIL' ? f.solicitation.submissionEmail : f.solicitation.deliveryInstructions;
-  if (!destination.trim()) errors.push('Complete the submission destination.');
+  if (f.solicitation.submissionMethod !== 'PORTAL' && !destination.trim()) errors.push('Complete the submission destination.');
   if (f.solicitation.submissionMethod === 'EMAIL' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination)) errors.push('Enter a valid submission email.');
-  if (f.solicitation.submissionMethod === 'PORTAL' && !/^https?:\/\/\S+$/.test(destination)) errors.push('Enter an HTTP or HTTPS submission portal URL.');
   const responses = o.responses ?? [];
   if (!responses.length) errors.push('Prepare at least one response item.');
-  if (responses.some(r => !r.sourceValidated)) errors.push('Validate all source questions.');
   if (responses.some(r => !r.owner?.active || !r.reviewer?.active || r.owner.id === r.reviewer.id || !r.dueDate)) errors.push('Assign active owners, independent reviewers and due dates.');
   if (responses.some(r => r.state !== 'APPROVED' || r.approvedRevision !== r.revision)) errors.push('Approve every current response revision.');
   return [...new Set([...errors, ...o.readiness.issues])];

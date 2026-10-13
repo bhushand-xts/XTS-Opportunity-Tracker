@@ -1,6 +1,6 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import type { DirectoryUser } from '@xts/api-contracts';
-import { Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner } from '@xts/design-system';
+import { Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner } from '@xts/design-system';
 import { useOwnerDirectory } from '../services/useOwnerDirectory';
 import { Notice } from './ui';
 
@@ -15,17 +15,15 @@ export function OpportunityOwnerSelect({ value, selected, onChange, disabled = f
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
-  const id = useId(), [search, setSearch] = useState('');
+  const id = useId();
   const directory = useOwnerDirectory(!disabled);
   const assigned = directory.users.find(user => user.id === value) ?? (selected?.id === value ? selected : undefined);
-  const term = search.trim().toLocaleLowerCase();
   const activeUsers = directory.users.filter(user => user.active);
-  const matches = activeUsers.filter(user => `${user.name} ${user.email} ${user.roles.join(' ')}`.toLocaleLowerCase().includes(term));
-  const choices = [...matches];
+  const choices = [...activeUsers];
   if (assigned && !choices.some(user => user.id === assigned.id)) choices.unshift(assigned);
   const unknownAssigned = value && !choices.some(user => user.id === value);
   const blocked = disabled || directory.loading || Boolean(directory.error);
-  return <div className="min-w-0 space-y-2">
+  return <div className="opp-field min-w-0 space-y-1">
     <Label htmlFor={id}>Opportunity owner</Label>
     <Select value={value} onValueChange={onChange} disabled={blocked}>
       <SelectTrigger id={id} aria-label="Opportunity owner" className="min-w-0 max-w-full" title={assigned ? userLabel(assigned) : undefined}><SelectValue placeholder="Select an active user" className="min-w-0 flex-1 truncate text-left" /></SelectTrigger>
@@ -34,9 +32,8 @@ export function OpportunityOwnerSelect({ value, selected, onChange, disabled = f
         {choices.map(user => <SelectItem key={user.id} value={user.id} disabled={!user.active} className="whitespace-normal break-words [&>span:last-child]:min-w-0">{userLabel(user)}</SelectItem>)}
       </SelectContent>
     </Select>
-    {!disabled && <Input aria-label="Search opportunity owners" value={search} placeholder="Search name, email or role…" disabled={directory.loading} onChange={event => setSearch(event.target.value)} />}
     {!disabled && directory.loading && <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Spinner className="size-3" />Loading owner directory…</p>}
     {!disabled && directory.error && <Notice title="Owner directory unavailable" error={directory.error} retry={directory.reload} />}
-    {!disabled && !directory.loading && !directory.error && <p role="status" className="text-xs text-muted-foreground">{activeUsers.length === 0 ? 'No active users are available to assign.' : matches.length === 0 ? 'No active users match your search.' : 'Choose an active user from the user directory.'}</p>}
+    {!disabled && !directory.loading && !directory.error && activeUsers.length === 0 && <p role="status" className="text-xs text-muted-foreground">No active users are available to assign.</p>}
   </div>;
 }

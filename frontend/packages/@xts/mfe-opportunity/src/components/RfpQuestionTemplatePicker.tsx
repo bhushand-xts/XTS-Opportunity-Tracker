@@ -38,7 +38,7 @@ export function RfpQuestionTemplatePicker({ disabled = false, alreadySelectedIds
     <SheetContent className="opp-drawer flex w-full flex-col sm:max-w-xl">
       <SheetHeader>
         <SheetTitle>Add from Question Master</SheetTitle>
-        <SheetDescription>Choose standard questions for this opportunity. Review each added question against the RFP before validating it.</SheetDescription>
+        <SheetDescription>Choose standard questions for this opportunity. You can edit each question after adding it.</SheetDescription>
       </SheetHeader>
       <div className="space-y-1.5">
         <Label htmlFor={searchId}>Search master questions</Label>

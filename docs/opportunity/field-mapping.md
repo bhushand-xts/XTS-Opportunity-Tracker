@@ -1,6 +1,6 @@
 # Reference field mapping
 
-Every field below is implemented in intake/drawers, saved Overview, modules or
+The current fields below are implemented in intake/drawers, saved Overview, modules or
 response/decision UI. The existing opportunity schema has no field beyond id
 and is not in the live gateway. All opportunity/client/workflow mappings are
 **proposed**, except the master/user identities explicitly named below.
@@ -19,19 +19,26 @@ These approvers are server-managed rather than form inputs. Owner edits while
 Pending refresh the saved package/revision. Source validation, answers and response
 review do not gate the Sales Head/CEO approval sequence.
 
+The simplified form removes Relationship, Street address, Version, Vendor demonstration,
+Portal URL, Submission timezone, Issue date, Proposal due date, Additional deadline/label
+and the Context drawer. Existing values remain in the wire contract for compatibility;
+frontend saves do not require those hidden fields. The owner dropdown has no extra search box.
+Additional contacts use the same five required fields as the primary contact. The proposed
+backend input/output for additional contacts now includes title, phone and decisionRole;
+this is a backend handoff requirement only, with no backend implementation changed.
+
 | Group | UI label | Domain ? API path | Validation | Storage owner |
 |---|---|---|---|---|
 | Opportunity | Opportunity name/title | form.title | Required for Pending; trim, bounded text | Opportunity service |
 | Opportunity | Estimated value | form.estimatedValue | Required; non-negative Decimal string, 2 decimals | Opportunity service |
 | Opportunity | Currency | form.currencyId | Required active currencies.currencyId FK; summary returns currencyCode | Opportunity service |
-| Opportunity | Service line | form.serviceLine | Required text; no implemented service-line master | Opportunity service |
+| Opportunity | Service line | form.serviceLine | Required dropdown: Digital engineering / Consulting from the HTML reference; retains existing saved values; no implemented service-line master | Opportunity service |
 | Opportunity | Lead source | form.leadSource | Optional controlled descriptive text | Opportunity service |
 | Opportunity | Opportunity owner | form.ownerId | Required stable user ID from active userList; rolesList supplies display only; inactive current owner preserved for display, real assignment validated on save | Opportunity service; existing user/admin directory reads |
 | Opportunity | Priority | form.priority | LOW/MEDIUM/HIGH | Opportunity service |
 | Opportunity | Description | form.description | Optional bounded text | Opportunity service |
 | Opportunity | Linked client | form.clientId | Required stable client ID; never implicit client upsert | Opportunity service |
 | Client | Organization/account name | client.name | Required for client save | Client directory service (proposed; no existing owner/API) |
-| Client | Relationship | client.relationship | Required for client save | Client directory service (proposed; no existing owner/API) |
 | Client | Account type | client.accountTypeId | Active accountTypes.accountTypeId FK | Client directory service (proposed; no existing owner/API) |
 | Client | Sector/industry | client.industryId | Active industries.industryId FK | Client directory service (proposed; no existing owner/API) |
 | Client | Website | client.website | Optional HTTP(S) URL | Client directory service (proposed; no existing owner/API) |
@@ -39,54 +46,42 @@ review do not gate the Sales Head/CEO approval sequence.
 | Client | Country | client.country | Required for client save | Client directory service (proposed; no existing owner/API) |
 | Client | State/province | client.stateProvince | Required for client save | Client directory service (proposed; no existing owner/API) |
 | Client | City | client.city | Required for client save | Client directory service (proposed; no existing owner/API) |
-| Client | Street address | client.streetAddress | Optional street/building text; no Address line 2 | Client directory service (proposed; no existing owner/API) |
 | Primary contact | Full name | client.primaryContact.name | Required | Client/contact directory service (proposed) |
 | Primary contact | Title/role | client.primaryContact.title | Required | Client/contact directory service (proposed) |
 | Primary contact | Email | client.primaryContact.email | Required email | Client/contact directory service (proposed) |
 | Primary contact | Phone | client.primaryContact.phone | Required phone text, retains +/country code | Client/contact directory service (proposed) |
 | Primary contact | Role in decision | client.primaryContact.decisionRole | Required descriptive value | Client/contact directory service (proposed) |
-| Additional contacts | Name | client.additionalContacts[].name | Required when an extra contact exists; add/remove retains optional stable id | Client/contact directory service (proposed) |
+| Additional contacts | Full name | client.additionalContacts[].name | Required when an extra contact exists; add/remove retains optional stable id | Client/contact directory service (proposed) |
 | Additional contacts | Email | client.additionalContacts[].email | Required valid email when an extra contact exists | Client/contact directory service (proposed) |
-| Solicitation | Solicitation/reference number | form.solicitation.reference | Optional Pending intake text | Opportunity/RFP intake service |
-| Solicitation | Version | form.solicitation.version | Optional reference version text | Opportunity/RFP intake service |
-| Solicitation | Issuing agency/department | form.solicitation.issuingAgency | Optional Pending intake text | Opportunity/RFP intake service |
+| Additional contacts | Title/role | client.additionalContacts[].title | Required when an extra contact exists | Client/contact directory service (proposed) |
+| Additional contacts | Phone | client.additionalContacts[].phone | Required phone text, retains +/country code | Client/contact directory service (proposed) |
+| Additional contacts | Role in decision | client.additionalContacts[].decisionRole | Required; same choices as primary contact | Client/contact directory service (proposed) |
+| Solicitation | Solicitation/reference number | form.solicitation.reference | Required non-whitespace text before save | Opportunity/RFP intake service |
+| Solicitation | Issuing agency/department | form.solicitation.issuingAgency | Required non-whitespace text before save | Opportunity/RFP intake service |
 | Solicitation | Procurement contact | form.solicitation.procurementContact | Optional text, separate from linked primary contact | Opportunity/RFP intake service |
-| Solicitation | Submission method | form.solicitation.submissionMethod | PORTAL/EMAIL/PHYSICAL | Opportunity/RFP intake service |
-| Solicitation | Vendor demonstration required | form.solicitation.vendorDemo | UNCONFIRMED/YES/NO | Opportunity/RFP intake service |
-| Solicitation | Portal URL | form.solicitation.portalUrl | Optional; valid HTTP(S) when supplied | Opportunity/RFP intake service |
+| Solicitation | Submission method | form.solicitation.submissionMethod | Required PORTAL/EMAIL/PHYSICAL; current default PORTAL | Opportunity/RFP intake service |
 | Solicitation | Submission email | form.solicitation.submissionEmail | Optional; valid email when supplied | Opportunity/RFP intake service |
 | Solicitation | Delivery address/instructions | form.solicitation.deliveryInstructions | Optional intake text | Opportunity/RFP intake service |
 | Solicitation | Contract term | form.solicitation.contractTerm | Optional text | Opportunity/RFP intake service |
 | Solicitation | Incumbent vendor | form.solicitation.incumbentVendor | Optional text | Opportunity/RFP intake service |
 | Solicitation | Pre-bid meeting | form.solicitation.preBidMeeting | UNCONFIRMED/YES/NO | Opportunity/RFP intake service |
-| Solicitation | Submission timezone | form.solicitation.submissionTimezone | Valid IANA timezone; default Asia/Kolkata | Opportunity/RFP intake service |
-| Important dates | Issue date | form.dates.issueDate | Optional ISO YYYY-MM-DD calendar date | Opportunity/RFP intake service |
 | Important dates | Questions due | form.dates.questionsDue | Optional date | Opportunity/RFP intake service |
-| Important dates | Proposal due date | form.dates.proposalDue | Optional date | Opportunity/RFP intake service |
-| Important dates | Submission deadline | form.dates.submissionDeadline | Optional; calendar-valid date when supplied | Opportunity/RFP intake service |
-| Important dates | Additional deadline | form.dates.additionalDeadline | Optional date | Opportunity/RFP intake service |
-| Important dates | Additional deadline label | form.dates.additionalDeadlineLabel | Optional descriptive text | Opportunity/RFP intake service |
-| Context drawer | Instructions | form.context.instructions | Optional bounded text; Apply edits draft, Save Opportunity persists | Opportunity/RFP intake service |
-| Context drawer | Submission requirements | form.context.submissionRequirements | Optional bounded text; Apply edits draft, Save Opportunity persists | Opportunity/RFP intake service |
-| Context drawer | Opportunity overview | form.context.opportunityOverview | Optional bounded text; Apply edits draft, Save Opportunity persists | Opportunity/RFP intake service |
-| Context drawer | Scope of work | form.context.scopeOfWork | Optional bounded text; Apply edits draft, Save Opportunity persists | Opportunity/RFP intake service |
-| Context drawer | Key technical/functional requirements | form.context.requirements | Optional bounded text; Apply edits draft, Save Opportunity persists | Opportunity/RFP intake service |
-| Context drawer | Notes | form.context.notes | Optional bounded text; Apply edits draft, Save Opportunity persists | Opportunity/RFP intake service |
+| Important dates | Submission deadline | form.dates.submissionDeadline | Required calendar-valid YYYY-MM-DD date before save | Opportunity/RFP intake service |
 | RFP selector | RFP type | form.rfp.type | QUESTIONNAIRE/GENERIC/null; optional for Pending/approval; switching confirms affected-item deletion | Opportunity/RFP intake service |
 | Generic RFP | Source document/brief | form.rfp.sourceDocumentId (wire); source.id (UI) | Uploaded document ID; filename alone cannot count as uploaded | Opportunity/RFP/document service |
 | Generic RFP | Submission format | form.rfp.submissionFormat | TECHNICAL_COST/COMBINED | Opportunity/RFP/document service |
 | Generic RFP | Output file format | form.rfp.outputFormat | PDF/DOCX/PPTX | Opportunity/RFP/document service |
 | Generic RFP | Page limit/volume rules | form.rfp.pageRules | Text; supports separate volume limits | Opportunity/RFP/document service |
 | Generic RFP | Evaluation basis | form.rfp.evaluation | Optional bounded text | Opportunity/RFP/document service |
-| Generic RFP | Proposal section selection | form.rfp.sections[].key | 12 supported reference catalog keys; backend validates supported catalog | Opportunity/RFP/document service |
+| Generic RFP | Proposal section selection | form.rfp.sections[].key | 12 supported catalog keys in one flat checkbox panel; backend validates supported catalog | Opportunity/RFP/document service |
 | Generic RFP | Section instructions | form.rfp.sections[].instructions | Text persisted per stable section key | Opportunity/RFP/document service |
-| Questionnaire | Source document | form.rfp.sourceDocumentId (wire); source.id (UI) | Uploaded stable document ID; 25 MB maximum in UI | Opportunity/RFP/extraction service |
-| Questionnaire | Extraction status | form.rfp.extraction.id/state/error | Server-owned PROCESSING/SUCCEEDED/FAILED; not accepted as save input | Opportunity/RFP/extraction service |
-| Questionnaire | Prepared question text | form.rfp.questions[].text | Prepared independently of Sales approval; manual, extracted or editable Question Master copy; edit resets source validation | Opportunity/RFP/extraction service |
-| Questionnaire | Question Master identity | form.rfp.questions[].masterQuestionId | Optional numeric active rfpQuestionsList identity; unique draft question ID per import; duplicate master imports suppressed | Existing admin Question Master read; Opportunity/RFP save proposed |
-| Questionnaire | Source reference | form.rfp.questions[].sourceReference | Extraction/manual reference or Question Master #id on template import | Opportunity/RFP/extraction service |
-| Questionnaire | Source validation | form.rfp.questions[].validated | Preparation flag; Question Master copies start false; not a package-approval prerequisite | Opportunity/RFP/extraction service |
-| Questionnaire | Question identity/add/remove | form.rfp.questions[].id | Server stable ID or draft- UUID reconciled transactionally by save; removing invalidates only affected response/approval | Opportunity/RFP/extraction service |
+| Both RFP formats | Source document | form.rfp.sourceDocumentId (wire); source.id (UI) | Uploaded stable document ID; 25 MB maximum in UI | Opportunity/RFP/extraction service |
+| Both RFP formats | Extraction status | form.rfp.extraction.id/state/error | Server-owned PROCESSING/SUCCEEDED/FAILED; not accepted as save input | Opportunity/RFP/extraction service |
+| Both RFP formats | Prepared question text | form.rfp.questions[].text | Manual questions for both formats; preparation is independent of Sales approval; edit resets legacy validation metadata | Opportunity/RFP/extraction service |
+| Both RFP formats | Question Master identity | form.rfp.questions[].masterQuestionId | Optional numeric active rfpQuestionsList identity; unique draft question ID per import; duplicate master imports suppressed | Existing admin Question Master read; Opportunity/RFP save proposed |
+| Both RFP formats | Source reference | form.rfp.questions[].sourceReference | Retained internal provenance on existing questions; source-reference input removed | Opportunity/RFP/extraction service |
+| Both RFP formats | Source validation | form.rfp.questions[].validated | Legacy metadata retained without a checkbox; not a frontend readiness, answer-submission or package-approval prerequisite | Opportunity/RFP/extraction service |
+| Both RFP formats | Question identity/add/remove | form.rfp.questions[].id | Server stable ID or draft- UUID reconciled transactionally by save; removing invalidates only affected response/approval | Opportunity/RFP/extraction service |
 | Responses | Owner | responses[].owner.id | Active eligible user; stable ID | Opportunity workflow service |
 | Responses | Independent reviewer | responses[].reviewer.id | Active eligible user, different from owner | Opportunity workflow service |
 | Responses | Due date | responses[].dueDate | Valid ISO date required when assigning response work, independent of package approval | Opportunity workflow service |
@@ -138,3 +133,19 @@ JavaScript float as authoritative accounting persistence. backend pricing should
 confirm currency-specific minor-unit rules before extending beyond this 2-decimal
 contract. Calendar chronology/maxlength/duplicate-contact policies remain backend
 validation requirements, rather than being silently guessed from the prototype.
+
+## Current RFP preparation controls
+
+Both Questionnaire and Generic RFP show an enabled local file picker for editable
+opportunities. Only Questionnaire shows `Extract questions`; Generic has no extraction
+action or extraction messaging. Clicking the Questionnaire button displays
+`AI question extraction is currently under development.` It does not upload, save,
+start a job, poll, or create questions. Selected files remain only in component memory;
+no filename is presented as a persisted document. The existing GraphQL document
+adapter is retained for later backend/AI integration.
+
+Both formats expose `+ Add question` and question text/removal. The Question Master
+button, source-reference input, validation checkbox and validation-status badge are
+removed from this form. Existing master IDs/provenance/validation data remain in the
+contract for compatibility. Generic questions are saved alongside proposal sections
+and both produce response items in the frontend local workflow.

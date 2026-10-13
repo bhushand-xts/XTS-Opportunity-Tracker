@@ -198,7 +198,7 @@ persistence or extraction.
 | ClientDirectoryPage | keywords + cursor + first ? client page with contacts | Implemented from real shared client/contact data under Opportunity view grant; debounce/stale request cancellation in UI; no fake no-result fallback. |
 | EligibleOpportunityUsers | opportunityId?, purpose, search, cursor, first ? scoped user page | Active actual response-owner/reviewer eligibility; multiple roles; preserve inactive current assignments for display. Sales Head/CEO routing is configured server-side and has no frontend selector. |
 | SaveOpportunityClient | id?, expectedRevision?, idempotencyKey, ClientDraft ? persisted client | Implemented; existing menu add/edit grants govern create/update. Validate directory/contact fields; update shared client only here. Linked Pending package changes refresh revisions. |
-| SaveOpportunityWorkflow | id?, expectedRevision?, idempotencyKey, complete form ? workspace | add for create / edit+owner Pending scope for update. Required name/value/currency/service line/owner/client; solicitation, RFP validation and responses may be incomplete. One atomic save assigns configured approvers, returns SALES_REVIEW displayed Pending with Sales Head responsibility, and versions the saved package. Pending edits refresh revisions; validate supplied URLs/email/dates and invalidate only affected response approvals. No client-supplied approver IDs. |
+| SaveOpportunityWorkflow | id?, expectedRevision?, idempotencyKey, complete form ? workspace | add for create / edit+owner Pending scope for update. Required name/value/currency/service line/owner/client, solicitation reference, issuing agency, submission method and valid submission deadline; optional RFP preparation and responses may be incomplete. One atomic save assigns configured approvers, returns SALES_REVIEW displayed Pending with Sales Head responsibility, and versions the saved package. Pending edits refresh revisions; validate supplied URLs/email/dates and invalidate only affected response approvals. No client-supplied approver IDs. |
 | UploadOpportunitySource | record version + filename/mime/contentBase64 ? stored document | Not implemented; returns INTEGRATION_UNAVAILABLE. Future transport requires real private storage, ownership/content checks and gateway body-size/streaming support; current defaults cannot handle 25 MB base64 upload. |
 | StartOpportunityExtraction | record version + documentId ? workspace with extraction job | Not implemented; returns INTEGRATION_UNAVAILABLE. Future parser needs source ownership, asynchronous processing and idempotency; no sample questions presented as extraction. |
 | OpportunityExtractionStatus | opportunityId + jobId ? authorized workspace | Not implemented; returns INTEGRATION_UNAVAILABLE. Processing/status polling remains a future document integration. |
@@ -232,3 +232,23 @@ work instead of discarding an answer as a side effect of a form save. Save & Con
 always stays. A new opportunity keeps one creation idempotency key across failed
 attempts, including edited retries; a server IDEMPOTENCY_CONFLICT requires resolving
 the uncertain original save rather than risking a duplicate create.
+
+## RFP preparation UI update
+
+The frontend currently treats document upload/AI extraction as a future integration:
+Questionnaire shows `Extract questions`, which displays an under-development
+notification. Generic RFP only shows the document picker and has no extraction action.
+Selecting a file in either format does not persist or parse it. The GraphQL upload,
+extraction-start and status operations remain in the adapter, but this placeholder
+button does not invoke them or automatically save/route an opportunity.
+
+Generic RFP saves include both `form.rfp.sections` and `form.rfp.questions`. Future
+backend response generation must include both sets, preserve stable IDs and invalidate
+only changed response items. All supported proposal sections appear in one checkbox
+panel. The Question Master button is no longer shown in RFP preparation.
+
+Source references and validation flags remain compatible metadata, without user-editable
+controls. Do not require manual source validation to submit an answer: the frontend
+local workflow now requires a non-empty answer plus the existing assignment/role/revision
+checks. No question is automatically marked source-validated by these UI changes.
+Backend files and database records were not modified for this update.

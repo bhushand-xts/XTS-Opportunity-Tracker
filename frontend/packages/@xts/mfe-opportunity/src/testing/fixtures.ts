@@ -57,13 +57,13 @@ function mockUser(id: string): DirectoryUser {
 }
 function mockResponses(detail: OpportunityDetail) {
   const previous = new Map((detail.responses ?? []).map(item => [item.id, item]));
-  const sources = detail.form.rfp.type === 'QUESTIONNAIRE'
-    ? detail.form.rfp.questions.map(question => ({ id: question.id, title: question.text, sourceValidated: question.validated, sourceReference: question.sourceReference }))
-    : detail.form.rfp.type === 'GENERIC' ? detail.form.rfp.sections.map(section => {
+  const questions = detail.form.rfp.type ? detail.form.rfp.questions.map(question => ({ id: question.id, title: question.text, sourceValidated: question.validated, sourceReference: question.sourceReference })) : [];
+  const sections = detail.form.rfp.type === 'GENERIC' ? detail.form.rfp.sections.map(section => {
       const catalog = SECTION_CATALOG.find(item => item.key === section.key);
       if (!catalog) throw new Error('Unknown proposal section.');
       return { id: `section-${section.key}`, title: catalog.title, sourceValidated: true, sourceReference: section.instructions || null };
     }) : [];
+  const sources = [...sections, ...questions];
   if (new Set(sources.map(source => source.id)).size !== sources.length) throw new Error('Duplicate response items.');
   detail.responses = sources.map(source => {
     const old = previous.get(source.id);
@@ -336,7 +336,7 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
     answer: command => mutate('answer', command, state => {
       const record = checked(state, command), item = response(record, command.responseId, command.responseRevision);
       if (!permitted(actor().id, 'edit') || !canAnswer(record.detail, item, actor().id)) throw new Error('Only the assigned mock response owner may save or submit.');
-      if (command.submit && (!command.answer.trim() || !item.sourceValidated)) throw new Error('Enter an answer and validate the source before submitting.');
+      if (command.submit && !command.answer.trim()) throw new Error('Enter an answer before submitting.');
       item.answer = command.answer; item.revision++; item.state = command.submit ? 'SUBMITTED' : 'DRAFT'; item.submittedRevision = command.submit ? item.revision : null; item.approvedRevision = null; item.reviewComment = null;
       bump(record, command.submit ? 'Optional response submitted' : 'Answer draft saved', item.title); pending(record, state); return project(record, state);
     }),
@@ -361,9 +361,9 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
   };
 }
 function mockValidateClient(form: ClientDraft, lookups = TEST_LOOKUPS) {
-  if (![form.name, form.relationship, form.country, form.stateProvince, form.city, form.primaryContact.name, form.primaryContact.title, form.primaryContact.email, form.primaryContact.phone, form.primaryContact.decisionRole].every(value => value.trim())) throw new Error('Complete required client and contact fields.');
+  if (![form.name, form.country, form.stateProvince, form.city, form.primaryContact.name, form.primaryContact.title, form.primaryContact.email, form.primaryContact.phone, form.primaryContact.decisionRole].every(value => value.trim())) throw new Error('Complete required client and contact fields.');
   if (!lookups.accountTypes.some(item => item.id === form.accountTypeId) || !lookups.industries.some(item => item.id === form.industryId)) throw new Error('Select mock account type and industry.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.primaryContact.email)) throw new Error('Enter a valid contact email.');
   if (form.website && !/^https?:\/\/\S+$/.test(form.website)) throw new Error('Enter an HTTP or HTTPS website.');
-  if (form.additionalContacts.some(contact => !contact.name.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email))) throw new Error('Complete additional contact names and valid emails.');
+  if (form.additionalContacts.some(contact => ![contact.name, contact.title, contact.email, contact.phone, contact.decisionRole].every(value => value?.trim()) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email))) throw new Error('Complete all additional contact fields with valid emails.');
 }
