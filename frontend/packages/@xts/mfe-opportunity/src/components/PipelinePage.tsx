@@ -9,7 +9,7 @@ import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
 import { Loading, Notice, Status } from './ui';
 import { money, STATE_LABELS, userLabel } from '../lib/workflow';
 
-const STAGES: OpportunityState[] = ['PREPARATION_PENDING', 'IN_PROGRESS', 'SALES_REVIEW', 'GATE1_PENDING', 'GATE1_GO', 'SALES_REJECTED', 'GATE1_NO_GO'];
+const STAGES: OpportunityState[] = ['PREPARATION_PENDING', 'IN_PROGRESS', 'SALES_REVIEW', 'GATE1_PENDING', 'HOLD', 'GATE1_GO', 'SALES_REJECTED', 'GATE1_NO_GO'];
 function OpportunityCard({ opportunity: o, highlight, approvalQueue = false }: { opportunity: OpportunitySummary; highlight: boolean; approvalQueue?: boolean }) {
   const canEdit = !approvalQueue && o.allowedActions.includes('EDIT');
   const destination = canEdit ? `/opportunity/${o.id}/edit` : `/opportunity/${o.id}/details`;

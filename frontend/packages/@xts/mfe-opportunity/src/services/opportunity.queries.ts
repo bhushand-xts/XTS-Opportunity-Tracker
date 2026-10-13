@@ -8,3 +8,9 @@ export const GET_OPPORTUNITY_LOOKUPS = gql`
     accountTypes { accountTypeId accountName isActive }
   }
 `;
+
+export const GET_OPPORTUNITY_REASON_CODES = gql`
+  query OpportunityReasonCodes {
+    reasonCodesList { id reasonName description displayOrder isActive createdDt updatedDt }
+  }
+`;

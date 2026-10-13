@@ -60,7 +60,7 @@ const LocalEnvironment = USE_LOCAL_WORKFLOW ? lazy(() => import("./testing/fixtu
       }
       const directory = await loadDirectory(true);
       const store = fixtures.createLocalOpportunityStore(localStorage, directory, process.env.GRAPHQL_API_URL || "http://localhost:4000/graphql");
-      return { actorId, token, service: fixtures.createLocalOpportunityService(store, loadDirectory) };
+      return { actorId, token, service: fixtures.createLocalOpportunityService(store, loadDirectory, api.reasonCodes) };
     }, [actorId, token]);
     const runtime = useResource(load, Boolean(actorId && token));
     if (runtime.error) return <Notice title="Unable to load your Opportunity access" error={runtime.error} retry={runtime.reload} />;

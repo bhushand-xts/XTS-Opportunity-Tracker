@@ -8,8 +8,16 @@ import { productionOpportunityService } from './OpportunityService';
 import { newDraft } from '../lib/workflow';
 import { createWorkflowService } from './proposed/createWorkflowService';
 import * as proposed from './proposed/workflow.queries';
+import { TEST_REASON_CODES } from '../testing/fixtures';
+import { GET_OPPORTUNITY_REASON_CODES } from './opportunity.queries';
 
 describe('workflow contract', () => {
+  it('validates the reason dropdown query against the existing backend ReasonCode schema', () => {
+    const source = readFileSync(resolve(process.cwd(), '../backend/services/admin/src/graphql/typeDefs/reason-codes.typeDefs.ts'), 'utf8');
+    const sdl = source.slice(source.indexOf('`') + 1, source.lastIndexOf('`'));
+    const schema = buildSchema(`type Query { _placeholder: Boolean } type Mutation { _placeholder: Boolean } ${sdl}`);
+    expect(validate(schema, GET_OPPORTUNITY_REASON_CODES)).toEqual([]);
+  });
   it('validates handoff operations against the workflow schema', () => {
     const root = resolve(process.cwd(), '../docs/opportunity/contracts');
     const schema = buildSchema(readFileSync(resolve(root, 'opportunity-workflow.proposed.graphql'), 'utf8'));
@@ -53,6 +61,19 @@ function pendingSaveFixture() {
 }
 
 describe('workflow GraphQL adapter', () => {
+  it('reads only active reasons in master display order without fabricating values', async () => {
+    const service = createWorkflowService(testClient({ data: { reasonCodesList: [TEST_REASON_CODES[1], null, { ...TEST_REASON_CODES[0], id: 99, isActive: false }, TEST_REASON_CODES[0]] } }));
+    expect((await service.reasonCodes()).map(reason => reason.id)).toEqual([17, 23]);
+    await expect(createWorkflowService(testClient({ data: { reasonCodesList: null } })).reasonCodes()).rejects.toThrow();
+    await expect(createWorkflowService(testClient({ data: { reasonCodesList: [] } })).reasonCodes()).resolves.toEqual([]);
+  });
+  it('sends the Hold action and real reason ID and returns the distinct Hold state', async () => {
+    const { saved } = pendingSaveFixture(), inspect = vi.fn();
+    const held: OpportunityDetail = { ...saved, state: 'HOLD', holdStage: 'SALES_REVIEW', revision: 2 };
+    const service = createWorkflowService(testClient({ data: { decideOpportunityPackage: held } }, inspect));
+    await expect(service.decide({ opportunityId: saved.id, expectedRevision: 1, idempotencyKey: 'hold-test', packageRevision: 1, decision: 'SALES_HOLD', reasonCodeId: 17, reason: 'Waiting for scope', confirmed: true })).resolves.toMatchObject({ state: 'HOLD', holdStage: 'SALES_REVIEW' });
+    expect(inspect.mock.calls[0][0].input).toMatchObject({ decision: 'SALES_HOLD', reasonCodeId: 17, reason: 'Waiting for scope' });
+  });
   it('uses one save to return backend-assigned Pending without answer-readiness or client-selected approvers', async () => {
     const { form, saved } = pendingSaveFixture();
     const inspect = vi.fn();

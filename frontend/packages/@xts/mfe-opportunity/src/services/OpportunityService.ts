@@ -1,11 +1,16 @@
 import { createContext, useContext } from 'react';
 import { getApolloClient } from '@xts/api-client';
-import type { Action, ClientDraft, DecisionCommand, DirectoryUser, Estimation, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
-import { GET_OPPORTUNITY_LOOKUPS } from './opportunity.queries';
+import type { Action, ClientDraft, DecisionCommand, DirectoryUser, Estimation, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ReasonCode, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
+import { GET_OPPORTUNITY_LOOKUPS, GET_OPPORTUNITY_REASON_CODES } from './opportunity.queries';
 
 export class IntegrationUnavailable extends Error {
   readonly code = 'INTEGRATION_UNAVAILABLE';
   constructor(capability: string) { super(`${capability} is not available yet. Your work has not been saved. Please try again once this service is connected.`); }
+}
+export function activeReasonCodes(values: (ReasonCode | null)[] | null | undefined): ReasonCode[] {
+  if (!Array.isArray(values)) throw new Error('Reason details are unavailable. Please retry.');
+  return values.filter((value): value is ReasonCode => value?.isActive === true && Number.isSafeInteger(value.id) && value.id > 0 && Boolean(value.reasonName?.trim()))
+    .sort((a, b) => (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) || a.reasonName.localeCompare(b.reasonName) || a.id - b.id);
 }
 /** Service methods return persisted server state. Never return optimistic/fake success. */
 export interface OpportunityService {
@@ -14,6 +19,7 @@ export interface OpportunityService {
   detail(id: string, signal?: AbortSignal, mode?: 'WORK' | 'DETAILS' | 'REVIEW'): Promise<OpportunityDetail>;
   save(command: SaveCommand): Promise<OpportunityDetail>;
   lookups(): Promise<OpportunityLookups>;
+  reasonCodes(): Promise<ReasonCode[]>;
   clients(search: string, after: string | null, signal?: AbortSignal): Promise<Page<OpportunityClient>>;
   saveClient(input: { id: string | null; expectedRevision: number | null; idempotencyKey: string; form: ClientDraft }): Promise<OpportunityClient>;
   eligibleUsers(input: { opportunityId: string | null; purpose: 'OWNER' | 'REVIEWER' | 'SALES_REVIEWER' | 'GATE1_APPROVER'; search: string; after: string | null }, signal?: AbortSignal): Promise<Page<DirectoryUser>>;
@@ -53,6 +59,10 @@ export const productionOpportunityService: OpportunityService = {
   answer: () => unavailable('Answer persistence'),
   reviewAnswer: () => unavailable('Answer review'),
   decide: () => unavailable('Approval decisions'),
+  async reasonCodes() {
+    const { data } = await getApolloClient().query<{ reasonCodesList: (ReasonCode | null)[] | null }>({ query: GET_OPPORTUNITY_REASON_CODES, fetchPolicy: 'network-only', errorPolicy: 'none' });
+    return activeReasonCodes(data?.reasonCodesList);
+  },
   async lookups() {
     const { data } = await getApolloClient().query<{
       currencies: { currencyId: number; currencyName: string; currencyCode: string; isActive: boolean }[];

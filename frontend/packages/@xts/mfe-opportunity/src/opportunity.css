@@ -50,7 +50,7 @@
 @keyframes opp-saved { to { outline-color: transparent; } }
 .opp-empty { background: white; border: 1px dashed #d6dbe5; border-radius: 9px; padding: 18px 14px; text-align: center; color: hsl(var(--muted-foreground)); }
 .opp-status { background: #f0edff; color: #513a89; border: 1px solid #d0c6ed; }
-.opp-status.opp-state-PREPARATION_PENDING { background: #fff5df; color: #946512; border-color: #e8d9b8; }
+.opp-status.opp-state-PREPARATION_PENDING, .opp-status.opp-state-HOLD { background: #fff5df; color: #946512; border-color: #e8d9b8; }
 .opp-status.opp-state-GATE1_GO { background: #e7f6f0; color: #18745f; border-color: #bddfd3; }
 .opp-status.opp-state-SALES_REJECTED, .opp-status.opp-state-GATE1_NO_GO { background: #fff0ef; color: #a34242; border-color: #efcece; }
 .opp-lane.opp-state-PREPARATION_PENDING { border-top-color: #b08a33; }.opp-lane.opp-state-IN_PROGRESS { border-top-color: #4e70b8; }.opp-lane.opp-state-SALES_REVIEW { border-top-color: #8e7bd2; }.opp-lane.opp-state-GATE1_PENDING { border-top-color: #6352cc; }.opp-lane.opp-state-GATE1_GO { border-top-color: #3e957e; }
@@ -111,3 +111,5 @@
   .opp-save-actions button, .opp-card-actions a { min-height: 40px; }
 }
 @media (prefers-reduced-motion: reduce) { .opp-highlight { animation: none; } }
+
+.opp-lane.opp-state-HOLD { border-top-color: #b08a33; }

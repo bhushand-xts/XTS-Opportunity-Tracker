@@ -1,7 +1,7 @@
 import type { Action, Decimal, DirectoryUser, EstimateRow, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
 
 export const STATE_LABELS = {
-  PREPARATION_PENDING: 'Draft', IN_PROGRESS: 'In progress', SALES_REVIEW: 'Pending', GATE1_PENDING: 'Gate 1 pending',
+  PREPARATION_PENDING: 'Draft', IN_PROGRESS: 'In progress', SALES_REVIEW: 'Pending', GATE1_PENDING: 'Gate 1 pending', HOLD: 'Hold',
   GATE1_GO: 'Gate 1 Go', SALES_REJECTED: 'Rejected by Sales Head', GATE1_NO_GO: 'Closed · No-Go',
 };
 export const RESPONSE_LABELS = { UNASSIGNED: 'Unassigned', ASSIGNED: 'Assigned', DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested' };
@@ -103,11 +103,14 @@ export function money(value: Decimal, code: string) {
   try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(Number(value)); }
   catch { return `${code} ${value}`; }
 }
-export function decisionError(o: OpportunityDetail, decision: Action, reason: string, confirmed: boolean): string | null {
+export function requiresDecisionReason(decision: Action) { return ['SALES_REJECT', 'GATE1_NO_GO', 'SALES_HOLD', 'GATE1_HOLD'].includes(decision); }
+export function isSalesDecisionStage(o: Pick<OpportunityDetail, 'state' | 'holdStage'>) { return o.state === 'SALES_REVIEW' || o.state === 'HOLD' && o.holdStage === 'SALES_REVIEW'; }
+export function isCeoDecisionStage(o: Pick<OpportunityDetail, 'state' | 'holdStage'>) { return o.state === 'GATE1_PENDING' || o.state === 'HOLD' && o.holdStage === 'GATE1_PENDING'; }
+export function decisionError(o: OpportunityDetail, decision: Action, _reason: string, confirmed: boolean, reasonCodeId?: number | null): string | null {
   if (!may(o, decision)) return 'You are not permitted to make this decision.';
-  if ((decision.startsWith('SALES_') && o.state !== 'SALES_REVIEW') || (decision.startsWith('GATE1_') && o.state !== 'GATE1_PENDING')) return 'This package is no longer awaiting this decision. Refresh the opportunity.';
+  if ((decision.startsWith('SALES_') && !isSalesDecisionStage(o)) || (decision.startsWith('GATE1_') && !isCeoDecisionStage(o))) return 'This package is no longer awaiting this decision. Refresh the opportunity.';
   if (o.packageRevision === null) return 'There is no submitted package to review.';
   if (!confirmed) return 'Confirm that you reviewed this package revision.';
-  if ((decision === 'SALES_REJECT' || decision === 'GATE1_NO_GO') && !reason.trim()) return 'Enter a reason for this decision.';
+  if (requiresDecisionReason(decision) && (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0)) return 'Select a reason from Reason details.';
   return null;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addMasterQuestionTemplates, canAnswer, canReview, decisionError, estimateTotal, newDraft, pendingSaveErrors, readinessErrors, SECTION_CATALOG, validDate } from './workflow';
 import type { OpportunityDetail, ResponseCommand, RfpQuestion, VersionCommand } from '@xts/api-contracts';
-import { createLocalOpportunityService, createLocalOpportunityStore, createMockOpportunityService, createMockOpportunityStore, fixtureOpportunity, MOCK_STORAGE_KEY, type LocalWorkflowDirectory, type MockStorage } from '../testing/fixtures';
+import { createLocalOpportunityService, createLocalOpportunityStore, createMockOpportunityService, createMockOpportunityStore, fixtureOpportunity, MOCK_STORAGE_KEY, TEST_REASON_CODES, type LocalWorkflowDirectory, type MockStorage } from '../testing/fixtures';
 
 describe('workflow boundaries', () => {
   it('copies active master questions with stable provenance and prevents duplicate imports', () => {
@@ -211,11 +211,11 @@ describe('explicit mock service on the existing Opportunity workflow', () => {
     await h.service.saveClient({ id: client.id, expectedRevision: client.revision, idempotencyKey: crypto.randomUUID(), form: { ...client, name: 'Updated shared mock client' } });
     h.actAs('105'); expect((await h.service.detail(detail.id, undefined, 'REVIEW')).clientName).toBe('Mock Example Client');
     await expect(h.service.decide({ ...mockVersion(detail), packageRevision: detail.packageRevision!, decision: 'GATE1_NO_GO', confirmed: true, reason: '' })).rejects.toThrow('reason');
-    detail = await h.service.decide({ ...mockVersion(detail), packageRevision: detail.packageRevision!, decision: 'GATE1_NO_GO', confirmed: true, reason: 'Mock No-Go.' }); expect(detail.state).toBe('GATE1_NO_GO');
+    detail = await h.service.decide({ ...mockVersion(detail), packageRevision: detail.packageRevision!, decision: 'GATE1_NO_GO', confirmed: true, reason: 'Mock No-Go.', reasonCodeId: 17 }); expect(detail.state).toBe('GATE1_NO_GO');
   });
   it('records a reasoned Sales rejection directly from Pending without response work', async () => {
     const h = mockHarness(); let detail = await h.service.detail('401'); h.actAs('104');
-    detail = await h.service.decide({ ...mockVersion(detail), packageRevision: detail.packageRevision!, decision: 'SALES_REJECT', confirmed: true, reason: 'Mock commercial risk.' });
+    detail = await h.service.decide({ ...mockVersion(detail), packageRevision: detail.packageRevision!, decision: 'SALES_REJECT', confirmed: true, reason: 'Mock commercial risk.', reasonCodeId: 17 });
     expect(detail.state).toBe('SALES_REJECTED'); expect(detail.activity?.[0].note).toBe('Mock commercial risk.');
     expect((await h.service.list({ queue: 'MY_APPROVALS', search: '', after: null, first: 20 })).nodes).toEqual([]);
     h.actAs('105'); expect((await h.service.list({ queue: 'MY_APPROVALS', search: '', after: null, first: 20 })).nodes).toEqual([]);
@@ -258,7 +258,7 @@ function realLoginHarness() {
       { id: '2090', name: 'Viewer', email: 'viewer@example.test', roles: ['Viewer'], active: true },
     ], salesHeadIds: ['2017', '2019'], ceoIds: ['2025'],
     permissions: { '2011': ['view', 'add', 'edit'], '2017': ['view', 'approve', 'reject'], '2019': ['view', 'approve', 'reject'], '2025': ['view', 'approve', 'reject'], '2090': ['view'] },
-    lookups: { currencies: [{ id: '14', label: 'INR', code: 'INR' }], industries: [{ id: '7', label: 'Technology' }], accountTypes: [{ id: '8', label: 'Customer' }] }, questions: [],
+    lookups: { currencies: [{ id: '14', label: 'INR', code: 'INR' }], industries: [{ id: '7', label: 'Technology' }], accountTypes: [{ id: '8', label: 'Customer' }] }, questions: [], reasonCodes: structuredClone(TEST_REASON_CODES),
   };
   let freshLoads = 0;
   const session = () => createLocalOpportunityService(createLocalOpportunityStore(storage, directory, 'test-gateway'), async fresh => { if (fresh) freshLoads++; return { ...directory, actorId }; });
@@ -271,6 +271,57 @@ function realLoginHarness() {
 const approvalFilter = { queue: 'MY_APPROVALS' as const, search: '', after: null, first: 50 };
 
 describe('browser workflow using directory identities and actual role grants', () => {
+  it('persists Hold as a separate state at either approval stage, retains the assignee, then resumes the same package', async () => {
+    const h = realLoginHarness();
+    let saved = await h.session().save({ id: null, expectedRevision: null, idempotencyKey: 'hold-create', form: h.form });
+    const packageRevision = saved.packageRevision!;
+    h.signInAs('2025');
+    await expect(h.session().decide({ ...mockVersion(saved), packageRevision, decision: 'GATE1_HOLD', reasonCodeId: 17, reason: '', confirmed: true })).rejects.toThrow('not assigned');
+    h.signInAs('2017');
+    const beforeHold = saved;
+    const command = { ...mockVersion(saved), packageRevision, decision: 'SALES_HOLD' as const, reasonCodeId: 17, reason: 'Awaiting scope confirmation', confirmed: true };
+    saved = await h.session().decide(command);
+    expect(await h.session().decide(command)).toEqual(saved);
+    expect(saved).toMatchObject({ state: 'HOLD', holdStage: 'SALES_REVIEW', packageRevision });
+    expect(saved.approvalAssignees.map(user => user.id)).toEqual(['2017', '2019']);
+    expect(saved.activity?.[0]).toMatchObject({ action: 'SALES HOLD', actor: { id: '2017' }, note: 'Awaiting scope confirmation', reasonCode: { id: 17, name: 'Awaiting client information' } });
+    expect((await h.session().list(approvalFilter)).nodes[0]).toMatchObject({ state: 'HOLD', holdStage: 'SALES_REVIEW' });
+    expect((await h.session().detail(saved.id, undefined, 'REVIEW')).state).toBe('HOLD');
+    await expect(h.session().decide({ ...mockVersion(beforeHold), packageRevision, decision: 'SALES_APPROVE', reason: '', confirmed: true })).rejects.toThrow('revision conflict');
+    h.signInAs('2011');
+    expect((await h.session().list({ ...approvalFilter, queue: 'PIPELINE' })).nodes[0].state).toBe('HOLD');
+    await expect(h.session().save({ id: saved.id, expectedRevision: saved.revision, idempotencyKey: 'edit-hold', form: h.form })).rejects.toThrow('Only the opportunity owner may edit during preparation');
+    h.signInAs('2025'); expect((await h.session().list(approvalFilter)).nodes).toEqual([]);
+    h.signInAs('2019');
+    saved = await h.session().decide({ ...mockVersion(saved), packageRevision, decision: 'SALES_APPROVE', reason: '', confirmed: true });
+    expect(saved).toMatchObject({ state: 'GATE1_PENDING', holdStage: null, packageRevision });
+    h.signInAs('2025');
+    saved = await h.session().decide({ ...mockVersion(saved), packageRevision, decision: 'GATE1_HOLD', reasonCodeId: 23, reason: '', confirmed: true });
+    expect(saved).toMatchObject({ state: 'HOLD', holdStage: 'GATE1_PENDING', packageRevision });
+    expect(saved.approvalAssignees.map(user => user.id)).toEqual(['2025']);
+    expect((await h.session().detail(saved.id, undefined, 'REVIEW')).salesRecommendation?.packageRevision).toBe(packageRevision);
+    expect((await h.session().list(approvalFilter)).nodes[0].state).toBe('HOLD');
+    h.signInAs('2017'); expect((await h.session().list(approvalFilter)).nodes).toEqual([]);
+    h.signInAs('2025');
+    saved = await h.session().decide({ ...mockVersion(saved), packageRevision, decision: 'GATE1_GO', reason: '', confirmed: true });
+    expect(saved).toMatchObject({ state: 'GATE1_GO', holdStage: null, packageRevision });
+    expect((await h.session().list(approvalFilter)).nodes).toEqual([]);
+  });
+  it('rejects missing or inactive master reasons and allows rejection from Hold', async () => {
+    const h = realLoginHarness(); let saved = await h.session().save({ id: null, expectedRevision: null, idempotencyKey: 'hold-reason-create', form: h.form });
+    h.signInAs('2017');
+    const command = { ...mockVersion(saved), packageRevision: saved.packageRevision!, decision: 'SALES_HOLD' as const, reason: 'Free text alone', confirmed: true };
+    await expect(h.session().decide(command)).rejects.toThrow('Select a reason');
+    h.directory.reasonCodes![0].isActive = false;
+    await expect(h.session().decide({ ...command, reasonCodeId: 17 })).rejects.toThrow('inactive or unavailable');
+    expect((await h.session().detail(saved.id)).state).toBe('SALES_REVIEW');
+    saved = await h.session().decide({ ...command, reasonCodeId: 23 });
+    saved = await h.session().decide({ ...mockVersion(saved), packageRevision: saved.packageRevision!, decision: 'SALES_REJECT', reasonCodeId: 23, reason: '', confirmed: true });
+    expect(saved).toMatchObject({ state: 'SALES_REJECTED', holdStage: null });
+    expect(saved.activity?.[0].reasonCode?.id).toBe(23);
+    h.directory.reasonCodes![1].reasonName = 'Renamed master';
+    expect((await h.session().detail(saved.id)).activity?.[0].reasonCode?.name).toBe('Delivery capacity');
+  });
   it('keeps the same record across new login sessions and routes Sales Representative -> Sales Head -> CEO -> Pipeline', async () => {
     const h = realLoginHarness(), representative = h.session();
     let saved = await representative.save({ id: null, expectedRevision: null, idempotencyKey: 'real-create', form: h.form });
@@ -308,7 +359,7 @@ describe('browser workflow using directory identities and actual role grants', (
     expect((await h.session().list(approvalFilter)).nodes).toEqual([]);
     h.directory.permissions['2017'] = ['view', 'reject'];
     await expect(h.session().decide({ ...mockVersion(saved), packageRevision: saved.packageRevision!, decision: 'SALES_APPROVE', confirmed: true, reason: '' })).rejects.toThrow('not assigned');
-    const rejected = await h.session().decide({ ...mockVersion(saved), packageRevision: saved.packageRevision!, decision: 'SALES_REJECT', confirmed: true, reason: 'Insufficient capacity' });
+    const rejected = await h.session().decide({ ...mockVersion(saved), packageRevision: saved.packageRevision!, decision: 'SALES_REJECT', confirmed: true, reason: 'Insufficient capacity', reasonCodeId: 17 });
     expect(rejected.state).toBe('SALES_REJECTED'); expect(rejected.approvalAssignees).toEqual([]);
     h.signInAs('2025'); expect((await h.session().list(approvalFilter)).nodes).toEqual([]);
   });
@@ -317,7 +368,7 @@ describe('browser workflow using directory identities and actual role grants', (
     h.signInAs('2017'); saved = await h.session().decide({ ...mockVersion(saved), packageRevision: saved.packageRevision!, decision: 'SALES_APPROVE', confirmed: true, reason: '' });
     h.signInAs('2025');
     await expect(h.session().decide({ ...mockVersion(saved), packageRevision: saved.packageRevision!, decision: 'GATE1_NO_GO', confirmed: true, reason: '' })).rejects.toThrow('reason');
-    saved = await h.session().decide({ ...mockVersion(saved), packageRevision: saved.packageRevision!, decision: 'GATE1_NO_GO', confirmed: true, reason: 'Business fit' });
+    saved = await h.session().decide({ ...mockVersion(saved), packageRevision: saved.packageRevision!, decision: 'GATE1_NO_GO', confirmed: true, reason: 'Business fit', reasonCodeId: 17 });
     h.signInAs('2011'); expect((await h.session().detail(saved.id)).state).toBe('GATE1_NO_GO');
   });
   it('does not persist a new record when no eligible CEO exists or the real session cannot be verified', async () => {

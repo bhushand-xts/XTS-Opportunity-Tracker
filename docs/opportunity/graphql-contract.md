@@ -252,3 +252,36 @@ controls. Do not require manual source validation to submit an answer: the front
 local workflow now requires a non-empty answer plus the existing assignment/role/revision
 checks. No question is automatically marked source-validated by these UI changes.
 Backend files and database records were not modified for this update.
+
+## Hold and decision reasons
+
+`HOLD` is a distinct opportunity state, displayed as Hold in its own Pipeline
+column. `holdStage` preserves `SALES_REVIEW` or `GATE1_PENDING`; it is not a second
+status. `SALES_HOLD` and `GATE1_HOLD` are decision actions that enter this state.
+
+Hold retains the existing package revision, recorded Sales recommendation and
+assigned approver group. It remains in that group's My Approvals queue. The same
+authorized approvers may approve or reject directly from Hold; there is no manual
+reassignment or automatic advance. A later decision clears `holdStage`. Editing
+preparation content while held is disabled, so a routine save cannot reset Hold.
+Record revision and review-confirmation checks still apply to every decision.
+
+The existing admin `reasonCodesList` query reads `tbl_reason_codes` and already
+exposes `id`, `reasonName`, `description`, `displayOrder` and `isActive`. The frontend
+uses active rows ordered by display order/name, with descriptions below the
+Reason details dropdown. The SQL `reason_category` column is not exposed by this
+API, so the UI does not invent per-decision category filters. No new master or
+hardcoded runtime reasons are introduced.
+
+`WorkflowDecisionInput.reasonCodeId` is required by validation for Hold,
+Sales rejection and CEO No-Go; it is optional for approvals. `reason` remains an
+optional free-text note. Validate the referenced reason's existence/active status
+again when processing the decision. Store an immutable reason snapshot
+`activity.reasonCode { id name description }` alongside actor, time, note and
+reviewed package revision. Master renaming/deletion must not rewrite decision history.
+
+Backend handoff: implement `HOLD`, `holdStage`, the two Hold actions, reason ID
+validation/persistence and history fields in the workflow API. Only the reason
+master query is already implemented in the checked backend. The frontend local
+workflow supports these transitions for UI testing; the proposed GraphQL contract
+is updated. No backend source or database records were changed.

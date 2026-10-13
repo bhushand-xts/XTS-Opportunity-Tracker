@@ -149,3 +149,13 @@ button, source-reference input, validation checkbox and validation-status badge 
 removed from this form. Existing master IDs/provenance/validation data remain in the
 contract for compatibility. Generic questions are saved alongside proposal sections
 and both produce response items in the frontend local workflow.
+
+## Approval decision fields
+
+| Field | API mapping | Rule |
+|---|---|---|
+| Hold | decision = SALES_HOLD / GATE1_HOLD; returned state = HOLD | Separate state/column, retain current stage in holdStage and existing approvers |
+| Reason details | reasonCodesList -> WorkflowDecisionInput.reasonCodeId | Active backend master ID required for Hold and Reject/No-Go; optional for Approve |
+| Reason description | reasonCodesList.description | Read-only explanation of the selected reason |
+| Decision note | WorkflowDecisionInput.reason | Optional free text |
+| Recorded reason | activity.reasonCode.id/name/description | Immutable snapshot in decision history |

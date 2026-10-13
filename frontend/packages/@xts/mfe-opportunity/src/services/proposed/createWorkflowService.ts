@@ -1,9 +1,9 @@
 /** Real workflow adapter. All requests use the shared authenticated gateway. */
 import type { ApolloClient, NormalizedCacheObject } from '@apollo/client';
 import type { DocumentNode } from 'graphql';
-import type { Action, OpportunityClient, OpportunityDetail, OpportunitySummary, Page, DirectoryUser, SourceDocument } from '@xts/api-contracts';
-import type { OpportunityService } from '../OpportunityService';
-import { GET_OPPORTUNITY_LOOKUPS } from '../opportunity.queries';
+import type { Action, OpportunityClient, OpportunityDetail, OpportunitySummary, Page, DirectoryUser, SourceDocument, ReasonCode } from '@xts/api-contracts';
+import { activeReasonCodes, type OpportunityService } from '../OpportunityService';
+import { GET_OPPORTUNITY_LOOKUPS, GET_OPPORTUNITY_REASON_CODES } from '../opportunity.queries';
 import * as operations from './workflow.queries';
 
 function message(error: unknown) {
@@ -42,6 +42,9 @@ export function createWorkflowService(client: ApolloClient<NormalizedCacheObject
   }
   return {
     globalActions: () => query<Action[]>(operations.GLOBAL_ACTIONS, {}, 'opportunityWorkflowActions'),
+    async reasonCodes() {
+      return activeReasonCodes(await query<(ReasonCode | null)[]>(GET_OPPORTUNITY_REASON_CODES, {}, 'reasonCodesList'));
+    },
     async lookups() {
       try {
         const { data } = await client.query<{

@@ -7,7 +7,7 @@ import type { OpportunityDetail, SaveCommand } from '@xts/api-contracts';
 import { OpportunityServiceContext, productionOpportunityService, type OpportunityService } from '../services/OpportunityService';
 import { OpportunityAccessContext } from '../hooks/useOpportunityAccess';
 import { UnsavedProvider } from '../hooks/useUnsaved';
-import { createLocalOpportunityService, createLocalOpportunityStore, fixtureOpportunity, TEST_LOOKUPS, type LocalWorkflowDirectory } from '../testing/fixtures';
+import { createLocalOpportunityService, createLocalOpportunityStore, fixtureOpportunity, TEST_LOOKUPS, TEST_REASON_CODES, type LocalWorkflowDirectory } from '../testing/fixtures';
 import { PipelinePage } from './PipelinePage';
 import { OpportunityFormPage } from './OpportunityFormPage';
 import { OpportunityDetailsPage } from './OpportunityDetailsPage';
@@ -37,6 +37,7 @@ function testService(initial = fixtureOpportunity()): OpportunityService {
   return {
     ...productionOpportunityService,
     lookups: vi.fn(async () => TEST_LOOKUPS),
+    reasonCodes: vi.fn(async () => TEST_REASON_CODES),
     detail: vi.fn(async () => record),
     list: vi.fn(async () => ({ nodes: [record], totalCount: 1, endCursor: null, hasNextPage: false })),
     clients: vi.fn(async () => ({ nodes: [record.client!], totalCount: 1, endCursor: null, hasNextPage: false })),
@@ -102,6 +103,43 @@ describe('RFP preparation', () => {
   });
 });
 describe('Opportunity UI using test-only service fixtures', () => {
+  it.each([
+    { state: 'SALES_REVIEW' as const, holdStage: 'SALES_REVIEW' as const, decision: 'SALES_HOLD' as const, resume: 'Approve & Send to CEO', actions: ['SALES_APPROVE', 'SALES_REJECT', 'SALES_HOLD'] as OpportunityDetail['allowedActions'] },
+    { state: 'GATE1_PENDING' as const, holdStage: 'GATE1_PENDING' as const, decision: 'GATE1_HOLD' as const, resume: 'Approve Go', actions: ['GATE1_GO', 'GATE1_NO_GO', 'GATE1_HOLD'] as OpportunityDetail['allowedActions'] },
+  ])('places $state on Hold with a master reason and keeps the same-stage decision controls', async ({ state, holdStage, decision, resume, actions }) => {
+    const initial = fixtureOpportunity({ state, allowedActions: actions, packageRevision: 3 });
+    const service = testService(initial);
+    service.decide = vi.fn(async () => ({ ...initial, state: 'HOLD' as const, holdStage, revision: 2 }));
+    mount(service, '/opportunity/401/review');
+    fireEvent.click(await screen.findByRole('button', { name: 'Hold' }));
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByLabelText('Reason details')).toBeEnabled());
+    expect(within(dialog).getByLabelText('Reason details')).toHaveAttribute('aria-required', 'true');
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' }));
+    expect(await within(dialog).findByText('Select a reason from Reason details.')).toBeInTheDocument();
+    expect(service.decide).not.toHaveBeenCalled();
+    fireEvent.keyDown(within(dialog).getByLabelText('Reason details'), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('option', { name: 'Awaiting client information' }));
+    expect(within(dialog).getByText('Additional information is required from the client.')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' }));
+    await waitFor(() => expect(service.decide).toHaveBeenCalledWith(expect.objectContaining({ decision, reasonCodeId: 17, reason: '', expectedRevision: 1, packageRevision: 3, confirmed: true })));
+    expect(await screen.findByText('Opportunity is on hold')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: resume })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hold' })).not.toBeInTheDocument();
+  });
+  it('blocks Hold on reason master failure and reloads the actual options on retry', async () => {
+    const service = testService(fixtureOpportunity({ state: 'SALES_REVIEW', allowedActions: ['SALES_HOLD'], packageRevision: 1 }));
+    service.reasonCodes = vi.fn().mockRejectedValueOnce(new Error('Reason directory unavailable')).mockResolvedValue(TEST_REASON_CODES);
+    mount(service, '/opportunity/401/review');
+    fireEvent.click(await screen.findByRole('button', { name: 'Hold' }));
+    const dialog = screen.getByRole('dialog');
+    await within(dialog).findByText('Reason details unavailable');
+    expect(within(dialog).getByRole('button', { name: 'Confirm decision' })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(within(dialog).getByLabelText('Reason details')).toBeEnabled());
+    expect(service.reasonCodes).toHaveBeenCalledTimes(2);
+  });
   it('shows a true empty Pipeline only for a successful empty backend response', async () => {
     const service = testService(); service.list = vi.fn(async () => ({ nodes: [], totalCount: 0, endCursor: null, hasNextPage: false }));
     mount(service); expect(await screen.findByText('Your pipeline starts here')).toBeInTheDocument();
@@ -169,11 +207,11 @@ describe('Opportunity UI using test-only service fixtures', () => {
     const service = testService(fixtureOpportunity({ state: 'SALES_REVIEW', packageRevision: 3, allowedActions: ['SALES_REJECT'] }));
     service.decide = vi.fn(async () => fixtureOpportunity({ state: 'SALES_REJECTED', allowedActions: [], packageRevision: 3 }));
     mount(service, '/opportunity/401/review'); fireEvent.click(await screen.findByRole('button', { name: 'Reject Opportunity' }));
-    const dialog = screen.getByRole('dialog'); fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' }));
+    const dialog = screen.getByRole('dialog'); await waitFor(() => expect(within(dialog).getByLabelText('Reason details')).toBeEnabled()); fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' }));
     expect(await within(dialog).findByText(/Confirm that you reviewed/)).toBeInTheDocument(); expect(service.decide).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('checkbox')); fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' })); expect(await within(dialog).findByText(/Enter a reason/)).toBeInTheDocument();
-    fireEvent.change(within(dialog).getByLabelText('Reason (required)'), { target: { value: 'Delivery capacity unavailable' } }); fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' }));
-    await waitFor(() => expect(service.decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'SALES_REJECT', reason: 'Delivery capacity unavailable', packageRevision: 3, expectedRevision: 1, confirmed: true })));
+    fireEvent.click(within(dialog).getByRole('checkbox')); fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' })); expect(await within(dialog).findByText(/Select a reason/)).toBeInTheDocument();
+    fireEvent.keyDown(within(dialog).getByLabelText('Reason details'), { key: 'Enter' }); fireEvent.click(await screen.findByRole('option', { name: 'Delivery capacity' })); fireEvent.change(within(dialog).getByLabelText('Decision note (optional)'), { target: { value: 'Delivery capacity unavailable' } }); fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' }));
+    await waitFor(() => expect(service.decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'SALES_REJECT', reasonCodeId: 23, reason: 'Delivery capacity unavailable', packageRevision: 3, expectedRevision: 1, confirmed: true })));
   });
 
   it('uses directory identities across sessions for Sales and CEO Overview decisions and the final Pipeline', async () => {
@@ -184,7 +222,7 @@ describe('Opportunity UI using test-only service fixtures', () => {
         { id: '2017', name: 'Sales Head', email: 'head@example.test', roles: ['Sales Head'], active: true },
         { id: '2025', name: 'CEO', email: 'ceo@example.test', roles: ['CEO/Gate-2 Approver'], active: true },
       ], permissions: { '2011': ['view', 'add', 'edit'], '2017': ['view', 'approve', 'reject'], '2025': ['view', 'approve', 'reject'] },
-      salesHeadIds: ['2017'], ceoIds: ['2025'], lookups: TEST_LOOKUPS, questions: [],
+      salesHeadIds: ['2017'], ceoIds: ['2025'], lookups: TEST_LOOKUPS, questions: [], reasonCodes: TEST_REASON_CODES,
     };
     const entries = new Map<string, string>();
     const storage = { getItem: (key: string) => entries.get(key) ?? null, setItem: (key: string, value: string) => { entries.set(key, value); } };

@@ -1,10 +1,14 @@
 /** Fixtures and explicitly enabled development mock mode only.
  * The production service never falls back to these synthetic records. */
-import type { Action, ClientDraft, DirectoryUser, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseItem, RfpQuestion, SourceDocument, VersionCommand } from '@xts/api-contracts';
-import type { OpportunityService } from '../services/OpportunityService';
-import { canAnswer, canReview, estimateTotal, isPreparing, newDraft, pendingSaveErrors, SECTION_CATALOG, validDate } from '../lib/workflow';
+import type { Action, ClientDraft, DirectoryUser, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseItem, ReasonCode, RfpQuestion, SourceDocument, VersionCommand } from '@xts/api-contracts';
+import { activeReasonCodes, type OpportunityService } from '../services/OpportunityService';
+import { canAnswer, canReview, estimateTotal, isPreparing, isSalesDecisionStage, isCeoDecisionStage, requiresDecisionReason, newDraft, pendingSaveErrors, SECTION_CATALOG, validDate } from '../lib/workflow';
 
 export const TEST_LOOKUPS: OpportunityLookups = { currencies: [{ id: '1', label: 'INR · Indian rupee', code: 'INR' }], industries: [{ id: '1', label: 'Technology' }], accountTypes: [{ id: '1', label: 'Enterprise' }] };
+export const TEST_REASON_CODES: ReasonCode[] = [
+  { id: 17, reasonName: 'Awaiting client information', description: 'Additional information is required from the client.', displayOrder: 1, isActive: true, createdDt: null, updatedDt: null },
+  { id: 23, reasonName: 'Delivery capacity', description: 'Review available delivery capacity.', displayOrder: 2, isActive: true, createdDt: null, updatedDt: null },
+];
 export function fixtureOpportunity(overrides: Partial<OpportunityDetail> = {}): OpportunityDetail {
   const owner = { id: '101', name: 'Test Owner', email: 'owner@example.test', roles: ['Test role'], active: true };
   const reviewer = { id: '102', name: 'Test Reviewer', email: 'reviewer@example.test', roles: ['Test review role'], active: true };
@@ -41,7 +45,7 @@ export interface MockStorage { getItem(key: string): string | null; setItem(key:
 interface MockRecord { detail: OpportunityDetail; salesId: string | null; ceoId: string | null; salesIds?: string[]; ceoIds?: string[]; packages: Record<string, OpportunityDetail>; }
 export interface LocalWorkflowDirectory {
   actorId: string; users: DirectoryUser[]; salesHeadIds: string[]; ceoIds: string[];
-  permissions: Record<string, string[]>; lookups: OpportunityLookups; questions: RfpQuestion[];
+  permissions: Record<string, string[]>; lookups: OpportunityLookups; questions: RfpQuestion[]; reasonCodes?: ReasonCode[];
 }
 export interface MockState {
   version: 1; nextId: number; records: Record<string, MockRecord>; clients: Record<string, OpportunityClient>;
@@ -87,6 +91,7 @@ function mockPendingPackage(record: MockRecord, state: MockState, directory?: Lo
   record.salesId = record.salesIds.length === 1 ? record.salesIds[0] : null; record.ceoId = record.ceoIds.length === 1 ? record.ceoIds[0] : null;
   record.detail.approvalAssignees = (directory?.users ?? MOCK_USERS).filter(user => record.salesIds!.includes(user.id)).map(mockCopy);
   record.detail.state = 'SALES_REVIEW'; record.detail.responsible = record.detail.approvalAssignees.length === 1 ? record.detail.approvalAssignees[0] : null; record.detail.salesRecommendation = null;
+  record.detail.holdStage = null;
   record.detail.packageRevision = (record.detail.packageRevision ?? 0) + 1;
   mockHydrate(record.detail, state, directory);
   record.packages[String(record.detail.packageRevision)] = mockCopy(record.detail);
@@ -138,12 +143,15 @@ export function createLocalOpportunityStore(storage: MockStorage, directory: Loc
 }
 
 /** Revalidate actual identity/grants before actions; browser state is never sent as a backend save. */
-export function createLocalOpportunityService(store: MockOpportunityStore, loadDirectory: (fresh: boolean) => Promise<LocalWorkflowDirectory>): OpportunityService {
-  const reads = new Set(['globalActions', 'lookups', 'list', 'detail', 'clients', 'eligibleUsers']);
+export function createLocalOpportunityService(store: MockOpportunityStore, loadDirectory: (fresh: boolean) => Promise<LocalWorkflowDirectory>, loadReasonCodes?: () => Promise<ReasonCode[]>): OpportunityService {
+  const reads = new Set(['globalActions', 'lookups', 'reasonCodes', 'list', 'detail', 'clients', 'eligibleUsers']);
   const methods = Object.keys(createMockOpportunityService(store, () => '')) as (keyof OpportunityService)[];
   return Object.fromEntries(methods.map(method => [method, async (...args: unknown[]) => {
     const work = async () => {
-      const directory = await loadDirectory(!reads.has(method));
+      let directory = await loadDirectory(!reads.has(method));
+      // Load the real master only for the dialog or a reason-bearing decision.
+      // Re-read on confirm so deactivated reasons cannot be reused from UI state.
+      if (loadReasonCodes && (method === 'reasonCodes' || method === 'decide' && (args[0] as { reasonCodeId?: number | null })?.reasonCodeId != null)) directory = { ...directory, reasonCodes: await loadReasonCodes() };
       const service = createMockOpportunityService(store, () => directory.actorId, directory);
       return Reflect.apply(service[method], service, args);
     };
@@ -191,18 +199,18 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
       if (permitted(id, 'edit') && canAnswer(detail, item, id)) result.push('SAVE_ANSWER', 'SUBMIT_ANSWER');
       if (permitted(id, 'approve') && canReview(detail, item, id)) result.push('REVIEW_ANSWER');
     }
-    if (detail.state === 'SALES_REVIEW' && assigned(record, 'SALES').includes(id)) { if (permitted(id, 'approve')) result.push('SALES_APPROVE'); if (permitted(id, 'reject')) result.push('SALES_REJECT'); }
-    if (detail.state === 'GATE1_PENDING' && assigned(record, 'CEO').includes(id)) { if (permitted(id, 'approve')) result.push('GATE1_GO'); if (permitted(id, 'reject')) result.push('GATE1_NO_GO'); }
+    if (isSalesDecisionStage(detail) && assigned(record, 'SALES').includes(id)) { if (permitted(id, 'approve')) result.push('SALES_APPROVE'); if (permitted(id, 'reject')) result.push('SALES_REJECT'); if (detail.state !== 'HOLD' && (permitted(id, 'approve') || permitted(id, 'reject'))) result.push('SALES_HOLD'); }
+    if (isCeoDecisionStage(detail) && assigned(record, 'CEO').includes(id)) { if (permitted(id, 'approve')) result.push('GATE1_GO'); if (permitted(id, 'reject')) result.push('GATE1_NO_GO'); if (detail.state !== 'HOLD' && (permitted(id, 'approve') || permitted(id, 'reject'))) result.push('GATE1_HOLD'); }
     return [...new Set(result)];
   }
   function project(record: MockRecord, state: MockState, mode = 'WORK') {
     const id = actor().id, snapshot = mode === 'REVIEW' && record.detail.packageRevision !== null ? record.packages[String(record.detail.packageRevision)] : undefined;
     if (mode === 'REVIEW' && !snapshot) throw new Error('No submitted mock package to review.');
     const detail = mockCopy(snapshot ?? record.detail); if (!snapshot) hydrate(detail, state);
-    detail.state = record.detail.state; detail.revision = record.detail.revision; detail.packageRevision = record.detail.packageRevision;
+    detail.state = record.detail.state; detail.holdStage = record.detail.holdStage ?? null; detail.revision = record.detail.revision; detail.packageRevision = record.detail.packageRevision;
     detail.activity = mockCopy(record.detail.activity); detail.responsible = mockCopy(record.detail.responsible); detail.salesRecommendation = mockCopy(record.detail.salesRecommendation);
     detail.allowedActions = actions(record);
-    detail.approvalAssignees = (detail.state === 'SALES_REVIEW' ? assigned(record, 'SALES') : detail.state === 'GATE1_PENDING' ? assigned(record, 'CEO') : []).map(user);
+    detail.approvalAssignees = (isSalesDecisionStage(detail) ? assigned(record, 'SALES') : isCeoDecisionStage(detail) ? assigned(record, 'CEO') : []).map(user);
     detail.responsible = detail.approvalAssignees.length === 1 ? detail.approvalAssignees[0] : null;
     if (manager(record) || assigned(record, 'SALES').includes(id) || assigned(record, 'CEO').includes(id)) detail.visibleModules = ['overview', 'responses', 'estimation', 'scope', 'assignment', 'activity'];
     else {
@@ -236,6 +244,7 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
   return {
     async globalActions() { return permitted(actor().id, 'add') ? ['CLIENT_CREATE'] : []; },
     async lookups() { actor(); return mockCopy(lookups); },
+    async reasonCodes() { actor(); return mockCopy(activeReasonCodes(directory ? directory.reasonCodes : TEST_REASON_CODES)); },
     async detail(id, signal, mode) { mockAbort(signal); const state = store.snapshot(); return project(find(state, id), state, mode); },
     async list(filter, signal) {
       mockAbort(signal); const state = store.snapshot(), id = actor().id, term = filter.search.trim().toLowerCase();
@@ -244,7 +253,7 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
         : filter.queue === 'MY_APPROVALS' ? actions(record).some(action => ['SALES_APPROVE', 'SALES_REJECT', 'GATE1_GO', 'GATE1_NO_GO'].includes(action)) : true);
       const summaries: OpportunitySummary[] = records.map(record => {
         const detail = project(record, state);
-        return { id: detail.id, number: detail.number, title: detail.title, estimatedValue: detail.estimatedValue, currencyCode: detail.currencyCode, clientName: detail.clientName, owner: detail.owner, priority: detail.priority, state: detail.state, rfpType: detail.rfpType, submissionDeadline: detail.submissionDeadline, revision: detail.revision, packageRevision: detail.packageRevision, allowedActions: detail.allowedActions };
+        return { id: detail.id, number: detail.number, title: detail.title, estimatedValue: detail.estimatedValue, currencyCode: detail.currencyCode, clientName: detail.clientName, owner: detail.owner, priority: detail.priority, state: detail.state, holdStage: detail.holdStage, rfpType: detail.rfpType, submissionDeadline: detail.submissionDeadline, revision: detail.revision, packageRevision: detail.packageRevision, allowedActions: detail.allowedActions };
       }).filter(summary => `${summary.title} ${summary.number} ${summary.clientName ?? ''}`.toLowerCase().includes(term));
       return mockPage(summaries, filter.after, filter.first);
     },
@@ -352,11 +361,22 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
       if (!command.confirmed) throw new Error('Confirm review of the submitted package.');
       if (record.detail.packageRevision !== command.packageRevision || !record.packages[String(command.packageRevision)]) throw new Error('Mock package revision conflict.');
       if (!actions(record).includes(command.decision)) throw new Error('This user is not assigned this decision at the current stage.');
-      if ((command.decision === 'SALES_REJECT' || command.decision === 'GATE1_NO_GO') && !command.reason.trim()) throw new Error('Enter a decision reason.');
-      if (command.decision === 'SALES_APPROVE') { if (!assigned(record, 'CEO').length) throw new Error('No assigned active CEO remains eligible.'); record.detail.state = 'GATE1_PENDING'; record.detail.responsible = null; record.detail.salesRecommendation = { actor: actor(), note: command.reason.trim() || null, packageRevision: command.packageRevision }; }
-      else if (command.decision === 'SALES_REJECT') { record.detail.state = 'SALES_REJECTED'; record.detail.responsible = record.detail.owner; }
-      else { if (record.detail.salesRecommendation?.packageRevision !== command.packageRevision) throw new Error('Sales Head must first approve the current package.'); record.detail.state = command.decision === 'GATE1_GO' ? 'GATE1_GO' : 'GATE1_NO_GO'; record.detail.responsible = null; }
-      bump(record, command.decision.replace(/_/g, ' '), command.reason.trim() || null); return project(record, state);
+      const needsReason = requiresDecisionReason(command.decision);
+      if (needsReason && (!Number.isSafeInteger(command.reasonCodeId) || (command.reasonCodeId ?? 0) <= 0)) throw new Error('Select a reason from Reason details.');
+      const selectedReason = command.reasonCodeId == null ? undefined : activeReasonCodes(directory ? directory.reasonCodes : TEST_REASON_CODES).find(reason => reason.id === command.reasonCodeId);
+      if (command.reasonCodeId != null && !selectedReason) throw new Error('The selected reason is inactive or unavailable. Choose another reason.');
+      if (command.decision === 'SALES_HOLD' || command.decision === 'GATE1_HOLD') {
+        record.detail.holdStage = command.decision === 'SALES_HOLD' ? 'SALES_REVIEW' : 'GATE1_PENDING';
+        record.detail.state = 'HOLD';
+      } else {
+        record.detail.holdStage = null;
+        if (command.decision === 'SALES_APPROVE') { if (!assigned(record, 'CEO').length) throw new Error('No assigned active CEO remains eligible.'); record.detail.state = 'GATE1_PENDING'; record.detail.responsible = null; record.detail.salesRecommendation = { actor: actor(), note: command.reason.trim() || null, packageRevision: command.packageRevision }; }
+        else if (command.decision === 'SALES_REJECT') { record.detail.state = 'SALES_REJECTED'; record.detail.responsible = record.detail.owner; }
+        else { if (record.detail.salesRecommendation?.packageRevision !== command.packageRevision) throw new Error('Sales Head must first approve the current package.'); record.detail.state = command.decision === 'GATE1_GO' ? 'GATE1_GO' : 'GATE1_NO_GO'; record.detail.responsible = null; }
+      }
+      bump(record, command.decision.replace(/_/g, ' '), command.reason.trim() || null);
+      if (selectedReason) record.detail.activity![0].reasonCode = { id: selectedReason.id, name: selectedReason.reasonName, description: selectedReason.description };
+      return project(record, state);
     }),
   };
 }
