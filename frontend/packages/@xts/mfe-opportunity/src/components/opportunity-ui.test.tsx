@@ -7,11 +7,12 @@ import type { OpportunityDetail, SaveCommand } from '@xts/api-contracts';
 import { OpportunityServiceContext, productionOpportunityService, type OpportunityService } from '../services/OpportunityService';
 import { OpportunityAccessContext } from '../hooks/useOpportunityAccess';
 import { UnsavedProvider } from '../hooks/useUnsaved';
-import { fixtureOpportunity, TEST_LOOKUPS } from '../testing/fixtures';
+import { createLocalOpportunityService, createLocalOpportunityStore, fixtureOpportunity, TEST_LOOKUPS, type LocalWorkflowDirectory } from '../testing/fixtures';
 import { PipelinePage } from './PipelinePage';
 import { OpportunityFormPage } from './OpportunityFormPage';
 import { OpportunityDetailsPage } from './OpportunityDetailsPage';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY } from '../services/userDirectory.queries';
+import { newDraft } from '../lib/workflow';
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -28,7 +29,7 @@ function mount(service: OpportunityService, route = '/opportunity', userId = '10
     userList: [{ id: 101, firstName: 'Test', lastName: 'Owner', email: 'owner@example.test', roleId: 1, isActive: true }, { id: 102, firstName: 'Test', lastName: 'Reviewer', email: 'reviewer@example.test', roleId: 1, isActive: true }],
     rolesList: [{ id: 1, roleName: 'Test role', roleCode: 'TEST', isActive: true }],
   } }, maxUsageCount: 100 }];
-  return render(<MockedProvider mocks={ownerMocks}><OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId, view: true, add: true, edit: true, work: true, approvals: true }}><MemoryRouter initialEntries={[route]}><UnsavedProvider><Location /><Routes><Route path="/opportunity" element={<PipelinePage />} /><Route path="/opportunity/new" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/edit" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /><Route path="/opportunity/:id/review" element={<OpportunityDetailsPage review />} /></Routes></UnsavedProvider></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider></MockedProvider>);
+  return render(<MockedProvider mocks={ownerMocks}><OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId, view: true, add: true, edit: true, work: true, approvals: true }}><MemoryRouter initialEntries={[route]}><UnsavedProvider><Location /><Routes><Route path="/opportunity" element={<PipelinePage />} /><Route path="/opportunity/approvals" element={<PipelinePage queue="MY_APPROVALS" />} /><Route path="/opportunity/work" element={<PipelinePage queue="MY_WORK" />} /><Route path="/opportunity/new" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/edit" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /><Route path="/opportunity/:id/review" element={<OpportunityDetailsPage review />} /></Routes></UnsavedProvider></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider></MockedProvider>);
 }
 function testService(initial = fixtureOpportunity()): OpportunityService {
   let record = initial;
@@ -39,7 +40,7 @@ function testService(initial = fixtureOpportunity()): OpportunityService {
     list: vi.fn(async () => ({ nodes: [record], totalCount: 1, endCursor: null, hasNextPage: false })),
     clients: vi.fn(async () => ({ nodes: [record.client!], totalCount: 1, endCursor: null, hasNextPage: false })),
     eligibleUsers: vi.fn(async () => ({ nodes: [record.owner!, record.responses![0].reviewer!], totalCount: 2, endCursor: null, hasNextPage: false })),
-    save: vi.fn(async (command: SaveCommand) => { record = { ...record, id: command.id ?? record.id, form: structuredClone(command.form), title: command.form.title, revision: record.revision + 1 }; return record; }),
+    save: vi.fn(async (command: SaveCommand) => { record = { ...record, id: command.id ?? record.id, form: structuredClone(command.form), title: command.form.title, state: 'SALES_REVIEW', packageRevision: (record.packageRevision ?? 0) + 1, revision: record.revision + 1 }; return record; }),
   };
 }
 describe('Opportunity UI using test-only service fixtures', () => {
@@ -57,11 +58,11 @@ describe('Opportunity UI using test-only service fixtures', () => {
     const overview = screen.getByRole('link', { name: 'Overview' }); expect(overview).toHaveAttribute('href', '/opportunity/401/details');
     expect(main.contains(overview)).toBe(false); expect(overview.closest('button')).toBeNull();
   });
-  it('approval-only cards open review and never an edit route', async () => {
+  it('approval-only cards open Overview directly and never an edit route', async () => {
     mount(testService(fixtureOpportunity({ state: 'SALES_REVIEW', allowedActions: ['SALES_APPROVE'], packageRevision: 1 })));
-    const main = await screen.findByRole('link', { name: 'Review Cloud transformation' });
-    expect(main).toHaveAttribute('href', '/opportunity/401/review');
-    expect(screen.getByRole('link', { name: /Review & Decide/ })).toHaveAttribute('href', '/opportunity/401/review');
+    const main = await screen.findByRole('link', { name: 'View Cloud transformation' });
+    expect(main).toHaveAttribute('href', '/opportunity/401/details');
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/opportunity/401/details');
   });
   it('Save Opportunity persists before returning to Pipeline and keeps actions after response content', async () => {
     const service = testService(); mount(service, '/opportunity/401/edit');
@@ -115,6 +116,51 @@ describe('Opportunity UI using test-only service fixtures', () => {
     fireEvent.click(within(dialog).getByRole('checkbox')); fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' })); expect(await within(dialog).findByText(/Enter a reason/)).toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('Reason (required)'), { target: { value: 'Delivery capacity unavailable' } }); fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' }));
     await waitFor(() => expect(service.decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'SALES_REJECT', reason: 'Delivery capacity unavailable', packageRevision: 3, expectedRevision: 1, confirmed: true })));
+  });
+
+  it('uses directory identities across sessions for Sales and CEO Overview decisions and the final Pipeline', async () => {
+    let actorId = '2011';
+    const directory: LocalWorkflowDirectory = {
+      actorId, users: [
+        { id: '2011', name: 'Representative', email: 'rep@example.test', roles: ['Sales Representative'], active: true },
+        { id: '2017', name: 'Sales Head', email: 'head@example.test', roles: ['Sales Head'], active: true },
+        { id: '2025', name: 'CEO', email: 'ceo@example.test', roles: ['CEO/Gate-2 Approver'], active: true },
+      ], permissions: { '2011': ['view', 'add', 'edit'], '2017': ['view', 'approve', 'reject'], '2025': ['view', 'approve', 'reject'] },
+      salesHeadIds: ['2017'], ceoIds: ['2025'], lookups: TEST_LOOKUPS, questions: [],
+    };
+    const entries = new Map<string, string>();
+    const storage = { getItem: (key: string) => entries.get(key) ?? null, setItem: (key: string, value: string) => { entries.set(key, value); } };
+    const session = () => createLocalOpportunityService(createLocalOpportunityStore(storage, directory), async () => ({ ...directory, actorId }));
+    let service = session();
+    const form = newDraft(actorId);
+    Object.assign(form, { title: 'Automatic approval flow', estimatedValue: '100.00', currencyId: '1', serviceLine: 'Consulting', clientId: 'local-test-client' });
+    const created = await service.save({ id: null, expectedRevision: null, idempotencyKey: 'ui-auto-create', form });
+    actorId = '2017'; service = session(); mount(service, '/opportunity/approvals', actorId);
+    fireEvent.click(await screen.findByRole('link', { name: 'View Automatic approval flow' }));
+    const approvalColumn = await screen.findByRole('complementary', { name: 'Opportunity approval and progress' });
+    expect(within(approvalColumn).getByText('Opportunity progress')).toBeInTheDocument();
+    expect(within(approvalColumn).getByText('Your sales approval is required').compareDocumentPosition(within(approvalColumn).getByText('Opportunity progress')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve & Send to CEO' }));
+    expect(screen.getByLabelText('Current route')).toHaveTextContent(`/opportunity/${created.id}/details`);
+    expect(screen.queryByRole('button', { name: 'Submit to Sales Head' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit Opportunity' })).not.toBeInTheDocument();
+    let dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' }));
+    await screen.findByText('Sales Head approved this opportunity. It is automatically queued for CEO approval.');
+    expect((await service.list({ queue: 'MY_APPROVALS', search: '', after: null, first: 50 })).nodes).toEqual([]);
+    cleanup(); actorId = '2025'; service = session(); mount(service, '/opportunity/approvals', actorId);
+    fireEvent.click(await screen.findByRole('link', { name: 'View Automatic approval flow' }));
+    expect(within(await screen.findByRole('complementary', { name: 'Opportunity approval and progress' })).getByRole('button', { name: 'Approve Go' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve Go' }));
+    dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm decision' }));
+    await waitFor(async () => expect((await service.detail(created.id)).state).toBe('GATE1_GO'));
+    expect((await service.list({ queue: 'MY_APPROVALS', search: '', after: null, first: 50 })).nodes).toEqual([]);
+    cleanup(); actorId = '2011'; service = session(); mount(service, '/opportunity', actorId);
+    expect(await screen.findByRole('link', { name: 'View Automatic approval flow' })).toBeInTheDocument();
+    expect((await service.list({ queue: 'PIPELINE', search: '', after: null, first: 50 })).nodes[0]).toMatchObject({ id: created.id, state: 'GATE1_GO' });
   });
   it('creates with a real client ID and Pending save, then Save & Continue never creates a duplicate', async () => {
     const service = testService(); mount(service, '/opportunity/new');

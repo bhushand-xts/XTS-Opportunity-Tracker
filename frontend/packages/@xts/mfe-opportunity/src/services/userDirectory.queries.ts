@@ -32,3 +32,19 @@ export interface OwnerDirectoryData {
   userList: (ManagedUser | null)[] | null;
   rolesList: (OwnerDirectoryRole | null)[] | null;
 }
+
+// Existing read-only APIs used by frontend-only workflow testing with real logins.
+export const GET_LOCAL_WORKFLOW_DIRECTORY = gql`
+  query OpportunityLocalWorkflowDirectory {
+    currentUserId
+    userList { id firstName lastName email roleId isActive }
+    rolesList { id roleName roleCode isActive }
+    menus(asTree: false) { menuId menuName menuKey icon parentId sortOrder routePath isActive }
+    rfpQuestionsList { id question description displayOrder isActive createdDt updatedDt }
+  }
+`;
+export const GET_LOCAL_WORKFLOW_ROLE_ACCESS = gql`
+  query OpportunityLocalRoleAccess($roleId: Int!) {
+    roleAccess(roleId: $roleId) { menuKey permissionKey }
+  }
+`;

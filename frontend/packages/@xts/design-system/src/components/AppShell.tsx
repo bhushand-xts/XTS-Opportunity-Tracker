@@ -489,12 +489,19 @@ function OpportunityMenuLink({
   hasMenuAccess: (menuKey: string) => boolean;
 }) {
   const { hasPermission } = useAuth();
-  const { data, error } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, {
+  const { data, error, loading, refetch } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, {
     fetchPolicy: "cache-and-network",
   });
   const menus = resolveOpportunityMenus(data?.menus ?? []);
   const menu = menus.find(record => hasMenuAccess(record.menuKey));
-  if (error || !menu) return null;
+  if (error && !menu) return (
+    <SidebarMenuItem>
+      <SidebarMenuButton onClick={() => void refetch().catch(() => undefined)} disabled={loading} tooltip="Retry loading Opportunities menu">
+        <Briefcase /><span>{loading ? "Loading Opportunities…" : "Opportunities unavailable · Retry"}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+  if (!menu) return null;
   const granted = (permission: string) => hasOpportunityPermission(menus, hasPermission, permission);
   const Icon = menu.icon ? resolveDynamicNavIcon(menu.icon) : Briefcase;
 

@@ -7,6 +7,14 @@ Inspected 2026-10-12. All three authoritative HTML references were read (markup,
 Actual branch: `OT-15-Opp-Creation`, not the request's contextual `feature/opportunity-gate1-flow`. Existing changes include the Opportunity setup, shell integration, design-system navigation and untracked reference HTML. Preserve all of these; do not reset, push or switch branches.
 Latest requested integration: connect all real available Opportunity menus. Discover existing records through `menus(asTree: false)` and match their Opportunity menu keys, names or routes. Active authorized records feed one sidebar entry, and access checks consider their actual menuKey grants. The local gateway identifies active **12 / Opportunities** and **29 / Opportunity Management**; **28 / Opportunity Tracking** is excluded while inactive and **5 / Permission Master** remains an Administration record. No fixed ID, duplicate menu or database mutation is required. The canonical MFE route is `/opportunity`, with `/opportunities` supported as an alias.
 
+Expected backend workflow (not implemented by the unchanged backend): saving immediately returns **Pending** (`SALES_REVIEW`)
+in the configured Sales Head's My approvals. The owner can edit while Pending;
+each save refreshes the reviewed package/revision. Sales Head approves from
+Overview and atomically routes to the configured CEO in Gate 1 pending, then CEO
+records Go / No-Go. No manual submission, approver picker or completed/validated
+response prerequisite remains. Real approvers are resolved by backend configuration,
+without frontend user-ID constants; stale and wrong-role decisions are rejected.
+
 ## Relevant sources
 
 - `frontend/packages/@xts/mfe-opportunity/src/{App,bootstrap}.tsx`: standalone/host-aware router and layout; remote exposes `./App`, port 3002.
@@ -32,7 +40,7 @@ Latest requested integration: connect all real available Opportunity menus. Disc
 | userList, rolesList | SQL-backed user/admin services | user-authorized active Opportunity owner directory with stable ownerId and display roles; inactive current owner remains visible, no approval/reviewer eligibility inferred |
 | opportunityList | repository.findAll() returns [] literally; id-only schema | NOT called: would present a false empty Pipeline |
 | proposalSectionsList | repository.findAll() returns [] literally; id-only schema | NOT called; static reference section catalog is UI structure, not fake business records |
-| create/update/detail opportunity, client/contact CRUD, upload/extraction, queues, assignments, response reviews, scope/estimate persistence, review submission/decisions | absent | typed proposed contracts; production adapter returns explicit unavailable error without an unsupported network request |
+| create/update/detail opportunity, client/contact CRUD, upload/extraction, queues, assignments, response reviews, scope/estimate persistence, automatic approval routing/decisions | absent | typed proposed contracts; real GraphQL adapter selected by default; unchanged backend remains unavailable; no error-triggered mocks |
 
 No API behavior is runtime-verified merely from its source. Local backend/authenticated test access will be checked separately during verification.
 
@@ -50,7 +58,7 @@ Field inventory is in `field-mapping.md`: all reference opportunity/client/conta
 2. Dynamic Opportunity menu discovery and permission-driven sub-navigation, deep-linkable routes.
 3. Scoped reference UI: Pipeline, two-column intake, client/context drawers.
 4. Shared response workspace, read-only Overview and saved module tabs.
-5. Revision-aware save/assignment/response/review adapters and decision screens.
+5. Atomic Pending save/configured approval routing, revision-aware preparation adapters and Overview decision controls.
 6. Tests of real UI through test-only adapters; typecheck/lint/build and visual viewport checks; distinguish missing live behavior.
 
 ## Read-only local gateway verification

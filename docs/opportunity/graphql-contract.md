@@ -1,41 +1,45 @@
 # Opportunity GraphQL handoff
 
-## Status and activation
+## Current status
 
-**Proposed, not live.** The gateway uses one configured GraphQL endpoint and the
-shared Apollo Bearer transport. The inspected live schema does not expose an
-Opportunity type, client directory or workflow operations. Do not deploy the
-proposed SDL or enable the adapter without backend authorization and integration
-verification. Existing opportunityList/proposalSectionsList source repositories
-are hardcoded [] stubs, not scoped persistence.
+Frontend only. Backend source changes from the attempted real-workflow implementation
+were reverted; no database migration or business mutation was applied. The unchanged
+Opportunity service remains an id-only stub and does not implement workflow APIs.
 
-Authoritative proposed schema: `contracts/opportunity-workflow.proposed.graphql`.
-Exhaustive operation documents: `contracts/opportunity-workflow.operations.graphql`.
-Typed UI contracts: `frontend/packages/@xts/api-contracts/src/opportunity.ts`.
-Optional Apollo adapter: `frontend/packages/@xts/mfe-opportunity/src/services/proposed/createWorkflowService.ts`.
-The default `productionOpportunityService` connects implemented lookup reads
-and returns INTEGRATION_UNAVAILABLE for workflow capabilities. Intake also reads
-Question Master templates and the user-authorized active Opportunity owner
-directory through shared Apollo hooks. The production service never imports
-the optional adapter or silently substitutes mocks after a network error. Tests
-and the isolated visual harness inject their own service through context.
+The normal MFE uses the real Apollo adapter and signed-in user's Bearer session by
+default. `OPPORTUNITY_USE_LOCAL_WORKFLOW=false` selects backend workflow persistence.
+No separate workflow API flag is required. Restart the frontend dev servers after
+changing the environment. API failures remain visible and never activate mocks.
 
-When the backend is ready, provide `createWorkflowService(getApolloClient())`
-through OpportunityServiceContext. Validate schema and integration tests first.
-No form/review component changes should be needed. Existing master schemas are
-reused; the proposed type names use Workflow prefixes to avoid id-only legacy
-Opportunity/proposalSections types. The standalone proposed schema uses Query and
-Mutation root definitions for validation; compose as extensions in the service.
-No existing codegen pipeline was found; this follows the repository's manual
-TypeScript API contract plus gql-document conventions.
+Development-only `OPPORTUNITY_USE_LOCAL_WORKFLOW=true` uses the same screens with
+browser-local workflow records and actual logged-in users. There is no actor
+switcher or session override. Existing gateway identity, user/role directory,
+Opportunity menu grants and master queries remain live. Sign out/in on the same
+browser profile and app origin to test Sales Representative -> Sales Head -> CEO.
+This mode validates frontend behavior; cross-device persistence and backend
+authorization still require the contract below. Production always uses the API.
+
+The contract schema below is a backend handoff, not a deployed implementation:
+`contracts/opportunity-workflow.proposed.graphql`; operations are in
+`contracts/opportunity-workflow.operations.graphql`. Confirm six queries and ten
+mutations, backend-computed actions/modules, database persistence, revision checks,
+package snapshots and automatic real-user routing before end-to-end testing.
+
+Expected flow: Save -> Pending -> eligible Sales Head users -> Sales approval ->
+eligible CEO users -> Go / No-Go. `approvalAssignees` must contain actual active
+assigned users. Multiple eligible users form a stage queue; the first valid decision
+advances the package atomically. One named assignee per stage can instead be configured
+by the backend. The frontend never selects arbitrary IDs or creates real assignments.
+Existing login, menus, master data, user/role directory and Question Master reads are
+already connected. Real workflow persistence and cross-user queues remain backend work.
 
 ## Identity, authorization and redaction (every operation)
 
-Authenticate the Bearer token through the gateway; derive the actor from the
-verified gateway identity, never from a supplied actor ID. Reject unauthenticated
-calls. Apply tenant/organization scope and active-user membership before any
-entity lookup. Reject direct-service requests without trusted verified identity;
-do not copy the admin service's supplied-actor fallback into workflow code.
+Backend requirement: verify the real session, active user/role, current Opportunity
+menu grants, stored stage assignment and exact package/revision on every operation.
+A caller-supplied identity or frontend role name must not authorize a mutation.
+Restricted workspace values must be redacted by the backend. The existing gateway
+forwards a verified user ID; the Opportunity stub does not enforce workflow rules yet.
 
 Discover Opportunity records with `menus(asTree: false)` and use the actual
 menuKeys and exact configured grants of all matching active records. Exclude
@@ -47,10 +51,20 @@ are excluded. The canonical UI route is `/opportunity`, with `/opportunities`
 supported as an alias. Existing
 verified codes include view/add/edit/approve/reject; global create requires add,
 view/work requires view, approvals queue requires approve OR reject. The server
-must separately check record scope, active assignment and lifecycle. There is no
-role-name matching or Admin/Super Admin approval exemption. Business action enums
+must separately check record scope, active assignment and lifecycle. Frontend role
+labels do not grant access, and there is no Admin/Super Admin approval exemption. Business action enums
 in this contract are computed capabilities, not new assumed database permission
 codes. Map them to actual menu grants plus assignments on the server.
+
+Routing defaults to active eligible users of configured role codes `SH` (Sales
+Head) and `approver_gate2` (CEO). Both require actual Opportunity view and approve/
+reject grants; stored assignment plus current eligibility and stage determine
+decision actions. `SALES_HEAD_ROLE_CODE` and `CEO_ROLE_CODE` override routing codes.
+Optional positive-integer `SALES_HEAD_USER_ID` and `GATE1_CEO_USER_ID` restrict a
+queue to an eligible real user. Without filters, all eligible users receive the
+queue and the first valid transactional decision wins. `approvalAssignees` returns
+that active group; `responsible` is null for multiple assignees rather than selecting
+an arbitrary person.
 
 Return `visibleModules` and `allowedActions` on each record, and per-response
 allowedActions. Reject forbidden fields at the resolver layer or return null for
@@ -96,18 +110,29 @@ calculation rounds each row to 2 decimals and sums those amounts.
 
 | Domain state | UI label | Queue eligibility |
 |---|---|---|
-| PREPARATION_PENDING | Pending | Preparation only, never Sales Head review |
-| IN_PROGRESS | In progress | Preparation/assigned response work |
-| SALES_REVIEW | Sales Head review | Submitted immutable package, assigned sales reviewer |
+| PREPARATION_PENDING | Legacy preparation state | Retained enum compatibility; new saves enter SALES_REVIEW |
+| IN_PROGRESS | Legacy preparation state | Retained enum compatibility; response work does not move a new record out of Pending |
+| SALES_REVIEW | Pending | Saved package immediately assigned to configured Sales Head and visible in My approvals |
 | GATE1_PENDING | Gate 1 pending | Sales-approved same package, assigned CEO/Approver |
 | GATE1_GO | Gate 1 Go | Final Gate 1 Go, retained history |
 | SALES_REJECTED | Rejected by Sales Head | Retained, never automatically advances |
 | GATE1_NO_GO | Closed ? No-Go | Final negative decision, retained history |
 
-The Sales Head reference's Pending is **SALES_REVIEW**, not PREPARATION_PENDING.
-Form saves do not accept state. Creates return PREPARATION_PENDING. Updating a
-record preserves its current state unless an explicit workflow command transitions
-it. The backend, not the UI, chooses transition effects.
+The current flow is **Save -> Pending -> Sales Head approval -> Gate 1 pending ->
+CEO Go / No-Go**. Pending is `SALES_REVIEW`. `saveOpportunityWorkflow` performs one
+atomic transaction: validate the required intake fields, persist the form, resolve
+configured active Sales Head and CEO assignments server-side, create/version the
+saved package, and return Pending with Sales Head as `responsible`. No separate
+submission mutation, approver picker, frontend user-ID constant or prerequisite
+answer approval is used. Missing/invalid approver configuration fails the operation
+without a partially saved/routed record.
+
+The owner may edit while Pending if allowed by actual grants and record scope.
+Each saved change refreshes opportunity/package revisions and the pending package;
+an approval using an older revision must fail. Form inputs still do not accept state
+or approver IDs. Sales approval is one atomic decision that records its history,
+sets `GATE1_PENDING` and assigns the configured CEO; no follow-up assignment request
+is required. Sales rejection retains `SALES_REJECTED` without advancing.
 
 Response lifecycle: UNASSIGNED ? ASSIGNED ? DRAFT ? SUBMITTED ? APPROVED or
 CHANGES_REQUESTED. Only an active assigned owner can save/submit. Only an active
@@ -116,14 +141,24 @@ for CHANGES_REQUESTED. Increment answer revision on changed saved drafts; record
 submittedRevision on submission and approvedRevision on approval. Resubmission
 must identify the revised answer version. Changing question text, selected section
 instructions, assignment, answer or relevant intake invalidates only affected
-response approvals; unchanged responses retain their approvals. Package approvals
-are tied to an immutable packageRevision. Do not approve a mutable live draft.
+response approvals; unchanged responses retain their approvals. Source validation,
+answer completion and response review remain separate preparation features; none
+is a prerequisite for Sales Head/CEO package approval. Package decisions are tied
+to the exact saved packageRevision. An owner edit creates a newer package and makes
+the previously viewed decision revision stale.
 
-OpportunityWorkspace mode WORK returns editable current preparation; DETAILS
-returns current saved authorized summaries; REVIEW returns the immutable submitted
-package under review, its decision actions and revision. Decisions atomically
+OpportunityWorkspace mode WORK returns permitted current Pending edits; DETAILS
+returns current saved authorized summaries. Approver Overview requests mode REVIEW
+for the saved package snapshot, revisions and assigned decision actions, even when
+its URL ends in `/details`. Sales Head approves directly from Overview. Decisions atomically
 verify current opportunity revision, assigned reviewer/approver, package revision,
-prior decision state and all required package prerequisites.
+prior decision state and active configured assignment. `readiness` remains an
+advisory preparation field for compatibility; a false value or unvalidated/unfinished
+responses must not block creation, Sales approval or CEO Go / No-Go.
+The create adapter accepts success only when the server returns `SALES_REVIEW`,
+a positive package revision and a nonempty active `approvalAssignees` group. A mismatched routing
+result is reported as uncertain saved state with a refresh instruction; it must
+not produce a queued-success message or silently retry as a new creation.
 
 ## Concurrency, idempotency and errors
 
@@ -145,34 +180,44 @@ it does not silently overwrite newer saved data. Actor IDs/timestamps are output
 
 ## Operation requirements
 
+Required query fields are `opportunityWorkflowActions`, `opportunityWorkflowPage`,
+`opportunityWorkspace`, `clientDirectoryPage`, `eligibleOpportunityUsers` and
+`opportunityExtractionStatus`. Required mutation fields are
+`saveOpportunityWorkflow`, `saveOpportunityClient`, `uploadOpportunitySource`,
+`startOpportunityExtraction`, `saveOpportunityEstimation`, `saveOpportunityScope`,
+`assignOpportunityResponse`, `saveOpportunityAnswer`, `reviewOpportunityAnswer`,
+`decideOpportunityPackage`. Full fragments must match the schema; exposed fields
+for unsupported integrations return explicit unavailable errors rather than fake
+persistence or extraction.
+
 | Operation | Purpose/input ? output | Scope, validation and revision rules |
 |---|---|---|
-| OpportunityWorkflowActions | No inputs ? computed global WorkflowAction list | Authenticated tenant-scoped capabilities; client directory creation is separately authorized, never implied by opportunity add. Missing production capability API defaults to no actions. |
-| OpportunityWorkflowPage | WorkflowListInput(search, queue, after, first) ? cursor page of summaries | User-scoped opportunities; view grant; first 1..100; search reference/title/client. MY_WORK only assigned actionable preparation/responses; MY_APPROVALS only assigned submitted eligible packages. Never return draft Pending as Sales-review queue item. |
-| OpportunityWorkspace | id + mode(WORK/DETAILS/REVIEW) ? authorized workspace | Scope before lookup; visibleModules/redaction; REVIEW immutable snapshot. Returned readiness is authoritative. |
-| ClientDirectoryPage | keywords + cursor + first ? scoped client page with contacts | Directory view scope, debounce/stale request cancellation in UI; useful identifying company/contact/email/location info; no fake no-result fallback. |
-| EligibleOpportunityUsers | opportunityId?, purpose, search, cursor, first ? scoped user page | Active actual eligibility for OWNER/REVIEWER/SALES_REVIEWER/GATE1_APPROVER; multiple roles; keep inactive currently assigned user in record output but exclude from eligible choices. |
-| SaveOpportunityClient | id?, expectedRevision?, idempotencyKey, ClientDraft ? persisted client | Explicit create/update permission; validate required directory/contact fields; update shared client only in this operation; contact IDs/ownership server-managed. |
-| SaveOpportunityWorkflow | id?, expectedRevision?, idempotencyKey, complete form ? workspace | add for create / edit+preparation record action for update. Pending requires name/value/currency/service line/owner/client; shared solicitation/dates and unselected RFP may be incomplete. Validate provided nonempty URLs/email/date values; never reset state on update. Questions/sections saved atomically with form, affected approvals invalidated only. |
-| UploadOpportunitySource | record version + filename/mime/contentBase64 ? stored document | UPLOAD action; tenant-owned file, content sniffing, size limit, malware scanning, private storage; return stable ID/name and authorized download URL if available. This proposed transport needs gateway body-size/streaming decisions before implementation (current express.json default is insufficient for 25 MB); a presigned/multipart contract may be substituted behind the upload adapter after agreement. |
-| StartOpportunityExtraction | record version + documentId ? workspace with extraction job | EXTRACT action, source ownership, saved source linked, async processing, idempotent job creation. Never return sample questions as extraction. |
-| OpportunityExtractionStatus | opportunityId + jobId ? authorized workspace | Processing/success/failure; successful extracted questions include source references and unvalidated source state. UI polls with cancellation; retry is explicit. |
+| OpportunityWorkflowActions | No inputs ? computed global WorkflowAction list | Implemented with active real user/role/menu grants; existing Opportunity add grants expose CLIENT_CREATE, and client update requires edit. No frontend role-label bypass. |
+| OpportunityWorkflowPage | WorkflowListInput(search, queue, after, first) ? cursor page of summaries | Implemented for users with actual Opportunity view grant; first 1..100; shared-database Pipeline search. MY_WORK contains owned Pending work; MY_APPROVALS contains currently eligible assigned Pending SALES_REVIEW for Sales Head and GATE1_PENDING for CEO. |
+| OpportunityWorkspace | id + mode(WORK/DETAILS/REVIEW) ? authorized workspace | Scope before lookup; visibleModules/redaction; current saved package/revisions and authorized Overview decision actions. Readiness is advisory and does not gate package approval. |
+| ClientDirectoryPage | keywords + cursor + first ? client page with contacts | Implemented from real shared client/contact data under Opportunity view grant; debounce/stale request cancellation in UI; no fake no-result fallback. |
+| EligibleOpportunityUsers | opportunityId?, purpose, search, cursor, first ? scoped user page | Active actual response-owner/reviewer eligibility; multiple roles; preserve inactive current assignments for display. Sales Head/CEO routing is configured server-side and has no frontend selector. |
+| SaveOpportunityClient | id?, expectedRevision?, idempotencyKey, ClientDraft ? persisted client | Implemented; existing menu add/edit grants govern create/update. Validate directory/contact fields; update shared client only here. Linked Pending package changes refresh revisions. |
+| SaveOpportunityWorkflow | id?, expectedRevision?, idempotencyKey, complete form ? workspace | add for create / edit+owner Pending scope for update. Required name/value/currency/service line/owner/client; solicitation, RFP validation and responses may be incomplete. One atomic save assigns configured approvers, returns SALES_REVIEW displayed Pending with Sales Head responsibility, and versions the saved package. Pending edits refresh revisions; validate supplied URLs/email/dates and invalidate only affected response approvals. No client-supplied approver IDs. |
+| UploadOpportunitySource | record version + filename/mime/contentBase64 ? stored document | Not implemented; returns INTEGRATION_UNAVAILABLE. Future transport requires real private storage, ownership/content checks and gateway body-size/streaming support; current defaults cannot handle 25 MB base64 upload. |
+| StartOpportunityExtraction | record version + documentId ? workspace with extraction job | Not implemented; returns INTEGRATION_UNAVAILABLE. Future parser needs source ownership, asynchronous processing and idempotency; no sample questions presented as extraction. |
+| OpportunityExtractionStatus | opportunityId + jobId ? authorized workspace | Not implemented; returns INTEGRATION_UNAVAILABLE. Processing/status polling remains a future document integration. |
 | SaveOpportunityEstimation | record version + estimation revision/matrix/assumptions ? workspace | EDIT_ESTIMATION action, preparation stage; validate decimals/positive integer people and recalculate totals; no separate estimation approval gate. |
 | SaveOpportunityScope | record version + scope revision/text ? workspace | EDIT_SCOPE action, preparation stage; increment revision and expose saved summary only. |
-| AssignOpportunityResponse | record/response versions + active owner/reviewer IDs + dueDate ? workspace | ASSIGN action, preparation stage, independent eligible users, tenant-safe lookup; update affected approval/draft ownership atomically. |
-| SaveOpportunityAnswer | record/response versions + answer + submit boolean ? workspace | Owner-only action; draft saves separate from form. Nonempty on submission; revision lifecycle; a generic section uses the same response model. |
-| ReviewOpportunityAnswer | record/response/submitted versions + approved + reason ? workspace | Independent reviewer-only action; reason required if false; exact current submitted version; approval of own answer forbidden. |
-| SubmitOpportunitySalesReview | record version + salesReviewerId + gate1ApproverId ? submitted workspace | SUBMIT_SALES action; stricter readiness incl approved current responses, solicitation/issuing agency/destination/deadline, eligible decision owners; create immutable snapshot and increment packageRevision; enter SALES_REVIEW, not final Go. |
-| DecideOpportunityPackage | record version + packageRevision + decision + reason + confirmed ? workspace | Assigned decision owner + approve/reject grant + stage. SALES_APPROVE ? GATE1_PENDING; SALES_REJECT ? SALES_REJECTED; GATE1_GO ? GATE1_GO; GATE1_NO_GO ? GATE1_NO_GO. Require confirmed true and rejection/No-Go reason. Atomically write history/next responsibility and consume decision eligibility. |
+| AssignOpportunityResponse | record/response versions + active owner/reviewer IDs + dueDate ? workspace | Not implemented; returns INTEGRATION_UNAVAILABLE. Prepared question/section definitions persist through form save, but this does not persist response assignments. |
+| SaveOpportunityAnswer | record/response versions + answer + submit boolean ? workspace | Not implemented; returns INTEGRATION_UNAVAILABLE. Answer draft/submission lifecycle remains a separate future integration. |
+| ReviewOpportunityAnswer | record/response/submitted versions + approved + reason ? workspace | Not implemented; returns INTEGRATION_UNAVAILABLE. Independent answer review is not required for current Sales/CEO package approval. |
+| DecideOpportunityPackage | record version + packageRevision + decision + reason + confirmed ? workspace | Assigned decision owner + approve/reject grant + current stage/revision. SALES_APPROVE atomically records history, enters GATE1_PENDING and assigns configured CEO; SALES_REJECT enters SALES_REJECTED; GATE1_GO enters GATE1_GO; GATE1_NO_GO enters GATE1_NO_GO. Require reviewed confirmation and rejection/No-Go reason; reject stale or wrong-role decisions. No response-readiness prerequisite or follow-up routing mutation. |
 
 ## Cache and updates
 
 Existing master reads use the shared Apollo client with network-only lookup fetches.
-The proposed adapter uses network-only paginated/detail reads and evicts only
+The conditional adapter uses network-only paginated/detail reads with explicit
+`errorPolicy: none`, rejects partial data accompanied by GraphQL errors, and evicts only
 opportunity page/workspace/extraction projections after successful mutations;
 client save also evicts client directory pages. Components consume authoritative
 mutation workspace results immediately; navigation to Pipeline loads a new list.
-There is no optimistic business status or local database. All queues/counts must
+In real API mode there is no optimistic business status or local database. All queues/counts must
 reflect backend returned records; filtered/page counts are labelled accordingly.
 No subscriptions or cross-user live workflow updates are claimed. Auth grants
 already refresh every 30 seconds; workflow visibility updates on a new query,

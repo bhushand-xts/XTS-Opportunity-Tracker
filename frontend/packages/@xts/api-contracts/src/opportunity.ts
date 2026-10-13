@@ -1,10 +1,10 @@
-/** Proposed workflow contract. Existing Opportunity GraphQL only exposes id. */
+/** Opportunity workflow contract shared with the authenticated gateway. */
 export type Decimal = string;
 export type LocalDate = string;
 export type OpportunityState = 'PREPARATION_PENDING' | 'IN_PROGRESS' | 'SALES_REVIEW' | 'GATE1_PENDING' | 'GATE1_GO' | 'SALES_REJECTED' | 'GATE1_NO_GO';
 export type ResponseState = 'UNASSIGNED' | 'ASSIGNED' | 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'CHANGES_REQUESTED';
 export type Module = 'overview' | 'responses' | 'estimation' | 'scope' | 'assignment' | 'activity';
-export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SUBMIT_SALES' | 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
+export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
 export interface DirectoryUser { id: string; name: string; email: string; roles: string[]; active: boolean; }
 export interface Contact { id?: string; name: string; title: string; email: string; phone: string; decisionRole: string; }
 export interface AdditionalContact { id?: string; name: string; email: string; }
@@ -57,7 +57,7 @@ export interface OpportunityDetail extends OpportunitySummary {
   form: OpportunityDraft; client: OpportunityClient | null; visibleModules: Module[];
   /** Restricted values must be null/redacted on the backend, not merely hidden. */
   responses: ResponseItem[] | null; estimation: Estimation | null; scope: Scope | null;
-  activity: ActivityEvent[] | null; responsible: DirectoryUser | null;
+  activity: ActivityEvent[] | null; responsible: DirectoryUser | null; approvalAssignees: DirectoryUser[];
   readiness: { ready: boolean; issues: string[] };
   salesRecommendation: { actor: DirectoryUser; note: string | null; packageRevision: number } | null;
 }

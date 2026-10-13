@@ -40,7 +40,7 @@ export function OpportunityFormPage() {
       applySaved(value);
       if (continueWorking || responseDirty) { if (!id) navigate(`/opportunity/${value.id}/edit`, { replace: true }); if (responseDirty) setSaveNote('Opportunity saved. Your unsaved answer or assignment is still here; save it before leaving.'); }
       else navigate(`/opportunity?saved=${encodeURIComponent(value.id)}`);
-    }, continueWorking ? 'Opportunity saved. Continue working below.' : 'Opportunity saved.');
+    }, continueWorking ? 'Opportunity saved as Pending and queued for Sales Head. Continue working below.' : 'Opportunity saved as Pending and queued for Sales Head.');
   }
   if (id && detail.loading && !saved) return <Loading />;
   if (id && detail.error) return <Notice error={detail.error} retry={detail.reload} />;

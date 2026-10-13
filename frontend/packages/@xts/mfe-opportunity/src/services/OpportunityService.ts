@@ -25,7 +25,6 @@ export interface OpportunityService {
   assign(command: ResponseCommand & { ownerId: string; reviewerId: string; dueDate: string }): Promise<OpportunityDetail>;
   answer(command: ResponseCommand & { answer: string; submit: boolean }): Promise<OpportunityDetail>;
   reviewAnswer(command: ResponseCommand & { approved: boolean; reason: string; submittedRevision: number }): Promise<OpportunityDetail>;
-  submitSales(command: VersionCommand & { salesReviewerId: string; gate1ApproverId: string }): Promise<OpportunityDetail>;
   decide(command: DecisionCommand): Promise<OpportunityDetail>;
 }
 
@@ -53,7 +52,6 @@ export const productionOpportunityService: OpportunityService = {
   assign: () => unavailable('Response assignment'),
   answer: () => unavailable('Answer persistence'),
   reviewAnswer: () => unavailable('Answer review'),
-  submitSales: () => unavailable('Sales review submission'),
   decide: () => unavailable('Approval decisions'),
   async lookups() {
     const { data } = await getApolloClient().query<{

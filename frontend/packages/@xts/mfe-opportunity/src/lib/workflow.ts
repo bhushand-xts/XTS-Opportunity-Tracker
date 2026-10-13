@@ -1,7 +1,7 @@
 import type { Action, Decimal, DirectoryUser, EstimateRow, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
 
 export const STATE_LABELS = {
-  PREPARATION_PENDING: 'Pending', IN_PROGRESS: 'In progress', SALES_REVIEW: 'Sales Head review', GATE1_PENDING: 'Gate 1 pending',
+  PREPARATION_PENDING: 'Draft', IN_PROGRESS: 'In progress', SALES_REVIEW: 'Pending', GATE1_PENDING: 'Gate 1 pending',
   GATE1_GO: 'Gate 1 Go', SALES_REJECTED: 'Rejected by Sales Head', GATE1_NO_GO: 'Closed · No-Go',
 };
 export const RESPONSE_LABELS = { UNASSIGNED: 'Unassigned', ASSIGNED: 'Assigned', DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested' };
@@ -43,7 +43,7 @@ export function newDraft(ownerId: string): OpportunityDraft {
     rfp: { type: null, source: null, extraction: null, questions: [], sections: [], submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', pageRules: '', evaluation: '' },
   };
 }
-export function isPreparing(o: OpportunityDetail) { return o.state === 'PREPARATION_PENDING' || o.state === 'IN_PROGRESS'; }
+export function isPreparing(o: OpportunityDetail) { return o.state === 'PREPARATION_PENDING' || o.state === 'IN_PROGRESS' || o.state === 'SALES_REVIEW'; }
 export function may(o: OpportunityDetail, action: Action) { return o.allowedActions.includes(action); }
 export function canAnswer(o: OpportunityDetail, r: ResponseItem, userId: string | undefined) {
   return isPreparing(o) && r.owner?.active === true && r.owner.id === userId && ['ASSIGNED', 'DRAFT', 'CHANGES_REQUESTED'].includes(r.state);
