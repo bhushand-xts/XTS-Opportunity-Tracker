@@ -1,0 +1,64 @@
+# Additive override — NOT used by a plain `docker compose up`. Only for
+# environments (like a fresh EC2 box) that can't reach the real Postgres at
+# 172.16.121.53 (a private, non-internet-routable address — local dev
+# machines are already inside that network, so they never need this).
+#
+# Adds a local Postgres container seeded from a dump of the real database,
+# and points user/admin at it instead of the remote one. Doesn't touch
+# services/user/.env or services/admin/.env — those keep the real DB_HOST so
+# local dev is unaffected.
+#
+# Run with both files together:
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#
+# DB_PASSWORD comes from backend/.env (same auto-loaded, gitignored file
+# already used for CORS_ORIGIN) — never hardcoded here since this file is
+# checked into git.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: opportunityuser
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: admin_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opportunityuser -d admin_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  user:
+    environment:
+      DB_HOST: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  admin:
+    environment:
+      DB_HOST: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Web-based DB browser for the postgres container above — reaches it by
+  # Compose service name over the shared Docker network, same as user/admin
+  # do. Bound to 127.0.0.1 only (not the public security group), so it's
+  # reachable solely via an SSH tunnel, never directly from the internet —
+  # this is a full DB admin UI, not something to expose publicly.
+  adminer:
+    image: adminer:latest
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

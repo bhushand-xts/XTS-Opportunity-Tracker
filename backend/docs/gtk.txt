@@ -1,0 +1,17 @@
+API layer — a single Apollo Server running as Express middleware, exposing one /graphql endpoint. It validates the SSO token, applies role-based access, and routes each operation to the service that owns it. Not federated: one merged schema built from each service's type definitions at startup, rather than a gateway composing independent subgraphs.
+
+
+Data layer — a separate PostgreSQL database per service (opportunity_db, estimation_db, reporting_db, rfp_intake_db), all on one PostgreSQL server. Each service connects only to its own database and cannot read another's tables, so ownership is enforced by the database rather than by convention. One server keeps operations simple — one instance to run, back up and monitor — at the cost of shared CPU, memory and connection limits.
+
+Cross-database references — foreign keys cannot span databases, so client_id, ratemaster_id, and every created_by column become plain integers with no constraint behind them. Each service validates these by asking the owning service; the database will not catch a bad ID.
+
+Reporting — no cross-database joins are possible. Reports spanning opportunities, estimates and clients are assembled in the reporting service from data gathered per service, or from data replicated into reporting_db.
+
+
+At this stage, the deployment is intentionally minimal: a single EC2 instance running the GraphQL API, all backend logic, and PostgreSQL itself, with no load balancer and no per-service split. RDS is not used.
+
+Edge — the host shell and the five domain micro-frontends are built as independent static bundles and served through a CDN, each deployable on its own without a backend deploy or a full-app release.
+Compute — one EC2 instance runs the full API and backend logic. No load balancer and no auto-scaling group at this stage — both are straightforward to reintroduce later (Section 4.4's earlier ECS/EC2-Auto-Scaling design remains a valid reference point) if traffic or availability requirements change.
+Data — PostgreSQL runs on the same EC2 instance, hosting one database per service (user_db, account_db, opportunity_db, estimation_db, admin_db), matching the per-service database decision in Section 4.1. Because this is self-managed rather than RDS, backups, patching, and engine upgrades are our responsibility.
+Object storage — RFP source documents and other uploads are written to an S3 bucket. The database stores only the object key and metadata (file_name, file_path), never the file itself. The EC2 instance reads and writes the bucket using an instance role, so no access keys are held in application config.
+External dependency — the OpenAI dependency (Section 4.1) still applies here as an outbound call from this EC2 instance.

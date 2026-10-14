@@ -1,0 +1,22 @@
+"Boot" = starting the service/process. When I say "boot the gateway," I mean literally running node/tsx on gateway/src/index.ts so it starts listening on port 4000, same as we did for each of the 10 microservices.
+
+"Federation" here refers to Apollo Federation — the gateway's actual job (see gateway.ts):
+
+
+const gateway = new ApolloGateway({
+  supergraphSdl: new IntrospectAndCompose({ subgraphs: serviceList }),
+});
+Each of the 10 microservices exposes its own small GraphQL schema (e.g. account only knows about Account, Contact, etc.).
+When the gateway starts, IntrospectAndCompose calls every service's /graphql endpoint, reads its schema, and merges (composes) all 10 into one combined "supergraph" schema.
+After that, a single query hitting the gateway (localhost:4000/graphql) can be automatically split and routed to whichever underlying service(s) actually own that data — that merging/routing mechanism is what "federation" means.
+So "test federation" = start the gateway, confirm it successfully introspects and merges all 10 already-running services into one schema without errors, then run one combined GraphQL query through it to prove the routing actually works end-to-end.
+
+
+
+Day-to-day commands per service
+
+
+npm install          # once per service
+npm run dev          # tsx watch — hot reload during development
+npm run build        # tsc — compiles to dist/
+npm start            # runs the compiled dist/index.js

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in | Opportunity Tracker</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; background: #f4f7fb; color: #172033; }
+      main { width: min(420px, calc(100% - 32px)); padding: 36px; background: white; border-radius: 14px; box-shadow: 0 12px 35px #17203320; }
+      h1 { margin: 0 0 8px; font-size: 28px; } p { margin: 0 0 26px; color: #64748b; }
+      label { display: block; margin: 16px 0 6px; font-weight: 600; font-size: 14px; }
+      input { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; }
+      button { width: 100%; margin-top: 24px; padding: 12px; border: 0; border-radius: 8px; background: #2563eb; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+      button:disabled { opacity: .65; cursor: wait; } #message { min-height: 20px; margin-top: 16px; font-size: 14px; } .error { color: #b91c1c; } .success { color: #15803d; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Welcome back</h1>
+      <p>Sign in to Opportunity Tracker.</p>
+      <form id="login-form">
+        <label for="email">Email address</label>
+        <input id="email" name="email" type="email" autocomplete="email" required />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" required />
+        <button id="submit" type="submit">Sign in</button>
+        <div id="message" role="status" aria-live="polite"></div>
+      </form>
+    </main>
+    <script>
+      const form = document.getElementById('login-form');
+      const message = document.getElementById('message');
+      const submit = document.getElementById('submit');
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        message.textContent = '';
+        submit.disabled = true;
+        const email = form.email.value;
+        const password = form.password.value;
+        try {
+          const response = await fetch('/graphql', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ query: 'mutation Login($email: String!, $password: String!) { login(email: $email, password: $password) { token user { id firstName email } } }', variables: { email, password } })
+          });
+          const body = await response.json();
+          if (!response.ok || body.errors) throw new Error(body.errors?.[0]?.message || 'Unable to sign in.');
+          localStorage.setItem('authToken', body.data.login.token);
+          message.className = 'success';
+          message.textContent = 'Signed in as ' + body.data.login.user.email + '.';
+          window.setTimeout(() => window.location.assign('/admin'), 400);
+        } catch (error) {
+          message.className = 'error';
+          message.textContent = error.message;
+        } finally { submit.disabled = false; }
+      });
+    </script>
+  </body>
+</html>
