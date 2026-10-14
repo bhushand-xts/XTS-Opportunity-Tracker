@@ -32,6 +32,7 @@ const OPPORTUNITY_FIELDS = gql`
     preBidMeeting
     documentType
     fileName
+    filePath
     docSubmissionFormat
     evaluationBasis
     opportunityDescription

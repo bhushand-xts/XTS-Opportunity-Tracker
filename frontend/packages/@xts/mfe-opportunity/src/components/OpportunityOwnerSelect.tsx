@@ -1,7 +1,8 @@
 import { useFieldError } from './FieldValidation';
 import { useId } from 'react';
 import type { DirectoryUser } from '@xts/api-contracts';
-import { Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner } from '@xts/design-system';
+import { Label, Spinner } from '@xts/design-system';
+import { SearchableSelect } from './SearchableSelect';
 import { useOwnerDirectory } from '../services/useOwnerDirectory';
 import { Notice } from './ui';
 
@@ -26,13 +27,10 @@ export function OpportunityOwnerSelect({ value, selected, onChange, disabled = f
   const blocked = disabled || directory.loading || Boolean(directory.error);
   return <div className="opp-field min-w-0 space-y-1">
     <Label htmlFor={id} className={error ? 'text-destructive' : undefined}>Opportunity owner <span className="text-destructive">*</span></Label>
-    <Select value={value} onValueChange={onChange} disabled={blocked}>
-      <SelectTrigger id={id} aria-label="Opportunity owner" aria-required="true" aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} className="min-w-0 max-w-full" title={assigned ? userLabel(assigned) : undefined}><SelectValue placeholder="Select owner" className="min-w-0 flex-1 truncate text-left" /></SelectTrigger>
-      <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
-        {unknownAssigned && <SelectItem value={value} disabled className="whitespace-normal break-words">Assigned user {value} · details unavailable</SelectItem>}
-        {choices.map(user => <SelectItem key={user.id} value={user.id} disabled={!user.active} className="whitespace-normal break-words [&>span:last-child]:min-w-0">{userLabel(user)}</SelectItem>)}
-      </SelectContent>
-    </Select>
+    <SearchableSelect id={id} label="Opportunity owner" value={value} onChange={onChange} disabled={blocked} required error={error} placeholder="Select owner" options={[
+      ...(unknownAssigned ? [{ id: value, label: `Assigned user ${value} · details unavailable`, disabled: true }] : []),
+      ...choices.map(user => ({ id: user.id, label: userLabel(user), keywords: [user.email], disabled: !user.active })),
+    ]} />
     {error && <p id={`${id}-error`} role="alert" className="text-xs text-destructive">{error}</p>}
     {!disabled && directory.loading && <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><Spinner className="size-3" />Loading owner directory…</p>}
     {!disabled && directory.error && <Notice title="Owner directory unavailable" error={directory.error} retry={directory.reload} />}

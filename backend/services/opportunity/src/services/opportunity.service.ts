@@ -1,6 +1,7 @@
 import * as repository from "../repositories/opportunity.repository";
 import * as validator from "../validators/opportunity.validator";
 import * as userService from "../integrations/userService";
+import { documentUploadAudit } from '../lib/documentStorage';
 
 import {
   notFound,
@@ -81,6 +82,7 @@ async function create(
   await validateActiveOwner(input.ownerId);
   return repository.create({
     ...input,
+    ...documentUploadAudit(input.filePath, userId),
     stageId: 1,
     subStageId: 1,
     assignedTo: null,
@@ -353,7 +355,7 @@ async function update(
 
   return repository.update(
     opportunityId,
-    { ...current, ...patch },
+    { ...current, ...patch, ...documentUploadAudit(patch.filePath === undefined ? current.filePath : patch.filePath, userId, current) },
     userId
   );
 }

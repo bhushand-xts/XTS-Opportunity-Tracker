@@ -1,16 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button, Checkbox, Input, Label, Textarea } from '@xts/design-system';
 import type { OpportunityDetail, OpportunityDraft, RfpDraft, Solicitation, ImportantDates } from '@xts/api-contracts';
 import { gql, useQuery } from '@apollo/client';
 import { useFieldError } from './FieldValidation';
+import { useOpportunityService } from '../services/OpportunityService';
+import { DocumentDownload } from './DocumentDownload';
 
 export const GET_PROPOSAL_SECTIONS = gql`query OpportunityProposalSections { rfpQuestionsList { id question description displayOrder isActive } }`;
 import { Choice, Field, Notice } from './ui';
 
-export function RfpPreparation({ form, setForm, saved, disabled }: { form: OpportunityDraft; setForm: (form: OpportunityDraft) => void; saved?: OpportunityDetail; disabled: boolean }) {
-  const [error, setError] = useState<string>(), [selectedFile, setSelectedFile] = useState<File>();
+export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUploadingChange }: { form: OpportunityDraft; setForm: Dispatch<SetStateAction<OpportunityDraft>>; saved?: OpportunityDetail; disabled: boolean; onUploadingChange?: (uploading: boolean) => void }) {
+  const [error, setError] = useState<string>(), [selectedFile, setSelectedFile] = useState<File>(), [uploading, setUploading] = useState(false);
+  const service = useOpportunityService();
+  const mounted = useRef(true), uploadPending = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const disabled = readOnly || uploading;
   const rfpTypeError = useFieldError('RFP type');
   const { data, loading, error: sectionsError } = useQuery<{ rfpQuestionsList: ({ id: number; question: string; displayOrder: number | null; isActive: boolean } | null)[] }>(GET_PROPOSAL_SECTIONS, { skip: form.rfp.type !== 'GENERIC' });
   const sections = (data?.rfpQuestionsList ?? []).filter((s): s is NonNullable<typeof s> => s !== null && s.isActive).sort((a, b) => (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) || a.id - b.id);
@@ -19,16 +25,40 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
   function solicitation<K extends keyof Solicitation>(key: K, value: Solicitation[K]) { setForm({ ...form, solicitation: { ...form.solicitation, [key]: value } }); }
   function date<K extends keyof ImportantDates>(key: K, value: ImportantDates[K]) { setForm({ ...form, dates: { ...form.dates, [key]: value } }); }
   function choose(type: RfpDraft['type']) {
-    if (type === rfp.type) return;
-    const hasWork = selectedFile || rfp.source || rfp.questions.length || rfp.sections.length || saved?.responses?.some(r => r.answer.trim());
-    if (hasWork && !window.confirm('Switch RFP type? Incompatible questions, sections, draft responses and affected approvals will be removed when you save. Shared details and dates will be retained.')) return;
+    if (disabled || uploadPending.current || type === rfp.type) return;
     setSelectedFile(undefined); setError(undefined);
-    update({ type, questions: [], sections: [], source: null, extraction: null });
+    setForm(current => ({
+      ...current,
+      solicitation: current.rfp.type === 'QUESTIONNAIRE'
+        ? { ...current.solicitation, contractTerm: '', incumbentVendor: '', preBidMeeting: '' }
+        : current.solicitation,
+      rfp: {
+        ...current.rfp, type, questions: [],
+        ...(current.rfp.type === 'QUESTIONNAIRE' ? { extraction: null } : {}),
+        ...(current.rfp.type === 'GENERIC' ? { sections: [], submissionFormat: 'TECHNICAL_COST' as const, evaluation: '' } : {}),
+      },
+    }));
   }
-  function selectFile(file: File | undefined) {
-    if (!file) return;
+  async function selectFile(file: File | undefined) {
+    if (!file || disabled || uploadPending.current) return;
     if (!/\.(pdf|docx?|txt)$/i.test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) { setError('Choose a non-empty PDF, Word or text document up to 25 MB.'); return; }
-    setError(undefined); setSelectedFile(file);
+    setError(undefined); setSelectedFile(file); setUploading(true);
+    uploadPending.current = true; onUploadingChange?.(true);
+    try {
+      const source = await service.upload({ opportunityId: saved?.id ?? '', expectedRevision: saved?.revision ?? 0, idempotencyKey: crypto.randomUUID() }, file);
+      if (mounted.current) {
+        setForm(current => ({ ...current, rfp: { ...current.rfp, source, extraction: null } }));
+        setSelectedFile(undefined);
+      }
+    } catch (cause) {
+      if (mounted.current) {
+        setError(cause instanceof Error ? cause.message : 'Document upload failed. Please try again.');
+        setSelectedFile(undefined);
+      }
+    } finally {
+      uploadPending.current = false;
+      if (mounted.current) { setUploading(false); onUploadingChange?.(false); }
+    }
   }
   return <div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="RFP type" aria-invalid={Boolean(rfpTypeError)}>{([{ type: 'QUESTIONNAIRE', label: 'RFP Questionnaire', hint: 'Extract and review questions from a document' }, { type: 'GENERIC', label: 'Generic RFP', hint: 'Build a response from proposal sections' }] as const).map(choice => <Button key={choice.type} type="button" variant="outline" className={`opp-type ${rfp.type === choice.type ? 'opp-selected' : ''}`} aria-pressed={rfp.type === choice.type} disabled={disabled} onClick={() => choose(choice.type)}><span className="text-left"><strong className="block">{choice.label}</strong><span className="mt-1 block text-xs font-normal text-muted-foreground">{choice.hint}</span></span></Button>)}</div>
     {rfpTypeError && <p role="alert" className="text-xs text-destructive">{rfpTypeError}</p>}
@@ -48,9 +78,9 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
     {rfp.type && <>
       <div className="opp-upload">
         <Label htmlFor="opportunity-source">{rfp.type === 'GENERIC' ? 'Source document / brief' : 'Source questionnaire'}</Label>
-        <p className="my-2 text-sm break-words">{selectedFile ? `${selectedFile.name} (selected)` : rfp.source?.name || 'Choose a PDF, Word or text document'}</p>
-        <Input id="opportunity-source" type="file" accept=".pdf,.doc,.docx,.txt" disabled={disabled} onChange={e => { selectFile(e.target.files?.[0]); e.target.value = ''; }} />
-        <p className="mt-2 text-xs text-muted-foreground">PDF, Word or text, up to 25 MB. {rfp.type === 'GENERIC' ? 'Document upload is under development; selected files are not uploaded yet.' : 'Document upload and AI extraction are under development; selected files are not uploaded yet.'}</p>
+        <p role="status" className="my-2 text-sm break-words">{uploading ? `Uploading ${selectedFile?.name ?? 'document'}...` : rfp.source?.name || 'Choose a PDF, Word or text document'}</p>
+        <Input id="opportunity-source" type="file" accept=".pdf,.doc,.docx,.txt" disabled={disabled} aria-busy={uploading} onChange={e => { void selectFile(e.target.files?.[0]); e.target.value = ''; }} />
+        {rfp.source && <DocumentDownload document={rfp.source} opportunityId={saved?.id ?? null} disabled={uploading} />}
       </div>
       {rfp.type === 'QUESTIONNAIRE' && <Button type="button" disabled={disabled} onClick={() => toast.info('AI question extraction is currently under development.')}>Extract questions</Button>}
       {error && <Notice error={error} />}

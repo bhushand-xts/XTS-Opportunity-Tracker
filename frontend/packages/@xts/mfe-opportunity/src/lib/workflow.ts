@@ -36,8 +36,8 @@ export function addMasterQuestionTemplates(questions: PreparedQuestion[], templa
 
 export function newDraft(ownerId: string): OpportunityDraft {
   return {
-    title: '', estimatedValue: '', estimatedValueUsd: '', serviceLineOther: '', currencyId: '', serviceLine: '', leadSource: '', ownerId, priority: 'MEDIUM', description: '', clientId: null,
-    solicitation: { reference: '', version: '', issuingAgency: '', procurementContact: '', submissionMethod: 'PORTAL', vendorDemo: 'UNCONFIRMED', portalUrl: '', submissionEmail: '', deliveryInstructions: '', contractTerm: '', incumbentVendor: '', preBidMeeting: 'UNCONFIRMED', submissionTimezone: 'Asia/Kolkata' },
+    title: '', estimatedValue: '', estimatedValueUsd: '', serviceLineOther: '', currencyId: '', serviceLine: '', leadSource: '', ownerId, priority: '', description: '', clientId: null,
+    solicitation: { reference: '', version: '', issuingAgency: '', procurementContact: '', submissionMethod: '', vendorDemo: 'UNCONFIRMED', portalUrl: '', submissionEmail: '', deliveryInstructions: '', contractTerm: '', incumbentVendor: '', preBidMeeting: '', submissionTimezone: 'Asia/Kolkata' },
     dates: { issueDate: '', questionsDue: '', proposalDue: '', submissionDeadline: '', additionalDeadline: '', additionalDeadlineLabel: '' },
     context: { instructions: '', submissionRequirements: '', opportunityOverview: '', scopeOfWork: '', requirements: '', notes: '' },
     rfp: { type: null, source: null, extraction: null, questions: [], sections: [], submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: '' },
@@ -62,6 +62,7 @@ export function pendingSaveFieldErrors(form: OpportunityDraft): Record<string, s
   if (form.serviceLine === 'Other' && !form.serviceLineOther?.trim()) errors['Other service line'] = 'Please fill the Other service line.';
   if ((form.serviceLine === 'Other' ? form.serviceLineOther ?? '' : form.serviceLine).trim().length > 255) errors[form.serviceLine === 'Other' ? 'Other service line' : 'Service line'] = 'Service line must be at most 255 characters.';
   if (!form.currencyId) errors['Currency'] = 'Please select a Currency.';
+  if (!['LOW', 'MEDIUM', 'HIGH'].includes(form.priority)) errors.Priority = 'Please select a Priority.';
   if (!form.serviceLine.trim()) errors['Service line'] = 'Please select a Service line.';
   if (!form.ownerId) errors['Opportunity owner'] = 'Please select an Opportunity owner.';
   if (!form.clientId) errors['Client'] = 'Please select a Client.';

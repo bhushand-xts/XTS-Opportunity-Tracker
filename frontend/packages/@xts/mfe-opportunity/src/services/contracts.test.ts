@@ -21,8 +21,7 @@ describe('workflow contract', () => {
     }
   });
   it('fails closed for unsupported workflow capabilities instead of claiming success', async () => {
-    const file = { name: 'test.txt' } as File;
-    await expect(productionOpportunityService.upload({ opportunityId: '401', expectedRevision: 1, idempotencyKey: 'test' }, file)).rejects.toMatchObject({ code: 'INTEGRATION_UNAVAILABLE' });
+    await expect(productionOpportunityService.extract({ opportunityId: '401', expectedRevision: 1, idempotencyKey: 'test', documentId: 'test.txt' })).rejects.toMatchObject({ code: 'INTEGRATION_UNAVAILABLE' });
     await expect(productionOpportunityService.decide({ opportunityId: '401', expectedRevision: 1, idempotencyKey: 'test', packageRevision: 1, decision: 'SALES_APPROVE', reason: '', confirmed: true })).rejects.toMatchObject({ code: 'INTEGRATION_UNAVAILABLE' });
   });
 });

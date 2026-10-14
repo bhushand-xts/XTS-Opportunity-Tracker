@@ -16,13 +16,14 @@ export interface ClientDraft {
 export interface OpportunityClient extends ClientDraft { id: string; revision: number; accountTypeName: string; industryName: string; allowedActions: Action[]; }
 export interface Solicitation {
   reference: string; version: string; issuingAgency: string; procurementContact: string;
-  submissionMethod: 'PORTAL' | 'EMAIL' | 'PHYSICAL'; vendorDemo: 'UNCONFIRMED' | 'YES' | 'NO';
+  submissionMethod: '' | 'PORTAL' | 'EMAIL' | 'PHYSICAL'; vendorDemo: 'UNCONFIRMED' | 'YES' | 'NO';
   portalUrl: string; submissionEmail: string; deliveryInstructions: string; contractTerm: string;
-  incumbentVendor: string; preBidMeeting: 'UNCONFIRMED' | 'YES' | 'NO'; submissionTimezone: string;
+  incumbentVendor: string; preBidMeeting: '' | 'UNCONFIRMED' | 'YES' | 'NO'; submissionTimezone: string;
 }
 export interface ImportantDates { issueDate: LocalDate; questionsDue: LocalDate; proposalDue: LocalDate; submissionDeadline: LocalDate; additionalDeadline: LocalDate; additionalDeadlineLabel: string; }
 export interface RfpContext { instructions: string; submissionRequirements: string; opportunityOverview: string; scopeOfWork: string; requirements: string; notes: string; }
-export interface SourceDocument { id: string; name: string; downloadUrl: string | null; }
+export interface SourceDocument { id: string; name: string;downloadUrl: string | null;storagePath?: string;
+}
 export interface PreparedQuestion { id: string; text: string; sourceReference: string; validated: boolean; masterQuestionId?: number | null; }
 export interface ProposalSection { key: string; instructions: string; }
 export interface RfpDraft {
@@ -34,7 +35,7 @@ export interface RfpDraft {
 }
 export interface OpportunityDraft {
   title: string; estimatedValue: Decimal; estimatedValueUsd?: Decimal; serviceLineOther?: string; currencyId: string; serviceLine: string; leadSource: string;
-  ownerId: string; priority: 'LOW' | 'MEDIUM' | 'HIGH'; description: string; clientId: string | null;
+  ownerId: string; priority: '' | 'LOW' | 'MEDIUM' | 'HIGH'; description: string; clientId: string | null;
   solicitation: Solicitation; dates: ImportantDates; context: RfpContext; rfp: RfpDraft;
 }
 export interface OpportunitySummary {

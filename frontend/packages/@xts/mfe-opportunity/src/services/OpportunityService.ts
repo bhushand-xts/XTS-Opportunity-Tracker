@@ -20,6 +20,7 @@ export interface OpportunityService {
   saveClient(input: { id: string | null; expectedRevision: number | null; idempotencyKey: string; form: ClientDraft }): Promise<OpportunityClient>;
   eligibleUsers(input: { opportunityId: string | null; purpose: 'OWNER' | 'REVIEWER' | 'SALES_REVIEWER' | 'GATE1_APPROVER'; search: string; after: string | null }, signal?: AbortSignal): Promise<Page<DirectoryUser>>;
   upload(command: VersionCommand, file: File): Promise<SourceDocument>;
+  download(opportunityId: string | null, document: SourceDocument): Promise<Blob>;
   extract(command: VersionCommand & { documentId: string }): Promise<OpportunityDetail>;
   extractionStatus(opportunityId: string, jobId: string, signal?: AbortSignal): Promise<OpportunityDetail>;
   saveEstimation(command: VersionCommand & { estimation: Estimation }): Promise<OpportunityDetail>;
@@ -41,7 +42,7 @@ interface BackendOpportunity {
   ownerId: number | null; assignedTo: number | null; priority: string | null; serviceLine: string | null;
   solicitationNumber: string | null; issuingAgency: string | null; procurementContact: string | null;
   queDueDate: string | null; submissionMethod: string | null; contractTerm: string | null; incumbentVendor: string | null;
-  preBidMeeting: number | null; documentType: string | null; fileName: string | null; docSubmissionFormat: string | null;
+  preBidMeeting: number | null; documentType: string | null; fileName: string | null; filePath: string | null; docSubmissionFormat: string | null;
   evaluationBasis: string | null; opportunityDescription: string | null; leadReceivedDate: string | null;
   proposalDueDate: string | null; estimatedValue: number | null; estimatedValueUsd?: number | null; currencyId: number | null; rfpType: number | null;
   workflowComment: string | null; clientName: string | null; accountType: string | null; sector: string | null;
@@ -134,7 +135,7 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
       },
       dates: { issueDate: o.leadReceivedDate ?? '', questionsDue: o.queDueDate ?? '', proposalDue: o.proposalDueDate ?? '', submissionDeadline: o.proposalDueDate ?? '', additionalDeadline: '', additionalDeadlineLabel: '' },
       context: { instructions: '', submissionRequirements: '', opportunityOverview: o.opportunityDescription ?? '', scopeOfWork: '', requirements: '', notes: o.workflowComment ?? '' },
-      rfp: { type: rfpType(o.rfpType), source: o.fileName ? { id: o.fileName, name: o.fileName, downloadUrl: null } : null, extraction: null, questions: questions.filter(q => q.masterQuestionId === null), sections: questions.filter(q => q.masterQuestionId !== null).map(q => ({ key: String(q.masterQuestionId), instructions: q.text })), submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: o.evaluationBasis ?? '' },
+      rfp: { type: rfpType(o.rfpType), source: o.fileName ? { id: o.filePath ?? o.fileName, name: o.fileName, storagePath: o.filePath ?? undefined, downloadUrl: null } : null, extraction: null, questions: questions.filter(q => q.masterQuestionId === null), sections: questions.filter(q => q.masterQuestionId !== null).map(q => ({ key: String(q.masterQuestionId), instructions: q.text })), submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: o.evaluationBasis ?? '' },
     },
     client, visibleModules: ['overview', 'activity'], responses: null, estimation: null, scope: null,
     activity: [], responsible: user(o.assignedTo, directory) ?? owner, approvalAssignees: o.assignedTo ? [user(o.assignedTo, directory)!] : [],
@@ -168,6 +169,7 @@ function saveInput(command: SaveCommand) {
     proposalDueDate: form.dates.submissionDeadline || form.dates.proposalDue || null,
     submissionMethod: form.solicitation.submissionMethod,
     fileName: form.rfp.source?.name ?? null,
+    filePath: form.rfp.source?.storagePath ?? null,
     documentType: form.rfp.source?.name ? 'SOURCE' : null,
     docSubmissionFormat: form.rfp.outputFormat,
     evaluationBasis: form.rfp.evaluation || null,
@@ -236,7 +238,52 @@ export const productionOpportunityService: OpportunityService = {
     return mapClient(saved);
   },
   eligibleUsers: () => unavailable('Eligible user directory'),
-  upload: () => unavailable('Document upload'),
+  async upload(_command, file): Promise<SourceDocument> {
+    if (!/\.(pdf|docx?|txt)$/i.test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) {
+      throw new Error('Choose a non-empty PDF, Word or text document up to 25 MB.');
+    }
+    let token: unknown;
+    try {
+      const auth = JSON.parse(localStorage.getItem('authState') ?? '{}');
+      token = auth?.session?.token;
+    } catch {
+      throw new Error('Please sign in again.');
+    }
+    if (typeof token !== 'string' || !token) throw new Error('Please sign in before uploading.');
+    const body = new FormData();
+    body.append('file', file);
+    const response = await fetch('http://localhost:4003/documents/upload', {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body,
+    });
+    const result: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = result && typeof result === 'object' && 'message' in result ? result.message : null;
+      throw new Error(typeof message === 'string' ? message : 'Document upload failed. Please try again.');
+    }
+    if (!result || typeof result !== 'object' || !('id' in result) || typeof result.id !== 'string' || !result.id ||
+        !('name' in result) || typeof result.name !== 'string' || !result.name ||
+        !('storagePath' in result) || typeof result.storagePath !== 'string' || !result.storagePath) {
+      throw new Error('The upload returned incomplete document details.');
+    }
+    return { id: result.id, name: result.name, storagePath: result.storagePath, downloadUrl: null };
+  },
+  async download(opportunityId, document) {
+    const filename = document.storagePath?.split('/').pop();
+    if (!filename) throw new Error('This document has no stored file to download.');
+    let token: unknown;
+    try { token = JSON.parse(localStorage.getItem('authState') ?? '{}')?.session?.token; }
+    catch { throw new Error('Please sign in again.'); }
+    if (typeof token !== 'string' || !token) throw new Error('Please sign in before downloading.');
+    const query = opportunityId ? `?opportunityId=${encodeURIComponent(opportunityId)}` : '';
+    const response = await fetch(`http://localhost:4003/documents/download/${encodeURIComponent(filename)}${query}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(typeof result?.message === 'string' ? result.message : 'Document download failed. Please try again.');
+    }
+    return response.blob();
+  },
   extract: () => unavailable('Question extraction'),
   extractionStatus: () => unavailable('Extraction status'),
   saveEstimation: () => unavailable('Estimation persistence'),

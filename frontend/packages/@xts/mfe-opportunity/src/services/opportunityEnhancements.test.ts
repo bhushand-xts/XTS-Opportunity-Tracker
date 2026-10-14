@@ -10,6 +10,10 @@ describe('opportunity custom choices and USD estimate', () => {
   beforeEach(() => vi.resetAllMocks());
 
   it('requires custom service text and rejects invalid USD amounts', () => {
+    const draft = newDraft('1');
+    expect(draft.priority).toBe('');
+    expect(draft.solicitation.submissionMethod).toBe('');
+    expect(draft.solicitation.preBidMeeting).toBe('');
     const form = { ...newDraft('1'), serviceLine: 'Other', estimatedValueUsd: '' };
     expect(pendingSaveFieldErrors(form)['Estimated value (USD)']).toBe('Please fill the Estimated value (USD).');
     form.estimatedValueUsd = '-1';
@@ -23,12 +27,15 @@ describe('opportunity custom choices and USD estimate', () => {
 
   it('saves and reloads a custom service line and USD estimate', async () => {
     const form = { ...newDraft('1'), leadSource: '5', serviceLine: 'Other', serviceLineOther: 'Specialized delivery', estimatedValue: '100000', estimatedValueUsd: '1200.50' };
+    form.rfp.source = { id: 'file.txt', name: 'brief.txt', storagePath: 'opportunity/file.txt', downloadUrl: null };
     api.mutate.mockResolvedValue({ data: { createOpportunity: { opportunityId: 1 } } });
-    api.query.mockResolvedValueOnce({ data: { opportunity: { opportunityId: 1, sourceTypeId: 5, serviceLine: 'Specialized delivery', estimatedValue: 100000, estimatedValueUsd: 1200.50 } } });
+    api.query.mockResolvedValueOnce({ data: { opportunity: { opportunityId: 1, sourceTypeId: 5, serviceLine: 'Specialized delivery', estimatedValue: 100000, estimatedValueUsd: 1200.50, fileName: 'brief.txt', filePath: 'opportunity/file.txt' } } });
     api.query.mockResolvedValueOnce({ data: { userList: [], rolesList: [] } });
     const saved = await productionOpportunityService.save({ id: null, expectedRevision: null, idempotencyKey: 'test', form });
     expect(api.mutate.mock.calls[0][0].variables.input).toMatchObject({ sourceTypeId: 5, serviceLine: 'Specialized delivery', estimatedValueUsd: 1200.50 });
     expect(saved.form).toMatchObject({ leadSource: '5', serviceLine: 'Other', serviceLineOther: 'Specialized delivery', estimatedValueUsd: '1200.5' });
+    expect(api.mutate.mock.calls[0][0].variables.input).toMatchObject({ fileName: 'brief.txt', filePath: 'opportunity/file.txt' });
+    expect(saved.form.rfp.source).toMatchObject({ name: 'brief.txt', storagePath: 'opportunity/file.txt' });
   });
 
   it('saves and reloads Other decision role text with a numeric role ID', async () => {

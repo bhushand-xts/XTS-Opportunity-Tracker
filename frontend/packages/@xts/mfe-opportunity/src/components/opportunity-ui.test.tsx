@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { MockedProvider } from '@apollo/client/testing';
-import type { OpportunityDetail, SaveCommand } from '@xts/api-contracts';
+import type { OpportunityDetail, SaveCommand, SourceDocument } from '@xts/api-contracts';
 import { OpportunityServiceContext, productionOpportunityService, type OpportunityService } from '../services/OpportunityService';
 import { OpportunityAccessContext } from '../hooks/useOpportunityAccess';
 import { UnsavedProvider } from '../hooks/useUnsaved';
@@ -46,10 +46,45 @@ function testService(initial = fixtureOpportunity()): OpportunityService {
   };
 }
 describe('RFP preparation', () => {
+  it.each(['QUESTIONNAIRE', 'GENERIC'] as const)('switches RFP type without an alert and clears only type-specific fields: %s', async type => {
+    const initial = fixtureOpportunity();
+    initial.form.rfp.type = type;
+    initial.form.estimatedValueUsd = '3000'; initial.form.priority = 'MEDIUM'; initial.form.solicitation.submissionMethod = 'PORTAL';
+    initial.form.rfp.source = { id: 'brief.txt', name: 'brief.txt', storagePath: 'opportunity/brief.txt', downloadUrl: null };
+    if (type === 'QUESTIONNAIRE') {
+      Object.assign(initial.form.solicitation, { contractTerm: '12 months', incumbentVendor: 'Existing vendor', preBidMeeting: 'YES' });
+      initial.form.rfp.extraction = { id: 'extraction-1', state: 'SUCCEEDED', error: null };
+    } else {
+      initial.form.rfp.sections = [{ key: '7', instructions: 'Executive summary' }];
+      initial.form.rfp.evaluation = 'Quality and price'; initial.form.rfp.submissionFormat = 'COMBINED';
+    }
+    const service = testService(initial);
+    const confirm = vi.spyOn(window, 'confirm');
+    mount(service, '/opportunity/401/edit');
+    await screen.findByLabelText('Question 1 text');
+    fireEvent.click(screen.getByRole('button', { name: type === 'QUESTIONNAIRE' ? /Generic RFP/ : /RFP Questionnaire/ }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Question 1 text')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Opportunity name/)).toHaveValue('Cloud transformation');
+    expect(confirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Update Opportunity' }));
+    await waitFor(() => expect(service.save).toHaveBeenCalled());
+    const submitted = vi.mocked(service.save).mock.calls[0][0].form;
+    expect(submitted.dates).toEqual(initial.form.dates);
+    expect(submitted.clientId).toBe(initial.form.clientId);
+    expect(submitted.solicitation.reference).toBe(initial.form.solicitation.reference);
+    expect(submitted.solicitation.submissionMethod).toBe('PORTAL');
+    expect(submitted.rfp.source).toEqual(initial.form.rfp.source);
+    expect(submitted.rfp.questions).toEqual([]);
+    if (type === 'QUESTIONNAIRE') {
+      expect(submitted.solicitation).toMatchObject({ contractTerm: '', incumbentVendor: '', preBidMeeting: '' });
+      expect(submitted.rfp.extraction).toBeNull();
+    } else expect(submitted.rfp).toMatchObject({ sections: [], evaluation: '', submissionFormat: 'TECHNICAL_COST' });
+  });
   it('shows required-field errors inline and clears them as fields are corrected', async () => {
     const service = testService();
     mount(service, '/opportunity/new');
-    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ }));
     const title = screen.getByLabelText(/Opportunity name/);
     expect(title).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Please fill the Opportunity name.')).toBeInTheDocument();
@@ -65,14 +100,16 @@ describe('RFP preparation', () => {
     expect(screen.queryByText('Please fill the Opportunity name.')).not.toBeInTheDocument();
     expect(service.save).not.toHaveBeenCalled();
   });
-  it.each(['QUESTIONNAIRE', 'GENERIC'] as const)('selects a document and exposes extraction only for Questionnaire: %s', async type => {
+  it.each(['QUESTIONNAIRE', 'GENERIC'] as const)('uploads a document and exposes extraction only for Questionnaire: %s', async type => {
     const initial = fixtureOpportunity(); initial.form.rfp.type = type;
     const service = testService(initial), notification = vi.spyOn(toast, 'info');
-    service.upload = vi.fn(); service.extract = vi.fn(); service.extractionStatus = vi.fn();
+    service.upload = vi.fn(async () => ({ id: 'file.pdf', name: 'brief.pdf', storagePath: 'opportunity/file.pdf', downloadUrl: null })); service.extract = vi.fn(); service.extractionStatus = vi.fn();
     mount(service, '/opportunity/401/edit');
     const input = await screen.findByLabelText(type === 'GENERIC' ? 'Source document / brief' : 'Source questionnaire');
     expect(input).toBeEnabled();
     fireEvent.change(input, { target: { files: [new File(['document bytes'], 'brief.pdf', { type: 'application/pdf' })] } });
+    expect(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ })).toBeDisabled();
+    await screen.findByText('brief.pdf');
     if (type === 'QUESTIONNAIRE') {
       fireEvent.click(screen.getByRole('button', { name: 'Extract questions' }));
       expect(notification).toHaveBeenCalledWith('AI question extraction is currently under development.');
@@ -81,24 +118,44 @@ describe('RFP preparation', () => {
       expect(screen.queryByText(/AI extraction/)).not.toBeInTheDocument();
       expect(notification).not.toHaveBeenCalled();
     }
-    expect(screen.getByText('brief.pdf (selected)')).toBeInTheDocument();
+    expect(screen.getByText('brief.pdf')).toBeInTheDocument();
     expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the delivery approach.');
-    expect(service.save).not.toHaveBeenCalled(); expect(service.upload).not.toHaveBeenCalled(); expect(service.extract).not.toHaveBeenCalled(); expect(service.extractionStatus).not.toHaveBeenCalled();
+    expect(service.save).not.toHaveBeenCalled(); expect(service.upload).toHaveBeenCalledTimes(1); expect(service.extract).not.toHaveBeenCalled(); expect(service.extractionStatus).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: /Save & upload|Save & extract|Upload document/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add from Question Master' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Question 1 source reference/)).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: 'Validated against source' })).not.toBeInTheDocument();
   });
-  it('allows document selection on a new opportunity without saving it', async () => {
-    const service = testService(); mount(service, '/opportunity/new');
+  it('uploads a document on a new opportunity without saving it', async () => {
+    const service = testService();
+    service.upload = vi.fn(async () => ({ id: 'file.docx', name: 'brief.docx', storagePath: 'opportunity/file.docx', downloadUrl: null }));
+    mount(service, '/opportunity/new');
     await waitFor(() => expect(screen.getByLabelText('Opportunity owner')).toBeEnabled());
-    fireEvent.keyDown(screen.getByLabelText('Opportunity owner'), { key: 'Enter' });
-    fireEvent.click(await screen.findByRole('option', { name: 'Test Owner' }));
     fireEvent.click(screen.getByRole('button', { name: /Generic RFP/ }));
     const input = screen.getByLabelText('Source document / brief'); expect(input).toBeEnabled();
     fireEvent.change(input, { target: { files: [new File(['document'], 'brief.docx')] } });
-    expect(screen.getByText('brief.docx (selected)')).toBeInTheDocument();
+    expect(await screen.findByText('brief.docx')).toBeInTheDocument();
+    expect(service.upload).toHaveBeenCalledWith(expect.objectContaining({ opportunityId: '' }), expect.any(File));
     expect(service.save).not.toHaveBeenCalled();
+  });
+  it('blocks saving while uploading and preserves edits made during the upload', async () => {
+    const initial = fixtureOpportunity();
+    initial.form.estimatedValueUsd = '3000'; initial.form.priority = 'MEDIUM'; initial.form.solicitation.submissionMethod = 'PORTAL';
+    const service = testService(initial);
+    let finish!: (source: SourceDocument) => void;
+    service.upload = vi.fn(() => new Promise<SourceDocument>(resolve => { finish = resolve; }));
+    mount(service, '/opportunity/401/edit');
+    const input = await screen.findByLabelText('Source questionnaire');
+    expect(screen.getByRole('button', { name: 'Update Opportunity' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save Opportunity' })).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { files: [new File(['document'], 'brief.txt')] } });
+    expect(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/Opportunity name/), { target: { value: 'Changed during upload' } });
+    finish({ id: 'file.txt', name: 'brief.txt', storagePath: 'opportunity/file.txt', downloadUrl: null });
+    await screen.findByText('brief.txt');
+    expect(screen.getByLabelText(/Opportunity name/)).toHaveValue('Changed during upload');
+    fireEvent.click(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ }));
+    await waitFor(() => expect(service.save).toHaveBeenCalledWith(expect.objectContaining({ form: expect.objectContaining({ title: 'Changed during upload', rfp: expect.objectContaining({ source: expect.objectContaining({ storagePath: 'opportunity/file.txt' }) }) }) })));
   });
   it('shows one Generic section panel and saves manual questions without reference or validation controls', async () => {
     const initial = fixtureOpportunity(); initial.form.rfp.type = 'GENERIC'; initial.form.rfp.questions = [];
@@ -113,7 +170,7 @@ describe('RFP preparation', () => {
     fireEvent.change(screen.getByLabelText('Question 1 text'), { target: { value: 'Describe the transition plan.' } });
     expect(screen.queryByLabelText(/Question 1 source reference/)).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: 'Validated against source' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ }));
     await waitFor(() => expect(service.save).toHaveBeenCalledTimes(1));
     expect(vi.mocked(service.save).mock.calls[0][0].form.rfp).toMatchObject({ type: 'GENERIC', sections: [{ key: '7', instructions: 'Executive summary' }], questions: [{ text: 'Describe the transition plan.', validated: false, sourceReference: '' }] });
   });
@@ -133,25 +190,46 @@ describe('Opportunity UI using test-only service fixtures', () => {
   it('shows an integration error rather than a false empty Pipeline', async () => {
     mount(productionOpportunityService); expect(await screen.findByText('Pipeline unavailable')).toBeInTheDocument(); expect(screen.queryByText('Your pipeline starts here')).not.toBeInTheDocument();
   });
-  it('uses separate sibling destinations for card continuation and Overview', async () => {
+  it('opens Overview from the card and edits through the top-right action', async () => {
     mount(testService());
-    const main = await screen.findByRole('link', { name: 'Continue Cloud transformation' });
-    expect(main).toHaveAttribute('href', '/opportunity/401/edit');
-    const overview = screen.getByRole('link', { name: 'Overview' }); expect(overview).toHaveAttribute('href', '/opportunity/401/details');
-    expect(main.contains(overview)).toBe(false); expect(overview.closest('button')).toBeNull();
+    const main = await screen.findByRole('link', { name: 'View Cloud transformation' });
+    expect(main).toHaveAttribute('href', '/opportunity/401/details');
+    expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument();
+    fireEvent.click(main);
+    const edit = await screen.findByRole('link', { name: 'Edit Opportunity' });
+    expect(edit).toHaveAttribute('href', '/opportunity/401/edit');
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(edit);
+    expect(await screen.findByLabelText(/Opportunity name/)).toHaveValue('Cloud transformation');
   });
   it('approval-only cards open Overview directly and never an edit route', async () => {
     mount(testService(fixtureOpportunity({ state: 'SALES_REVIEW', allowedActions: ['SALES_APPROVE'], packageRevision: 1 })));
     const main = await screen.findByRole('link', { name: 'View Cloud transformation' });
     expect(main).toHaveAttribute('href', '/opportunity/401/details');
-    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/opportunity/401/details');
+    expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument();
+  });
+  it('opens Overview from the list title without a separate Overview action', async () => {
+    mount(testService());
+    await screen.findByRole('link', { name: 'View Cloud transformation' });
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByRole('link', { name: 'Cloud transformation' })).toHaveAttribute('href', '/opportunity/401/details');
+    expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument();
+  });
+  it.each(['QUESTIONNAIRE', 'GENERIC'] as const)('shows the requested solicitation fields in Overview: %s', async type => {
+    const initial = fixtureOpportunity(); initial.form.rfp.type = type;
+    mount(testService(initial), '/opportunity/401/details');
+    expect(await screen.findByText('Solicitation / reference number')).toBeInTheDocument();
+    expect(screen.queryByText('Reference number')).not.toBeInTheDocument();
+    expect(screen.queryByText('Version')).not.toBeInTheDocument();
+    if (type === 'GENERIC') expect(screen.queryByText('Vendor demonstration required')).not.toBeInTheDocument();
+    else expect(screen.getByText('Vendor demonstration required')).toBeInTheDocument();
   });
   it('Save Opportunity persists before returning to Pipeline and keeps actions after response content', async () => {
     const service = testService(); mount(service, '/opportunity/401/edit');
     const title = await screen.findByLabelText(/Opportunity name/); fireEvent.change(title, { target: { value: 'Saved revised opportunity' } });
-    const save = screen.getByRole('button', { name: 'Save Opportunity' });
+    const save = screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ });
     expect(screen.getByText('Question & answer progress').compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    fireEvent.click(save); expect(await screen.findByRole('link', { name: 'Continue Saved revised opportunity' })).toBeInTheDocument();
+    fireEvent.click(save); expect(await screen.findByRole('link', { name: 'View Saved revised opportunity' })).toBeInTheDocument();
     expect(service.save).toHaveBeenCalledWith(expect.objectContaining({ id: '401', expectedRevision: 1, form: expect.objectContaining({ title: 'Saved revised opportunity' }) }));
   });
   it('Save & Continue reuses the record ID and retains an independent unsaved answer', async () => {
@@ -159,18 +237,18 @@ describe('Opportunity UI using test-only service fixtures', () => {
     await screen.findByLabelText(/Opportunity name/);
     fireEvent.change(screen.getByLabelText('Answer / section response'), { target: { value: 'Unsaved independent answer' } });
     fireEvent.change(screen.getByLabelText(/Opportunity name/), { target: { value: 'Changed form title' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ }));
     await waitFor(() => expect(service.save).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText('Answer / section response')).toHaveValue('Unsaved independent answer');
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/opportunity/401/edit');
-    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' })); await waitFor(() => expect(service.save).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ })); await waitFor(() => expect(service.save).toHaveBeenCalledTimes(2));
     for (const [command] of vi.mocked(service.save).mock.calls) expect(command.id).toBe('401');
   });
   it('retains entered data on failed saves and guards duplicate clicks', async () => {
     const service = testService(); let reject!: (error: Error) => void;
     service.save = vi.fn(() => new Promise<OpportunityDetail>((_resolve, fail) => { reject = fail; }));
     mount(service, '/opportunity/401/edit'); const title = await screen.findByLabelText(/Opportunity name/); fireEvent.change(title, { target: { value: 'Retained draft' } });
-    const save = screen.getByRole('button', { name: 'Save Opportunity' }); fireEvent.click(save); fireEvent.click(save);
+    const save = screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ }); fireEvent.click(save); fireEvent.click(save);
     expect(service.save).toHaveBeenCalledTimes(1); reject(new Error('Revision conflict: refresh before retrying.'));
     expect(await screen.findByText('Revision conflict: refresh before retrying.')).toBeInTheDocument(); expect(title).toHaveValue('Retained draft'); expect(screen.getByLabelText('Current route')).toHaveTextContent('/edit');
   });
@@ -179,7 +257,7 @@ describe('Opportunity UI using test-only service fixtures', () => {
     await screen.findByLabelText(/Opportunity name/);
     fireEvent.change(screen.getByLabelText('Answer / section response'), { target: { value: 'Answer still being prepared' } });
     fireEvent.change(screen.getByLabelText(/Opportunity name/), { target: { value: 'Saved form with unfinished answer' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ }));
     expect(await screen.findByText('Opportunity saved. Your unsaved answer or assignment is still here; save it before leaving.')).toBeInTheDocument();
     expect(screen.getByLabelText('Answer / section response')).toHaveValue('Answer still being prepared');
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/opportunity/401/edit');
@@ -260,7 +338,7 @@ describe('Opportunity UI using test-only service fixtures', () => {
     await waitFor(() => expect(screen.getByLabelText('Opportunity owner')).toBeEnabled());
     fireEvent.keyDown(screen.getByLabelText('Opportunity owner'), { key: 'Enter' });
     fireEvent.click(await screen.findByRole('option', { name: 'Test Owner' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ }));
     expect(service.save).not.toHaveBeenCalled();
     expect(screen.getByText(/Please fill the Solicitation \/ reference number/)).toBeInTheDocument();
     expect(screen.getByLabelText('Submission method')).toHaveAttribute('aria-required', 'true');
@@ -268,7 +346,7 @@ describe('Opportunity UI using test-only service fixtures', () => {
     fireEvent.change(screen.getByLabelText(/Issuing agency \/ department/), { target: { value: 'Client procurement' } });
     fireEvent.change(screen.getByLabelText(/Submission deadline/), { target: { value: '2026-11-25' } });
     fireEvent.click(screen.getByRole('button', { name: /Generic RFP/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
+    fireEvent.click(screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ }));
     await waitFor(() => expect(service.save).toHaveBeenCalledTimes(1)); await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/opportunity'));
     expect(vi.mocked(service.save).mock.calls[0][0]).toMatchObject({ id: null, expectedRevision: null, form: { clientId: '201', ownerId: '101', estimatedValue: '12345.67' } });
   }, 120000);
