@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useInRouterContext } from "reac
 import { getApolloClient } from "@xts/api-client";
 import { AppShell, AuthGate, Toaster } from "@xts/design-system";
 import { AdminOverview } from "./components/AdminOverview";
+import { ClientMasterPage } from "./features/client-management/ClientMasterPage";
 import { EstimatePhaseMasterPage } from "./features/estimate-phase-management/EstimatePhaseMasterPage";
 import { MenuMasterPage } from "./features/menu-management/MenuMasterPage";
 import { MenuPermissionMappingPage } from "./features/menu-permission-mapping/MenuPermissionMappingPage";
@@ -37,6 +38,7 @@ function AdminRoutes() {
       <Route path="menu-management/permission-master" element={<PermissionMasterPage />} />
       <Route path="menu-management/menu-permission-mapping" element={<MenuPermissionMappingPage />} />
       <Route path="rfp-management/generic-rfp-question-master" element={<RfpQuestionMasterPage />} />
+      <Route path="user-management/client-master" element={<ClientMasterPage />} />
       <Route path="user-management/role-master" element={<RoleMasterPage />} />
       <Route
         path="user-management/role-menu-permission-assignment"

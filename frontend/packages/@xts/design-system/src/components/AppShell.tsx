@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CircleHelp,
   ClipboardList,
+  Contact,
   FileQuestion,
   FlaskConical,
   GitBranch,
@@ -96,6 +97,7 @@ const ADMIN_NAV: NavGroup[] = [
     label: "User Management",
     icon: Users,
     items: [
+      { label: "Client Master", to: "/admin/user-management/client-master", icon: Contact },
       { label: "Role Master", to: "/admin/user-management/role-master", icon: Shield },
       { label: "Role Menu Permission Assignment", to: "/admin/user-management/role-menu-permission-assignment", icon: Share2 },
       { label: "User Role Assignment", to: "/admin/user-management/user-role-assignment", icon: UserCog },
@@ -171,6 +173,7 @@ const DYNAMIC_NAV_ICONS: Record<string, LucideIcon> = {
   ClipboardList,
   ListOrdered,
   FileQuestion,
+  Contact,
 };
 function resolveDynamicNavIcon(name: string | null): LucideIcon {
   return (name && DYNAMIC_NAV_ICONS[name]) || List;

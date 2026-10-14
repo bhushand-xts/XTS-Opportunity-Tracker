@@ -102,16 +102,30 @@ CREATE TABLE tbl_opportunity_questions_answers (
   is_active BOOLEAN DEFAULT TRUE
 );
 
+-- Stage/sub-stage transition history for an opportunity (the workflow
+-- engage tracker, distinct from tbl_opportunity_tracker's general
+-- field-change history above) — one row per transition, newest
+-- is_current = TRUE. reason_code_id / role_id / role_name record why the
+-- transition happened and which role made it (e.g. a rejection reason,
+-- the Approver vs. Sales Head distinction at Gate 1).
 CREATE TABLE tbl_opportunity_engage_tracker (
   tracker_id SERIAL PRIMARY KEY,
-  opportunity_id INTEGER,
-  stage_id INTEGER,           -- was FK -> mst_stage(stage_id) in admin's DB
-  substage_id INTEGER,        -- was FK -> mst_sub_stage(sub_stage_id) in admin's DB
-  updated_by INTEGER,         -- was FK -> mst_user(user_id) in user's DB
-  updated_dt TIMESTAMP,
-  is_current BOOLEAN DEFAULT TRUE,
-  comment TEXT
+  opportunity_id INTEGER NOT NULL,
+  stage_id INTEGER NOT NULL,        -- was FK -> mst_stage(stage_id) in admin's DB
+  substage_id INTEGER NOT NULL,     -- was FK -> mst_sub_stage(sub_stage_id) in admin's DB
+  updated_by INTEGER NOT NULL,      -- was FK -> mst_user(user_id) in user's DB
+  updated_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  is_current BOOLEAN DEFAULT TRUE NOT NULL,
+  comment TEXT,
+  reason_code_id INTEGER,           -- was FK -> tbl_reason_codes(reason_code_id) in admin's DB
+  role_id INTEGER,                  -- was FK -> mst_roles(role_id) in admin's DB
+  role_name VARCHAR(100)
 );
+
+CREATE INDEX idx_engage_tracker_opportunity ON tbl_opportunity_engage_tracker (opportunity_id, is_current);
+
+-- Enforces exactly one "current" row per opportunity at a time.
+CREATE UNIQUE INDEX uq_engage_tracker_one_current ON tbl_opportunity_engage_tracker (opportunity_id) WHERE is_current;
 
 -- =====================================================================
 -- FOREIGN KEY CONSTRAINTS (intra-service only)
@@ -119,4 +133,4 @@ CREATE TABLE tbl_opportunity_engage_tracker (
 
 ALTER TABLE tbl_opportunity_tracker ADD CONSTRAINT fk_tbl_opportunity_tracker_opportunity_id FOREIGN KEY (opportunity_id) REFERENCES tbl_opportunity(opportunity_id);
 ALTER TABLE tbl_opportunity_questions_answers ADD CONSTRAINT fk_tbl_opportunity_questions_answers_opportunity_id FOREIGN KEY (opportunity_id) REFERENCES tbl_opportunity(opportunity_id);
-ALTER TABLE tbl_opportunity_engage_tracker ADD CONSTRAINT fk_tbl_opportunity_engage_tracker_opportunity_id FOREIGN KEY (opportunity_id) REFERENCES tbl_opportunity(opportunity_id);
+ALTER TABLE tbl_opportunity_engage_tracker ADD CONSTRAINT fk_engage_tracker_opportunity FOREIGN KEY (opportunity_id) REFERENCES tbl_opportunity(opportunity_id);
