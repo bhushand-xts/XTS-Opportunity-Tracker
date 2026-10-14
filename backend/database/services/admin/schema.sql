@@ -208,6 +208,88 @@ CREATE TABLE mst_industry (
 
 CREATE UNIQUE INDEX ux_mst_industry_industry_name ON mst_industry (LOWER(industry_name));
 
+-- Client (Client Master) — a client/account and its contact people. Was
+-- already live (predates this documentation) — definitions here match the
+-- live database exactly, including street_address's unusually short limit.
+-- Same tracker convention as tbl_reason_codes: every write also writes a
+-- snapshot, no foreign key back to the master so history survives deletion.
+CREATE TABLE mst_client (
+  client_id SERIAL PRIMARY KEY,
+  client_name VARCHAR(255),
+  account_type VARCHAR(100),
+  sector VARCHAR(100),
+  website VARCHAR(500),
+  city VARCHAR(100),
+  state VARCHAR(100),
+  country VARCHAR(100),
+  street_address VARCHAR(20),
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER,
+  is_active BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE mst_client_tracker (
+  tracker_id SERIAL PRIMARY KEY,
+  client_id INTEGER NOT NULL,
+  client_name VARCHAR(255),
+  account_type VARCHAR(100),
+  sector VARCHAR(100),
+  website VARCHAR(500),
+  city VARCHAR(100),
+  state VARCHAR(100),
+  country VARCHAR(100),
+  street_address VARCHAR(20),
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER,
+  is_active BOOLEAN DEFAULT TRUE
+);
+
+-- role_in_decision is a fixed application-level enum (see client.ts in
+-- api-contracts), not a foreign key — there is no lookup table for it.
+CREATE TABLE tbl_client_contact_person (
+  client_contact_id SERIAL PRIMARY KEY,
+  client_id INTEGER NOT NULL,
+  full_name VARCHAR(255),
+  title_role VARCHAR(150),
+  email VARCHAR(255),
+  phone VARCHAR(20),
+  role_in_decision INTEGER,
+  contact_sequence INTEGER,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER,
+  is_active BOOLEAN DEFAULT TRUE,
+  role_in_decision_other VARCHAR(255)
+);
+
+-- Unlike mst_client_tracker, this child tracker's own status-snapshot column
+-- is named is_current, not is_active (matches the live table).
+CREATE TABLE tbl_client_contact_person_tracker (
+  client_contact_tracker_id SERIAL PRIMARY KEY,
+  client_contact_id INTEGER NOT NULL,
+  client_id INTEGER NOT NULL,
+  full_name VARCHAR(255),
+  title_role VARCHAR(150),
+  email VARCHAR(255),
+  phone VARCHAR(20),
+  role_in_decision INTEGER,
+  contact_sequence INTEGER,
+  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INTEGER,
+  updated_dt TIMESTAMP,
+  updated_by INTEGER,
+  is_current BOOLEAN DEFAULT TRUE,
+  role_in_decision_other VARCHAR(255)
+);
+
+ALTER TABLE tbl_client_contact_person
+  ADD CONSTRAINT fk_tbl_client_contact_person_client_id FOREIGN KEY (client_id) REFERENCES mst_client(client_id);
+
 CREATE TABLE mst_proposal_section (
   proposal_section_id SERIAL PRIMARY KEY,
   section_name VARCHAR(255),
