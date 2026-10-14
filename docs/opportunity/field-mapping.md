@@ -71,7 +71,6 @@ this is a backend handoff requirement only, with no backend implementation chang
 | Generic RFP | Source document/brief | form.rfp.sourceDocumentId (wire); source.id (UI) | Uploaded document ID; filename alone cannot count as uploaded | Opportunity/RFP/document service |
 | Generic RFP | Submission format | form.rfp.submissionFormat | TECHNICAL_COST/COMBINED | Opportunity/RFP/document service |
 | Generic RFP | Output file format | form.rfp.outputFormat | PDF/DOCX/PPTX | Opportunity/RFP/document service |
-| Generic RFP | Page limit/volume rules | form.rfp.pageRules | Text; supports separate volume limits | Opportunity/RFP/document service |
 | Generic RFP | Evaluation basis | form.rfp.evaluation | Optional bounded text | Opportunity/RFP/document service |
 | Generic RFP | Proposal section selection | form.rfp.sections[].key | 12 supported catalog keys in one flat checkbox panel; backend validates supported catalog | Opportunity/RFP/document service |
 | Generic RFP | Section instructions | form.rfp.sections[].instructions | Text persisted per stable section key | Opportunity/RFP/document service |

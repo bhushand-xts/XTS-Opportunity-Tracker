@@ -12,6 +12,7 @@ import { PipelinePage } from './PipelinePage';
 import { OpportunityFormPage } from './OpportunityFormPage';
 import { OpportunityDetailsPage } from './OpportunityDetailsPage';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY } from '../services/userDirectory.queries';
+import { GET_PROPOSAL_SECTIONS } from './RfpPreparation';
 import { newDraft } from '../lib/workflow';
 import { toast } from 'sonner';
 
@@ -30,7 +31,7 @@ function mount(service: OpportunityService, route = '/opportunity', userId = '10
     userList: [{ id: 101, firstName: 'Test', lastName: 'Owner', email: 'owner@example.test', roleId: 1, isActive: true }, { id: 102, firstName: 'Test', lastName: 'Reviewer', email: 'reviewer@example.test', roleId: 1, isActive: true }],
     rolesList: [{ id: 1, roleName: 'Test role', roleCode: 'TEST', isActive: true }],
   } }, maxUsageCount: 100 }];
-  return render(<MockedProvider mocks={ownerMocks}><OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId, view: true, add: true, edit: true, work: true, approvals: true }}><MemoryRouter initialEntries={[route]}><UnsavedProvider><Location /><Routes><Route path="/opportunity" element={<PipelinePage />} /><Route path="/opportunity/approvals" element={<PipelinePage queue="MY_APPROVALS" />} /><Route path="/opportunity/work" element={<PipelinePage queue="MY_WORK" />} /><Route path="/opportunity/new" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/edit" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /><Route path="/opportunity/:id/review" element={<OpportunityDetailsPage review />} /></Routes></UnsavedProvider></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider></MockedProvider>);
+  return render(<MockedProvider mocks={[...ownerMocks, { request: { query: GET_PROPOSAL_SECTIONS }, result: { data: { rfpQuestionsList: [{ id: 7, question: 'Executive summary', description: null, displayOrder: 1, isActive: true }, { id: 8, question: 'Inactive section', description: null, displayOrder: 2, isActive: false }] } }, maxUsageCount: 100 }]}><OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId, view: true, add: true, edit: true, work: true, approvals: true }}><MemoryRouter initialEntries={[route]}><UnsavedProvider><Location /><Routes><Route path="/opportunity" element={<PipelinePage />} /><Route path="/opportunity/approvals" element={<PipelinePage queue="MY_APPROVALS" />} /><Route path="/opportunity/work" element={<PipelinePage queue="MY_WORK" />} /><Route path="/opportunity/new" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/edit" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /><Route path="/opportunity/:id/review" element={<OpportunityDetailsPage review />} /></Routes></UnsavedProvider></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider></MockedProvider>);
 }
 function testService(initial = fixtureOpportunity()): OpportunityService {
   let record = initial;
@@ -45,6 +46,25 @@ function testService(initial = fixtureOpportunity()): OpportunityService {
   };
 }
 describe('RFP preparation', () => {
+  it('shows required-field errors inline and clears them as fields are corrected', async () => {
+    const service = testService();
+    mount(service, '/opportunity/new');
+    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
+    const title = screen.getByLabelText(/Opportunity name/);
+    expect(title).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Please fill the Opportunity name.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Opportunity owner')).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByLabelText('Opportunity owner')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Please select an Opportunity owner.')).toBeInTheDocument();
+    expect(screen.getByText('Please select a Client.')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Solicitation \/ reference number/)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText('Check the required fields')).not.toBeInTheDocument();
+    await waitFor(() => expect(title).toHaveFocus());
+    fireEvent.change(title, { target: { value: 'New opportunity' } });
+    expect(title).toHaveAttribute('aria-invalid', 'false');
+    expect(screen.queryByText('Please fill the Opportunity name.')).not.toBeInTheDocument();
+    expect(service.save).not.toHaveBeenCalled();
+  });
   it.each(['QUESTIONNAIRE', 'GENERIC'] as const)('selects a document and exposes extraction only for Questionnaire: %s', async type => {
     const initial = fixtureOpportunity(); initial.form.rfp.type = type;
     const service = testService(initial), notification = vi.spyOn(toast, 'info');
@@ -71,7 +91,9 @@ describe('RFP preparation', () => {
   });
   it('allows document selection on a new opportunity without saving it', async () => {
     const service = testService(); mount(service, '/opportunity/new');
-    await waitFor(() => expect(screen.getByLabelText('Opportunity owner')).toHaveTextContent('Test Owner'));
+    await waitFor(() => expect(screen.getByLabelText('Opportunity owner')).toBeEnabled());
+    fireEvent.keyDown(screen.getByLabelText('Opportunity owner'), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('option', { name: 'Test Owner' }));
     fireEvent.click(screen.getByRole('button', { name: /Generic RFP/ }));
     const input = screen.getByLabelText('Source document / brief'); expect(input).toBeEnabled();
     fireEvent.change(input, { target: { files: [new File(['document'], 'brief.docx')] } });
@@ -82,16 +104,18 @@ describe('RFP preparation', () => {
     const initial = fixtureOpportunity(); initial.form.rfp.type = 'GENERIC'; initial.form.rfp.questions = [];
     const service = testService(initial); mount(service, '/opportunity/401/edit');
     const sections = await screen.findByRole('group', { name: /Required proposal sections/ });
-    expect(within(sections).getAllByRole('checkbox')).toHaveLength(12);
+    await waitFor(() => expect(within(sections).getAllByRole('checkbox')).toHaveLength(1));
+    expect(screen.queryByText(/Selected sections/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Page limit / volume rules')).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Commercial' })).not.toBeInTheDocument();
     fireEvent.click(within(sections).getByRole('checkbox', { name: 'Executive summary' }));
     fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
     fireEvent.change(screen.getByLabelText('Question 1 text'), { target: { value: 'Describe the transition plan.' } });
     expect(screen.queryByLabelText(/Question 1 source reference/)).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: 'Validated against source' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
     await waitFor(() => expect(service.save).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(service.save).mock.calls[0][0].form.rfp).toMatchObject({ type: 'GENERIC', sections: [{ key: 'summary' }], questions: [{ text: 'Describe the transition plan.', validated: false, sourceReference: '' }] });
+    expect(vi.mocked(service.save).mock.calls[0][0].form.rfp).toMatchObject({ type: 'GENERIC', sections: [{ key: '7', instructions: 'Executive summary' }], questions: [{ text: 'Describe the transition plan.', validated: false, sourceReference: '' }] });
   });
   it('keeps document and question controls read-only when editing is not permitted', async () => {
     mount(testService(fixtureOpportunity({ allowedActions: [] })), '/opportunity/401/edit');
@@ -135,11 +159,11 @@ describe('Opportunity UI using test-only service fixtures', () => {
     await screen.findByLabelText(/Opportunity name/);
     fireEvent.change(screen.getByLabelText('Answer / section response'), { target: { value: 'Unsaved independent answer' } });
     fireEvent.change(screen.getByLabelText(/Opportunity name/), { target: { value: 'Changed form title' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
     await waitFor(() => expect(service.save).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText('Answer / section response')).toHaveValue('Unsaved independent answer');
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/opportunity/401/edit');
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue' })); await waitFor(() => expect(service.save).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' })); await waitFor(() => expect(service.save).toHaveBeenCalledTimes(2));
     for (const [command] of vi.mocked(service.save).mock.calls) expect(command.id).toBe('401');
   });
   it('retains entered data on failed saves and guards duplicate clicks', async () => {
@@ -191,9 +215,9 @@ describe('Opportunity UI using test-only service fixtures', () => {
     const session = () => createLocalOpportunityService(createLocalOpportunityStore(storage, directory), async () => ({ ...directory, actorId }));
     let service = session();
     const form = newDraft(actorId);
-    Object.assign(form, { title: 'Automatic approval flow', estimatedValue: '100.00', currencyId: '1', serviceLine: 'Consulting', clientId: 'local-test-client' });
+    Object.assign(form, { title: 'Automatic approval flow', estimatedValue: '100.00', currencyId: '1', serviceLine: 'Data & platform engineering', clientId: 'local-test-client' });
     Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
-    form.dates.submissionDeadline = '2026-11-25';
+    form.dates.submissionDeadline = '2026-11-25'; form.rfp.type = 'GENERIC';
     const created = await service.save({ id: null, expectedRevision: null, idempotencyKey: 'ui-auto-create', form });
     actorId = '2017'; service = session(); mount(service, '/opportunity/approvals', actorId);
     fireEvent.click(await screen.findByRole('link', { name: 'View Automatic approval flow' }));
@@ -222,24 +246,30 @@ describe('Opportunity UI using test-only service fixtures', () => {
     expect(await screen.findByRole('link', { name: 'View Automatic approval flow' })).toBeInTheDocument();
     expect((await service.list({ queue: 'PIPELINE', search: '', after: null, first: 50 })).nodes[0]).toMatchObject({ id: created.id, state: 'GATE1_GO' });
   });
-  it('creates with a real client ID and Pending save, then Save & Continue never creates a duplicate', async () => {
+  it('creates with a real client ID and Pending save', async () => {
     const service = testService(); mount(service, '/opportunity/new');
     expect(service.lookups).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByLabelText('Service line')).toBeEnabled());
     fireEvent.change(screen.getByLabelText(/Opportunity name/), { target: { value: 'New real draft' } }); fireEvent.change(screen.getByLabelText(/Estimated value/), { target: { value: '12345.67' } }); fireEvent.keyDown(screen.getByLabelText('Service line'), { key: 'Enter' });
-    fireEvent.click(await screen.findByRole('option', { name: 'Consulting' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Data & platform engineering' }));
     fireEvent.keyDown(screen.getByLabelText(/Currency/), { key: 'Enter' }); const currencyOption = await screen.findByText(TEST_LOOKUPS.currencies[0].label); fireEvent.click(currencyOption); 
-    fireEvent.focus(screen.getByLabelText('Search client')); fireEvent.change(screen.getByLabelText('Search client'), { target: { value: 'Test' } });
-    fireEvent.click(await screen.findByText('Test Client'));
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue' }));
+    await waitFor(() => expect(screen.getByLabelText('Client')).toBeEnabled());
+    expect(service.clients).toHaveBeenCalledWith('', null, expect.any(AbortSignal));
+    fireEvent.keyDown(screen.getByLabelText('Client'), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('option', { name: 'Test Client' }));
+    await waitFor(() => expect(screen.getByLabelText('Opportunity owner')).toBeEnabled());
+    fireEvent.keyDown(screen.getByLabelText('Opportunity owner'), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('option', { name: 'Test Owner' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
     expect(service.save).not.toHaveBeenCalled();
-    expect(screen.getByText(/Enter a solicitation \/ reference number/)).toBeInTheDocument();
+    expect(screen.getByText(/Please fill the Solicitation \/ reference number/)).toBeInTheDocument();
     expect(screen.getByLabelText('Submission method')).toHaveAttribute('aria-required', 'true');
     fireEvent.change(screen.getByLabelText(/Solicitation \/ reference number/), { target: { value: 'RFP-NEW-1' } });
     fireEvent.change(screen.getByLabelText(/Issuing agency \/ department/), { target: { value: 'Client procurement' } });
     fireEvent.change(screen.getByLabelText(/Submission deadline/), { target: { value: '2026-11-25' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue' }));
-    await waitFor(() => expect(service.save).toHaveBeenCalledTimes(1)); await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/opportunity/401/edit'));
+    fireEvent.click(screen.getByRole('button', { name: /Generic RFP/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Opportunity' }));
+    await waitFor(() => expect(service.save).toHaveBeenCalledTimes(1)); await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/opportunity'));
     expect(vi.mocked(service.save).mock.calls[0][0]).toMatchObject({ id: null, expectedRevision: null, form: { clientId: '201', ownerId: '101', estimatedValue: '12345.67' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue' })); await waitFor(() => expect(service.save).toHaveBeenCalledTimes(2)); expect(vi.mocked(service.save).mock.calls[1][0].id).toBe('401');
   }, 120000);
 });

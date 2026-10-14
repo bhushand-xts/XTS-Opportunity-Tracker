@@ -26,7 +26,7 @@ type WorkflowDocument { id: ID! name: String! downloadUrl: String }
 type WorkflowExtraction { id: ID! state: WorkflowExtractionState! error: String }
 type WorkflowQuestion { id: ID! masterQuestionId: Int text: String! sourceReference: String! validated: Boolean! }
 type WorkflowSection { key: String! instructions: String! }
-type WorkflowRfp { type: WorkflowRfpType source: WorkflowDocument extraction: WorkflowExtraction questions: [WorkflowQuestion!]! sections: [WorkflowSection!]! submissionFormat: WorkflowSubmissionFormat! outputFormat: WorkflowOutputFormat! pageRules: String! evaluation: String! }
+type WorkflowRfp { type: WorkflowRfpType source: WorkflowDocument extraction: WorkflowExtraction questions: [WorkflowQuestion!]! sections: [WorkflowSection!]! submissionFormat: WorkflowSubmissionFormat! outputFormat: WorkflowOutputFormat! evaluation: String! }
 type WorkflowForm { title: String! estimatedValue: String! currencyId: ID! serviceLine: String! leadSource: String! ownerId: ID! priority: WorkflowPriority! description: String! clientId: ID solicitation: WorkflowSolicitation! dates: WorkflowDates! context: WorkflowContext! rfp: WorkflowRfp! }
 type WorkflowEstimateRow { id: ID! workItem: String! hours: String! people: Int! hourlyRate: String! }
 type WorkflowEstimation { revision: Int! rows: [WorkflowEstimateRow!]! assumptions: String! total: String! }
@@ -51,7 +51,7 @@ input WorkflowSectionInput { key: String! instructions: String! }
 input WorkflowEstimateRowInput { id: ID! workItem: String! hours: String! people: Int! hourlyRate: String! }
 input WorkflowScopeInput { revision: Int! objective: String! deliverables: String! inclusions: String! exclusions: String! dependencies: String! acceptance: String! }
 input WorkflowEstimationInput { revision: Int! rows: [WorkflowEstimateRowInput!]! assumptions: String! total: String! }
-input WorkflowRfpInput { type: WorkflowRfpType sourceDocumentId: ID questions: [WorkflowQuestionInput!]! sections: [WorkflowSectionInput!]! submissionFormat: WorkflowSubmissionFormat! outputFormat: WorkflowOutputFormat! pageRules: String! evaluation: String! }
+input WorkflowRfpInput { type: WorkflowRfpType sourceDocumentId: ID questions: [WorkflowQuestionInput!]! sections: [WorkflowSectionInput!]! submissionFormat: WorkflowSubmissionFormat! outputFormat: WorkflowOutputFormat! evaluation: String! }
 input WorkflowFormInput { title: String! estimatedValue: String! currencyId: ID! serviceLine: String! leadSource: String! ownerId: ID! priority: WorkflowPriority! description: String! clientId: ID solicitation: WorkflowSolicitationInput! dates: WorkflowDatesInput! context: WorkflowContextInput! rfp: WorkflowRfpInput! }
 input WorkflowClientInput { name: String! relationship: String! accountTypeId: ID! industryId: ID! website: String! address: String! country: String! stateProvince: String! city: String! streetAddress: String! primaryContact: WorkflowContactInput! additionalContacts: [WorkflowAdditionalContactInput!]! }
 input WorkflowListInput { search: String! queue: WorkflowQueue! after: String first: Int! }

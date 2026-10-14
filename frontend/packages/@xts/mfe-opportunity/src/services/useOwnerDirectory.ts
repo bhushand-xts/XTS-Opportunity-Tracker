@@ -10,7 +10,7 @@ export function mapOwnerDirectory(data: OwnerDirectoryData | undefined): Directo
     const roleName = role ? role.roleName.trim() || role.roleCode?.trim() || `Role ${role.id}` : undefined;
     return {
       id: String(user.id),
-      name: [user.firstName?.trim(), user.lastName?.trim()].filter(Boolean).join(' ') || user.email || `User ${user.id}`,
+      name: [user.firstName?.trim(), user.lastName?.trim()].filter(Boolean).join(' ') || `User ${user.id}`,
       email: user.email,
       roles: user.roleId === null ? [] : [roleName ? `${roleName}${role?.isActive ? '' : ' (inactive)'}` : `Role ${user.roleId}`],
       active: user.isActive === true,

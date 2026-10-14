@@ -36,11 +36,11 @@ export function addMasterQuestionTemplates(questions: PreparedQuestion[], templa
 
 export function newDraft(ownerId: string): OpportunityDraft {
   return {
-    title: '', estimatedValue: '', currencyId: '', serviceLine: '', leadSource: '', ownerId, priority: 'MEDIUM', description: '', clientId: null,
+    title: '', estimatedValue: '', estimatedValueUsd: '', serviceLineOther: '', currencyId: '', serviceLine: '', leadSource: '', ownerId, priority: 'MEDIUM', description: '', clientId: null,
     solicitation: { reference: '', version: '', issuingAgency: '', procurementContact: '', submissionMethod: 'PORTAL', vendorDemo: 'UNCONFIRMED', portalUrl: '', submissionEmail: '', deliveryInstructions: '', contractTerm: '', incumbentVendor: '', preBidMeeting: 'UNCONFIRMED', submissionTimezone: 'Asia/Kolkata' },
     dates: { issueDate: '', questionsDue: '', proposalDue: '', submissionDeadline: '', additionalDeadline: '', additionalDeadlineLabel: '' },
     context: { instructions: '', submissionRequirements: '', opportunityOverview: '', scopeOfWork: '', requirements: '', notes: '' },
-    rfp: { type: null, source: null, extraction: null, questions: [], sections: [], submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', pageRules: '', evaluation: '' },
+    rfp: { type: null, source: null, extraction: null, questions: [], sections: [], submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: '' },
   };
 }
 export function isPreparing(o: OpportunityDetail) { return o.state === 'PREPARATION_PENDING' || o.state === 'IN_PROGRESS' || o.state === 'SALES_REVIEW'; }
@@ -52,30 +52,36 @@ export function canReview(o: OpportunityDetail, r: ResponseItem, userId: string 
   return isPreparing(o) && r.state === 'SUBMITTED' && r.reviewer?.active === true && r.reviewer.id === userId && r.owner?.id !== userId && r.submittedRevision === r.revision;
 }
 export function userLabel(user: DirectoryUser | null) { return user ? `${user.name || user.email}${user.active ? '' : ' (inactive)'}` : 'Unassigned'; }
-export function pendingSaveErrors(form: OpportunityDraft): string[] {
-  const errors: string[] = [];
-  if (!form.title.trim()) errors.push('Enter an opportunity name.');
-  if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValue)) errors.push('Enter a non-negative estimated value with at most two decimals.');
-  if (!form.currencyId) errors.push('Select a currency.');
-  if (!form.serviceLine.trim()) errors.push('Select a service line.');
-  if (!form.ownerId) errors.push('Select an opportunity owner.');
-  if (!form.clientId) errors.push('Select a client.');
-  if (!form.solicitation.reference.trim()) errors.push('Enter a solicitation / reference number.');
-  if (!form.solicitation.issuingAgency.trim()) errors.push('Enter an issuing agency / department.');
-  if (!['PORTAL', 'EMAIL', 'PHYSICAL'].includes(form.solicitation.submissionMethod)) errors.push('Select a submission method.');
-  if (!form.dates.submissionDeadline) errors.push('Set a submission deadline.');
+export function pendingSaveFieldErrors(form: OpportunityDraft): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!form.title.trim()) errors['Opportunity name / title'] = 'Please fill the Opportunity name.';
+  if (!form.estimatedValue.trim()) errors['Estimated value'] = 'Please fill the Estimated value.';
+  else if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValue)) errors['Estimated value'] = 'Please enter a non-negative Estimated value with at most two decimals.';
+  if (!form.estimatedValueUsd?.trim()) errors['Estimated value (USD)'] = 'Please fill the Estimated value (USD).';
+  else if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValueUsd) || Number(form.estimatedValueUsd) >= 1e13) errors['Estimated value (USD)'] = 'Enter a non-negative USD value with at most two decimals, below 10 trillion.';
+  if (form.serviceLine === 'Other' && !form.serviceLineOther?.trim()) errors['Other service line'] = 'Please fill the Other service line.';
+  if ((form.serviceLine === 'Other' ? form.serviceLineOther ?? '' : form.serviceLine).trim().length > 255) errors[form.serviceLine === 'Other' ? 'Other service line' : 'Service line'] = 'Service line must be at most 255 characters.';
+  if (!form.currencyId) errors['Currency'] = 'Please select a Currency.';
+  if (!form.serviceLine.trim()) errors['Service line'] = 'Please select a Service line.';
+  if (!form.ownerId) errors['Opportunity owner'] = 'Please select an Opportunity owner.';
+  if (!form.clientId) errors['Client'] = 'Please select a Client.';
+  if (!form.solicitation.reference.trim()) errors['Solicitation / reference number'] = 'Please fill the Solicitation / reference number.';
+  if (!form.solicitation.issuingAgency.trim()) errors['Issuing agency / department'] = 'Please fill the Issuing agency / department.';
+  if (!['PORTAL', 'EMAIL', 'PHYSICAL'].includes(form.solicitation.submissionMethod)) errors['Submission method'] = 'Please select a Submission method.';
+  if (!form.dates.submissionDeadline) errors['Submission deadline'] = 'Please fill the Submission deadline.';
+  if (!form.rfp.type) errors['RFP type'] = 'Please choose an RFP type.';
   for (const field of ['questionsDue', 'submissionDeadline'] as const) {
     const value = form.dates[field];
-    if (value && !validDate(value)) errors.push(`Enter a valid date for ${field}.`);
+    if (value && !validDate(value)) errors[field === 'questionsDue' ? 'Questions due' : 'Submission deadline'] = 'Please enter a valid date.';
   }
   return errors;
+}
+export function pendingSaveErrors(form: OpportunityDraft): string[] {
+  return Object.values(pendingSaveFieldErrors(form));
 }
 export function readinessErrors(o: OpportunityDetail): string[] {
   const f = o.form, errors = pendingSaveErrors(f);
   if (!f.rfp.type) errors.push('Choose an RFP type.');
-  const destination = f.solicitation.submissionMethod === 'PORTAL' ? f.solicitation.portalUrl : f.solicitation.submissionMethod === 'EMAIL' ? f.solicitation.submissionEmail : f.solicitation.deliveryInstructions;
-  if (f.solicitation.submissionMethod !== 'PORTAL' && !destination.trim()) errors.push('Complete the submission destination.');
-  if (f.solicitation.submissionMethod === 'EMAIL' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination)) errors.push('Enter a valid submission email.');
   const responses = o.responses ?? [];
   if (!responses.length) errors.push('Prepare at least one response item.');
   if (responses.some(r => !r.owner?.active || !r.reviewer?.active || r.owner.id === r.reviewer.id || !r.dueDate)) errors.push('Assign active owners, independent reviewers and due dates.');

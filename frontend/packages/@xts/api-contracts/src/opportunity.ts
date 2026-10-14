@@ -6,7 +6,7 @@ export type ResponseState = 'UNASSIGNED' | 'ASSIGNED' | 'DRAFT' | 'SUBMITTED' | 
 export type Module = 'overview' | 'responses' | 'estimation' | 'scope' | 'assignment' | 'activity';
 export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
 export interface DirectoryUser { id: string; name: string; email: string; roles: string[]; active: boolean; }
-export interface Contact { id?: string; name: string; title: string; email: string; phone: string; decisionRole: string; }
+export interface Contact { id?: string; name: string; title: string; email: string; phone: string; decisionRole: string; decisionRoleOther?: string; }
 export type AdditionalContact = Contact;
 export interface ClientDraft {
   name: string; relationship: string; accountTypeId: string; industryId: string; website: string;
@@ -30,10 +30,10 @@ export interface RfpDraft {
   extraction: { id: string; state: 'PROCESSING' | 'SUCCEEDED' | 'FAILED'; error: string | null } | null;
   questions: PreparedQuestion[]; sections: ProposalSection[];
   submissionFormat: 'TECHNICAL_COST' | 'COMBINED'; outputFormat: 'PDF' | 'DOCX' | 'PPTX';
-  pageRules: string; evaluation: string;
+  evaluation: string;
 }
 export interface OpportunityDraft {
-  title: string; estimatedValue: Decimal; currencyId: string; serviceLine: string; leadSource: string;
+  title: string; estimatedValue: Decimal; estimatedValueUsd?: Decimal; serviceLineOther?: string; currencyId: string; serviceLine: string; leadSource: string;
   ownerId: string; priority: 'LOW' | 'MEDIUM' | 'HIGH'; description: string; clientId: string | null;
   solicitation: Solicitation; dates: ImportantDates; context: RfpContext; rfp: RfpDraft;
 }

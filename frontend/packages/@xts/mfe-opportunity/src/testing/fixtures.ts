@@ -12,7 +12,7 @@ export function fixtureOpportunity(overrides: Partial<OpportunityDetail> = {}): 
   Object.assign(form, { title: 'Cloud transformation', estimatedValue: '250000.00', currencyId: '1', serviceLine: 'Digital engineering', clientId: '201', description: 'Modernize the delivery platform.' });
   Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement', portalUrl: 'https://procurement.example.test' });
   form.dates.submissionDeadline = '2026-11-25'; form.rfp.type = 'QUESTIONNAIRE'; form.rfp.questions = [{ id: '301', text: 'Describe the delivery approach.', sourceReference: 'Page 1', validated: true }];
-  const client = { id: '201', revision: 1, name: 'Test Client', relationship: 'Existing customer', accountTypeId: '1', industryId: '1', accountTypeName: 'Enterprise', industryName: 'Technology', website: 'https://example.test', address: 'Display postal address', country: 'India', stateProvince: 'Maharashtra', city: 'Pune', streetAddress: 'Building 1, Test Street', primaryContact: { name: 'Test Contact', title: 'Procurement lead', email: 'contact@example.test', phone: '+91 0000000000', decisionRole: 'Decision maker' }, additionalContacts: [], allowedActions: ['CLIENT_UPDATE'] as OpportunityDetail['allowedActions'] };
+  const client = { id: '201', revision: 1, name: 'Test Client', relationship: 'Existing customer', accountTypeId: '1', industryId: '1', accountTypeName: 'Enterprise', industryName: 'Technology', website: 'https://example.test', address: 'Display postal address', country: 'India', stateProvince: 'Maharashtra', city: 'Pune', streetAddress: 'Building 1, Test Street', primaryContact: { name: 'Test Contact', title: 'Procurement lead', email: 'contact@example.test', phone: '910000000000', decisionRole: 'Decision maker' }, additionalContacts: [], allowedActions: ['CLIENT_UPDATE'] as OpportunityDetail['allowedActions'] };
   return {
     id: '401', number: 'OPP-TEST-401', title: form.title, estimatedValue: form.estimatedValue, currencyCode: 'INR', clientName: client.name, owner, priority: 'MEDIUM', state: 'PREPARATION_PENDING', rfpType: 'QUESTIONNAIRE', submissionDeadline: form.dates.submissionDeadline, revision: 1, packageRevision: null,
     allowedActions: ['EDIT', 'ASSIGN', 'EDIT_ESTIMATION', 'EDIT_SCOPE', 'UPLOAD', 'EXTRACT', 'CLIENT_CREATE'],
@@ -60,8 +60,7 @@ function mockResponses(detail: OpportunityDetail) {
   const questions = detail.form.rfp.type ? detail.form.rfp.questions.map(question => ({ id: question.id, title: question.text, sourceValidated: question.validated, sourceReference: question.sourceReference })) : [];
   const sections = detail.form.rfp.type === 'GENERIC' ? detail.form.rfp.sections.map(section => {
       const catalog = SECTION_CATALOG.find(item => item.key === section.key);
-      if (!catalog) throw new Error('Unknown proposal section.');
-      return { id: `section-${section.key}`, title: catalog.title, sourceValidated: true, sourceReference: section.instructions || null };
+      return { id: `section-${section.key}`, title: catalog?.title ?? (section.instructions || section.key), sourceValidated: true, sourceReference: section.instructions || null };
     }) : [];
   const sources = [...sections, ...questions];
   if (new Set(sources.map(source => source.id)).size !== sources.length) throw new Error('Duplicate response items.');
@@ -361,9 +360,10 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
   };
 }
 function mockValidateClient(form: ClientDraft, lookups = TEST_LOOKUPS) {
-  if (![form.name, form.country, form.stateProvince, form.city, form.primaryContact.name, form.primaryContact.title, form.primaryContact.email, form.primaryContact.phone, form.primaryContact.decisionRole].every(value => value.trim())) throw new Error('Complete required client and contact fields.');
+  if (![form.name, form.website, form.streetAddress, form.country, form.stateProvince, form.city, form.primaryContact.name, form.primaryContact.title, form.primaryContact.email, form.primaryContact.phone, form.primaryContact.decisionRole].every(value => value.trim())) throw new Error('Complete required client and contact fields.');
   if (!lookups.accountTypes.some(item => item.id === form.accountTypeId) || !lookups.industries.some(item => item.id === form.industryId)) throw new Error('Select mock account type and industry.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.primaryContact.email)) throw new Error('Enter a valid contact email.');
+  if (!/^\d+$/.test(form.primaryContact.phone)) throw new Error('Enter digits only for contact phone.');
   if (form.website && !/^https?:\/\/\S+$/.test(form.website)) throw new Error('Enter an HTTP or HTTPS website.');
-  if (form.additionalContacts.some(contact => ![contact.name, contact.title, contact.email, contact.phone, contact.decisionRole].every(value => value?.trim()) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email))) throw new Error('Complete all additional contact fields with valid emails.');
+  if (form.additionalContacts.some(contact => ![contact.name, contact.title, contact.email, contact.phone, contact.decisionRole].every(value => value?.trim()) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email) || !/^\d+$/.test(contact.phone))) throw new Error('Complete all additional contact fields with valid emails and phone digits.');
 }

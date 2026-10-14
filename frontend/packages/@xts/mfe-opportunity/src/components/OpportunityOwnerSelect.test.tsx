@@ -32,14 +32,15 @@ beforeAll(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe('Opportunity owner selection from the real master API shape', () => {
-  it('lists active user names, emails and roles and selects their string user IDs', async () => {
+  it('lists only active user first and last names and selects their string user IDs', async () => {
     render(<MockedProvider mocks={[directoryMock()]}><StatefulOwner /></MockedProvider>);
     expect(screen.getByText('Loading owner directory…')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByLabelText('Opportunity owner')).toBeEnabled());
+    expect(screen.getByLabelText('Opportunity owner')).toHaveTextContent('Select owner');
     fireEvent.keyDown(screen.getByLabelText('Opportunity owner'), { key: 'Enter' });
-    const option = await screen.findByText('Ada Lovelace · ada@example.com · Engineering');
+    const option = await screen.findByText('Ada Lovelace');
     expect(option.closest('[role="option"]')).toBeInTheDocument();
-    expect(screen.getByText('Grace Hopper · grace@example.com').closest('[role="option"]')).toBeInTheDocument();
+    expect(screen.getByText('Grace Hopper').closest('[role="option"]')).toBeInTheDocument();
     expect(screen.queryByText(/Inactive Owner/)).not.toBeInTheDocument();
     fireEvent.click(option);
     expect(screen.getByLabelText('Chosen user ID')).toHaveTextContent('42');
@@ -53,7 +54,7 @@ describe('Opportunity owner selection from the real master API shape', () => {
     fireEvent.keyDown(trigger, { key: 'Enter' });
     const inactiveOption = await screen.findByText(/Inactive Owner/, { selector: '[role="option"] > span:last-child' });
     expect(inactiveOption.closest('[role="option"]')).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.click(screen.getByText('Grace Hopper · grace@example.com'));
+    fireEvent.click(screen.getByText('Grace Hopper'));
     expect(screen.getByLabelText('Chosen user ID')).toHaveTextContent('84');
     fireEvent.keyDown(trigger, { key: 'Enter' });
     expect(screen.queryByText(/Inactive Owner/)).not.toBeInTheDocument();

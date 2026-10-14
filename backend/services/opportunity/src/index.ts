@@ -7,10 +7,9 @@ import { expressMiddleware } from '@apollo/server/express4';
 import { buildSubgraphSchema } from '@apollo/subgraph';
 
 import env from './config/env';
+import { buildContext } from './graphql/context';
 import opportunityTypes from './graphql/typeDefs/opportunity.typeDefs';
-import stageTypes from './graphql/typeDefs/stage.typeDefs';
 import opportunityResolvers from './graphql/resolvers/opportunity.resolver';
-import stageResolvers from './graphql/resolvers/stage.resolver';
 
 // Opportunity & Pipeline
 
@@ -19,11 +18,13 @@ const base = `
   type Mutation { _empty: String }
 `;
 
-const typeDefs = [base, opportunityTypes, stageTypes];
+const typeDefs = [base, opportunityTypes];
 
-const parts = [opportunityResolvers, stageResolvers];
+const parts = [opportunityResolvers];
 const resolvers = parts.reduce(
   (acc: any, p: any) => ({
+    ...acc,
+    ...p,
     Query: { ...acc.Query, ...(p.Query || {}) },
     Mutation: { ...acc.Mutation, ...(p.Mutation || {}) },
   }),
@@ -40,7 +41,7 @@ async function start() {
 
   const server = new ApolloServer({ schema });
   await server.start();
-  app.use('/graphql', expressMiddleware(server));
+  app.use('/graphql', expressMiddleware(server, { context: async ({ req }) => buildContext({ req }) }));
 
   app.get('/health', (req, res) => res.json({ status: 'ok', service: 'opportunity' }));
 

@@ -20,9 +20,10 @@ describe('workflow contract', () => {
       expect(validate(schema, operation), name).toEqual([]);
     }
   });
-  it('fails closed for stub list and missing persistence instead of claiming success or returning sample data', async () => {
-    await expect(productionOpportunityService.list({ search: '', queue: 'PIPELINE', after: null, first: 50 })).rejects.toMatchObject({ code: 'INTEGRATION_UNAVAILABLE' });
-    await expect(productionOpportunityService.save({ id: null, expectedRevision: null, idempotencyKey: 'test', form: newDraft('101') })).rejects.toMatchObject({ code: 'INTEGRATION_UNAVAILABLE' });
+  it('fails closed for unsupported workflow capabilities instead of claiming success', async () => {
+    const file = { name: 'test.txt' } as File;
+    await expect(productionOpportunityService.upload({ opportunityId: '401', expectedRevision: 1, idempotencyKey: 'test' }, file)).rejects.toMatchObject({ code: 'INTEGRATION_UNAVAILABLE' });
+    await expect(productionOpportunityService.decide({ opportunityId: '401', expectedRevision: 1, idempotencyKey: 'test', packageRevision: 1, decision: 'SALES_APPROVE', reason: '', confirmed: true })).rejects.toMatchObject({ code: 'INTEGRATION_UNAVAILABLE' });
   });
 });
 
