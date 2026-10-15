@@ -9,6 +9,7 @@ import { useResource } from '../hooks/useResource';
 import { useSave } from '../hooks/useSave';
 import { useUnsaved } from '../hooks/useUnsaved';
 import { isPreparing, newDraft, pendingSaveFieldErrors } from '../lib/workflow';
+import { randomUUID } from '../lib/uuid';
 import { Choice, Field, Loading, Notice, Panel, Status, options } from './ui';
 import { ClientPicker } from './ClientPicker';
 import { OpportunityOwnerSelect } from './OpportunityOwnerSelect';
@@ -26,7 +27,7 @@ export function OpportunityFormPage() {
   const formElement = useRef<HTMLDivElement>(null);
   const serviceLineOptions = options([...new Set([...SERVICE_LINES, ...(saved?.form.serviceLine ? [saved.form.serviceLine] : [])])]);
   const persistedId = useRef<string | null>(id ?? null);
-  const creationKey = useRef(crypto.randomUUID());
+  const creationKey = useRef(randomUUID());
   const load = useCallback((signal: AbortSignal) => service.detail(id!, signal), [service, id]);
   const detail = useResource(load, Boolean(id && access.view));
   const loadLookups = useCallback(() => service.lookups(), [service]);

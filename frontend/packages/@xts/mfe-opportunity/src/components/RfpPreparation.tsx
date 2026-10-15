@@ -6,6 +6,7 @@ import type { OpportunityDetail, OpportunityDraft, RfpDraft, Solicitation, Impor
 import { gql, useQuery } from '@apollo/client';
 import { useFieldError } from './FieldValidation';
 import { useOpportunityService } from '../services/OpportunityService';
+import { randomUUID } from '../lib/uuid';
 import { DocumentDownload } from './DocumentDownload';
 
 export const GET_PROPOSAL_SECTIONS = gql`query OpportunityProposalSections { rfpQuestionsList { id question description displayOrder isActive } }`;
@@ -45,7 +46,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     setError(undefined); setSelectedFile(file); setUploading(true);
     uploadPending.current = true; onUploadingChange?.(true);
     try {
-      const source = await service.upload({ opportunityId: saved?.id ?? '', expectedRevision: saved?.revision ?? 0, idempotencyKey: crypto.randomUUID() }, file);
+      const source = await service.upload({ opportunityId: saved?.id ?? '', expectedRevision: saved?.revision ?? 0, idempotencyKey: randomUUID() }, file);
       if (mounted.current) {
         setForm(current => ({ ...current, rfp: { ...current.rfp, source, extraction: null } }));
         setSelectedFile(undefined);
@@ -95,7 +96,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
         <Field label="Evaluation basis / criteria" multiline value={rfp.evaluation} onChange={v => update({ evaluation: v })} disabled={disabled} />
       </>}
       <div className="w-full space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Questions · {rfp.questions.length}</h3><div className="flex flex-wrap gap-2"><Button type="button" variant="link" disabled={disabled} onClick={() => update({ questions: [...rfp.questions, { id: `draft-${crypto.randomUUID()}`, text: '', sourceReference: '', validated: false }] })}>+ Add question</Button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Questions · {rfp.questions.length}</h3><div className="flex flex-wrap gap-2"><Button type="button" variant="link" disabled={disabled} onClick={() => update({ questions: [...rfp.questions, { id: `draft-${randomUUID()}`, text: '', sourceReference: '', validated: false }] })}>+ Add question</Button></div></div>
         {rfp.questions.map((question, index) => <div key={question.id} className="flex min-w-0 items-start gap-2">
           <span className="w-6 shrink-0 pt-2 text-sm text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
           <Label htmlFor={`question-${question.id}`} className="sr-only">{`Question ${index + 1} text`}</Label>

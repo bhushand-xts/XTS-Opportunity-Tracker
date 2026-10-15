@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { randomUUID } from '../lib/uuid';
 
 /** One mutation at a time. Retain idempotency keys for identical retries. */
 export function useSave() {
@@ -11,7 +12,7 @@ export function useSave() {
     if (locked.current) return;
     locked.current = true; setSaving(true); setError(undefined);
     let key = keys.current.get(signature);
-    if (!key) { key = crypto.randomUUID(); keys.current.set(signature, key); }
+    if (!key) { key = randomUUID(); keys.current.set(signature, key); }
     try {
       const saved = await mutate(key);
       keys.current.delete(signature);

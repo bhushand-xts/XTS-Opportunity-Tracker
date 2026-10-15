@@ -1,4 +1,5 @@
 import type { Action, Decimal, DirectoryUser, EstimateRow, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
+import { randomUUID } from './uuid';
 
 export const STATE_LABELS = {
   PREPARATION_PENDING: 'Draft', IN_PROGRESS: 'In progress', SALES_REVIEW: 'Pending', GATE1_PENDING: 'Gate 1 pending',
@@ -29,7 +30,7 @@ export function addMasterQuestionTemplates(questions: PreparedQuestion[], templa
   for (const template of templates) {
     if (!template.isActive || selected.has(template.id) || !template.question.trim()) continue;
     selected.add(template.id);
-    additions.push({ id: `draft-${crypto.randomUUID()}`, masterQuestionId: template.id, text: template.question, sourceReference: `Question Master #${template.id}`, validated: false });
+    additions.push({ id: `draft-${randomUUID()}`, masterQuestionId: template.id, text: template.question, sourceReference: `Question Master #${template.id}`, validated: false });
   }
   return [...questions, ...additions];
 }
