@@ -1,0 +1,90 @@
+# PROPOSED ONLY. Not composed into the live gateway. No actor IDs/audit times accepted.
+enum WorkflowState { PREPARATION_PENDING IN_PROGRESS SALES_REVIEW GATE1_PENDING GATE1_GO SALES_REJECTED GATE1_NO_GO }
+enum WorkflowResponseState { UNASSIGNED ASSIGNED DRAFT SUBMITTED APPROVED CHANGES_REQUESTED }
+enum WorkflowAction { EDIT ASSIGN SAVE_ANSWER SUBMIT_ANSWER REVIEW_ANSWER EDIT_ESTIMATION EDIT_SCOPE SALES_APPROVE SALES_REJECT GATE1_GO GATE1_NO_GO UPLOAD EXTRACT CLIENT_CREATE CLIENT_UPDATE }
+enum WorkflowModule { overview responses estimation scope assignment activity }
+enum WorkflowPriority { LOW MEDIUM HIGH }
+enum WorkflowSubmissionMethod { PORTAL EMAIL PHYSICAL }
+enum WorkflowConfirmation { UNCONFIRMED YES NO }
+enum WorkflowRfpType { QUESTIONNAIRE GENERIC }
+enum WorkflowExtractionState { PROCESSING SUCCEEDED FAILED }
+enum WorkflowSubmissionFormat { TECHNICAL_COST COMBINED }
+enum WorkflowOutputFormat { PDF DOCX PPTX }
+enum WorkflowQueue { PIPELINE MY_WORK MY_APPROVALS }
+enum WorkflowPurpose { OWNER REVIEWER SALES_REVIEWER GATE1_APPROVER }
+enum WorkflowMode { WORK DETAILS REVIEW }
+enum WorkflowDecision { SALES_APPROVE SALES_REJECT GATE1_GO GATE1_NO_GO }
+
+type WorkflowUser { id: ID! name: String! email: String! roles: [String!]! active: Boolean! }
+type WorkflowContact { id: ID name: String! title: String! email: String! phone: String! decisionRole: String! }
+type WorkflowAdditionalContact { id: ID name: String! title: String! email: String! phone: String! decisionRole: String! }
+type WorkflowClient { id: ID! revision: Int! name: String! relationship: String! accountTypeId: ID! industryId: ID! accountTypeName: String! industryName: String! website: String! address: String! country: String! stateProvince: String! city: String! streetAddress: String! primaryContact: WorkflowContact! additionalContacts: [WorkflowAdditionalContact!]! allowedActions: [WorkflowAction!]! }
+type WorkflowSolicitation { reference: String! version: String! issuingAgency: String! procurementContact: String! submissionMethod: WorkflowSubmissionMethod! vendorDemo: WorkflowConfirmation! portalUrl: String! submissionEmail: String! deliveryInstructions: String! contractTerm: String! incumbentVendor: String! preBidMeeting: WorkflowConfirmation! submissionTimezone: String! }
+type WorkflowDates { issueDate: String! questionsDue: String! proposalDue: String! submissionDeadline: String! additionalDeadline: String! additionalDeadlineLabel: String! }
+type WorkflowContext { instructions: String! submissionRequirements: String! opportunityOverview: String! scopeOfWork: String! requirements: String! notes: String! }
+type WorkflowDocument { id: ID! name: String! downloadUrl: String }
+type WorkflowExtraction { id: ID! state: WorkflowExtractionState! error: String }
+type WorkflowQuestion { id: ID! masterQuestionId: Int text: String! sourceReference: String! validated: Boolean! }
+type WorkflowSection { key: String! instructions: String! }
+type WorkflowRfp { type: WorkflowRfpType source: WorkflowDocument extraction: WorkflowExtraction questions: [WorkflowQuestion!]! sections: [WorkflowSection!]! submissionFormat: WorkflowSubmissionFormat! outputFormat: WorkflowOutputFormat! evaluation: String! }
+type WorkflowForm { title: String! estimatedValue: String! currencyId: ID! serviceLine: String! leadSource: String! ownerId: ID! priority: WorkflowPriority! description: String! clientId: ID solicitation: WorkflowSolicitation! dates: WorkflowDates! context: WorkflowContext! rfp: WorkflowRfp! }
+type WorkflowEstimateRow { id: ID! workItem: String! hours: String! people: Int! hourlyRate: String! }
+type WorkflowEstimation { revision: Int! rows: [WorkflowEstimateRow!]! assumptions: String! total: String! }
+type WorkflowScope { revision: Int! objective: String! deliverables: String! inclusions: String! exclusions: String! dependencies: String! acceptance: String! }
+type WorkflowResponse { id: ID! title: String! sourceValidated: Boolean! sourceReference: String owner: WorkflowUser reviewer: WorkflowUser dueDate: String answer: String! state: WorkflowResponseState! revision: Int! submittedRevision: Int approvedRevision: Int reviewComment: String allowedActions: [WorkflowAction!]! }
+type WorkflowActivity { id: ID! action: String! actor: WorkflowUser! at: String! note: String packageRevision: Int }
+type WorkflowReadiness { ready: Boolean! issues: [String!]! }
+type WorkflowRecommendation { actor: WorkflowUser! note: String packageRevision: Int! }
+type WorkflowSummary { id: ID! number: String! title: String! estimatedValue: String! currencyCode: String! clientName: String owner: WorkflowUser priority: WorkflowPriority! state: WorkflowState! rfpType: WorkflowRfpType submissionDeadline: String revision: Int! packageRevision: Int allowedActions: [WorkflowAction!]! }
+type WorkflowWorkspace { id: ID! number: String! title: String! estimatedValue: String! currencyCode: String! clientName: String owner: WorkflowUser priority: WorkflowPriority! state: WorkflowState! rfpType: WorkflowRfpType submissionDeadline: String revision: Int! packageRevision: Int allowedActions: [WorkflowAction!]! form: WorkflowForm! client: WorkflowClient visibleModules: [WorkflowModule!]! responses: [WorkflowResponse!] estimation: WorkflowEstimation scope: WorkflowScope activity: [WorkflowActivity!] responsible: WorkflowUser approvalAssignees: [WorkflowUser!]! readiness: WorkflowReadiness! salesRecommendation: WorkflowRecommendation }
+type WorkflowOpportunityPage { nodes: [WorkflowSummary!]! totalCount: Int! endCursor: String hasNextPage: Boolean! }
+type WorkflowClientPage { nodes: [WorkflowClient!]! totalCount: Int! endCursor: String hasNextPage: Boolean! }
+type WorkflowUserPage { nodes: [WorkflowUser!]! totalCount: Int! endCursor: String hasNextPage: Boolean! }
+
+input WorkflowContactInput { id: ID name: String! title: String! email: String! phone: String! decisionRole: String! }
+input WorkflowAdditionalContactInput { id: ID name: String! title: String! email: String! phone: String! decisionRole: String! }
+input WorkflowSolicitationInput { reference: String! version: String! issuingAgency: String! procurementContact: String! submissionMethod: WorkflowSubmissionMethod! vendorDemo: WorkflowConfirmation! portalUrl: String! submissionEmail: String! deliveryInstructions: String! contractTerm: String! incumbentVendor: String! preBidMeeting: WorkflowConfirmation! submissionTimezone: String! }
+input WorkflowDatesInput { issueDate: String! questionsDue: String! proposalDue: String! submissionDeadline: String! additionalDeadline: String! additionalDeadlineLabel: String! }
+input WorkflowContextInput { instructions: String! submissionRequirements: String! opportunityOverview: String! scopeOfWork: String! requirements: String! notes: String! }
+input WorkflowQuestionInput { id: ID! masterQuestionId: Int text: String! sourceReference: String! validated: Boolean! }
+input WorkflowSectionInput { key: String! instructions: String! }
+input WorkflowEstimateRowInput { id: ID! workItem: String! hours: String! people: Int! hourlyRate: String! }
+input WorkflowScopeInput { revision: Int! objective: String! deliverables: String! inclusions: String! exclusions: String! dependencies: String! acceptance: String! }
+input WorkflowEstimationInput { revision: Int! rows: [WorkflowEstimateRowInput!]! assumptions: String! total: String! }
+input WorkflowRfpInput { type: WorkflowRfpType sourceDocumentId: ID questions: [WorkflowQuestionInput!]! sections: [WorkflowSectionInput!]! submissionFormat: WorkflowSubmissionFormat! outputFormat: WorkflowOutputFormat! evaluation: String! }
+input WorkflowFormInput { title: String! estimatedValue: String! currencyId: ID! serviceLine: String! leadSource: String! ownerId: ID! priority: WorkflowPriority! description: String! clientId: ID solicitation: WorkflowSolicitationInput! dates: WorkflowDatesInput! context: WorkflowContextInput! rfp: WorkflowRfpInput! }
+input WorkflowClientInput { name: String! relationship: String! accountTypeId: ID! industryId: ID! website: String! address: String! country: String! stateProvince: String! city: String! streetAddress: String! primaryContact: WorkflowContactInput! additionalContacts: [WorkflowAdditionalContactInput!]! }
+input WorkflowListInput { search: String! queue: WorkflowQueue! after: String first: Int! }
+input WorkflowSaveInput { id: ID expectedRevision: Int idempotencyKey: ID! form: WorkflowFormInput! }
+input WorkflowClientSaveInput { id: ID expectedRevision: Int idempotencyKey: ID! form: WorkflowClientInput! }
+input WorkflowUploadInput { opportunityId: ID! expectedRevision: Int! idempotencyKey: ID! filename: String! mimeType: String! contentBase64: String! }
+input WorkflowExtractInput { opportunityId: ID! expectedRevision: Int! idempotencyKey: ID! documentId: ID! }
+input WorkflowEstimateSaveInput { opportunityId: ID! expectedRevision: Int! idempotencyKey: ID! estimation: WorkflowEstimationInput! }
+input WorkflowScopeSaveInput { opportunityId: ID! expectedRevision: Int! idempotencyKey: ID! scope: WorkflowScopeInput! }
+input WorkflowAssignmentInput { opportunityId: ID! expectedRevision: Int! idempotencyKey: ID! responseId: ID! responseRevision: Int! ownerId: ID! reviewerId: ID! dueDate: String! }
+input WorkflowAnswerInput { opportunityId: ID! expectedRevision: Int! idempotencyKey: ID! responseId: ID! responseRevision: Int! answer: String! submit: Boolean! }
+input WorkflowAnswerReviewInput { opportunityId: ID! expectedRevision: Int! idempotencyKey: ID! responseId: ID! responseRevision: Int! approved: Boolean! reason: String! submittedRevision: Int! }
+input WorkflowDecisionInput { opportunityId: ID! expectedRevision: Int! idempotencyKey: ID! packageRevision: Int! decision: WorkflowDecision! reason: String! confirmed: Boolean! }
+input WorkflowEligibleInput { opportunityId: ID purpose: WorkflowPurpose! search: String! after: String first: Int! }
+
+type Query {
+  opportunityWorkflowActions: [WorkflowAction!]!
+  opportunityWorkflowPage(filter: WorkflowListInput!): WorkflowOpportunityPage!
+  opportunityWorkspace(id: ID!, mode: WorkflowMode!): WorkflowWorkspace!
+  clientDirectoryPage(search: String!, after: String, first: Int!): WorkflowClientPage!
+  eligibleOpportunityUsers(input: WorkflowEligibleInput!): WorkflowUserPage!
+  opportunityExtractionStatus(opportunityId: ID!, jobId: ID!): WorkflowWorkspace!
+}
+type Mutation {
+  # Atomically save Pending (SALES_REVIEW), version its package and resolve configured approvers server-side.
+  saveOpportunityWorkflow(input: WorkflowSaveInput!): WorkflowWorkspace!
+  saveOpportunityClient(input: WorkflowClientSaveInput!): WorkflowClient!
+  uploadOpportunitySource(input: WorkflowUploadInput!): WorkflowDocument!
+  startOpportunityExtraction(input: WorkflowExtractInput!): WorkflowWorkspace!
+  saveOpportunityEstimation(input: WorkflowEstimateSaveInput!): WorkflowWorkspace!
+  saveOpportunityScope(input: WorkflowScopeSaveInput!): WorkflowWorkspace!
+  assignOpportunityResponse(input: WorkflowAssignmentInput!): WorkflowWorkspace!
+  saveOpportunityAnswer(input: WorkflowAnswerInput!): WorkflowWorkspace!
+  reviewOpportunityAnswer(input: WorkflowAnswerReviewInput!): WorkflowWorkspace!
+  decideOpportunityPackage(input: WorkflowDecisionInput!): WorkflowWorkspace!
+}

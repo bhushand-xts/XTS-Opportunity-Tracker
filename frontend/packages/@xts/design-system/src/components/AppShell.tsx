@@ -2,6 +2,7 @@ import { useQuery } from "@apollo/client";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
+  Briefcase,
   Building2,
   ChevronDown,
   ChevronLeft,
@@ -63,6 +64,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth, type AppPermission } from "@/lib/auth";
 import { GET_NAV_MENUS } from "@/lib/nav.queries";
+import { GET_OPPORTUNITY_MENUS, hasOpportunityPermission, resolveOpportunityMenus, type OpportunityMenuRecord } from "@/lib/opportunityMenu";
 import { usePageTitle } from "@/lib/pageTitle";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -158,6 +160,7 @@ interface NavMenuNode {
  * static sidebar's icons exactly. */
 const DYNAMIC_NAV_ICONS: Record<string, LucideIcon> = {
   LayoutDashboard,
+  Briefcase,
   Settings,
   ShieldCheck: Shield,
   Shield,
@@ -479,6 +482,54 @@ function AdminNavGroup({
   );
 }
 
+// All real active Opportunity menu records can grant access to this MFE.
+// Keep one navigation surface and use the first accessible record's label/icon.
+function OpportunityMenuLink({
+  pathname,
+  hasMenuAccess,
+}: {
+  pathname: string;
+  hasMenuAccess: (menuKey: string) => boolean;
+}) {
+  const { hasPermission } = useAuth();
+  const { data, error, loading, refetch } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, {
+    fetchPolicy: "cache-and-network",
+  });
+  const menus = resolveOpportunityMenus(data?.menus ?? []);
+  const menu = menus.find(record => hasMenuAccess(record.menuKey));
+  if (error && !menu) return (
+    <SidebarMenuItem>
+      <SidebarMenuButton onClick={() => void refetch().catch(() => undefined)} disabled={loading} tooltip="Retry loading Opportunities menu">
+        <Briefcase /><span>{loading ? "Loading Opportunities…" : "Opportunities unavailable · Retry"}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+  if (!menu) return null;
+  const granted = (permission: string) => hasOpportunityPermission(menus, hasPermission, permission);
+  const Icon = menu.icon ? resolveDynamicNavIcon(menu.icon) : Briefcase;
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild
+        isActive={pathname === "/opportunity" || pathname.startsWith("/opportunity/")}
+        tooltip={menu.menuName}
+        className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
+      >
+        <Link to="/opportunity">
+          <Icon />
+          <span>{menu.menuName}</span>
+        </Link>
+      </SidebarMenuButton>
+      <SidebarMenuSub>
+        <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity"}><Link to="/opportunity">Pipeline</Link></SidebarMenuSubButton></SidebarMenuSubItem>
+        {granted("view") && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/work"}><Link to="/opportunity/work">My Work</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+        {(granted("approve") || granted("reject")) && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/approvals"}><Link to="/opportunity/approvals">My Approvals</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+      </SidebarMenuSub>
+    </SidebarMenuItem>
+  );
+}
+
 function AppSidebar({
   can,
   hasMenuAccess,
@@ -541,6 +592,8 @@ function AppSidebar({
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
+
+          <OpportunityMenuLink pathname={pathname} hasMenuAccess={hasMenuAccess} />
 
           {can("admin") && (
             <Collapsible open={adminOpen} onOpenChange={setAdminOpen} className="group/admin">

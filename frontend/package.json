@@ -23,7 +23,8 @@
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "dev:opportunity": "npm run dev --workspace=packages/@xts/mfe-opportunity"
   },
   "devDependencies": {
     "@module-federation/enhanced": "^2.9.0",
@@ -62,5 +63,8 @@
   },
   "dependencies": {
     "react-router-dom": "7.18.3"
+  },
+  "overrides": {
+    "adm-zip": "^0.6.1"
   }
 }

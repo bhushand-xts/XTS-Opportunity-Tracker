@@ -16,5 +16,10 @@
     "install:all": "npm install",
     "dev": "concurrently -n gateway,user,opportunity,admin \"npm run dev --prefix gateway\" \"npm run dev --prefix services/user\" \"npm run dev --prefix services/opportunity\" \"npm run dev --prefix services/admin\"",
     "start:local": "concurrently -n gateway,user,opportunity,admin \"npm run build --prefix gateway && npm run start --prefix gateway\" \"npm run build --prefix services/user && npm run start --prefix services/user\" \"npm run build --prefix services/opportunity && npm run start --prefix services/opportunity\" \"npm run build --prefix services/admin && npm run start --prefix services/admin\""
+  },
+  "allowScripts": {
+    "@apollo/protobufjs@1.2.8": true,
+    "esbuild@0.28.2": true,
+    "protobufjs@7.6.6": true
   }
 }

@@ -31,17 +31,17 @@ CREATE TABLE tbl_opportunity (
   file_name VARCHAR(100),
   file_path VARCHAR(100),
   uploaded_by INTEGER,        -- was FK -> mst_user(user_id) in user's DB
-  uploaded_dt DATE,
+  uploaded_dt TIMESTAMP(0),
   doc_submission_format VARCHAR(100),
   evaluation_basis VARCHAR(100),
   opportunity_description TEXT,
   lead_received_date TIMESTAMP,
   expected_start_date TIMESTAMP,
   expected_close_date DATE,
-  proposal_due_date TIMESTAMP,
-  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  proposal_due_date DATE,
+  created_dt TIMESTAMP(0) DEFAULT date_trunc('second', CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
   created_by INTEGER,         -- was FK -> mst_user(user_id) in user's DB
-  updated_dt TIMESTAMP,
+  updated_dt TIMESTAMP(0),
   updated_by INTEGER,         -- was FK -> mst_user(user_id) in user's DB
   is_active BOOLEAN DEFAULT TRUE
 );
@@ -72,17 +72,17 @@ CREATE TABLE tbl_opportunity_tracker (
   file_name VARCHAR(100),
   file_path VARCHAR(100),
   uploaded_by INTEGER,        -- was FK -> mst_user(user_id) in user's DB
-  uploaded_dt DATE,
+  uploaded_dt TIMESTAMP(0),
   doc_submission_format VARCHAR(100),
   evaluation_basis VARCHAR(100),
   opportunity_description TEXT,
   lead_received_date TIMESTAMP,
   expected_start_date TIMESTAMP,
   expected_close_date DATE,
-  proposal_due_date TIMESTAMP,
-  created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  proposal_due_date DATE,
+  created_dt TIMESTAMP(0) DEFAULT date_trunc('second', CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
   created_by INTEGER,         -- was FK -> mst_user(user_id) in user's DB
-  updated_dt TIMESTAMP,
+  updated_dt TIMESTAMP(0),
   updated_by INTEGER,         -- was FK -> mst_user(user_id) in user's DB
   is_current BOOLEAN DEFAULT TRUE
 );

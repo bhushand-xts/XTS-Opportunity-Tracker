@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
 import express from 'express';
-import { parse } from 'graphql';
+import { parse, concatAST } from 'graphql';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import { buildSubgraphSchema } from '@apollo/subgraph';
@@ -65,7 +65,9 @@ const resolvers = parts.reduce((acc: any, p: any) => {
   return acc;
 }, { Query: {}, Mutation: {} });
 
-const schema = buildSubgraphSchema({ typeDefs: typeDefs.map((t: string) => parse(t)), resolvers });
+const schema = buildSubgraphSchema([
+  { typeDefs: concatAST(typeDefs.map((t: string) => parse(t))), resolvers },
+]);
 
 async function start() {
   const app = express();

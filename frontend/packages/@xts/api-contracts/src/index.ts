@@ -14,3 +14,4 @@ export * from "./subStage";
 export * from "./user";
 export * from "./currency";
 export * from "./rateMaster";
+export * from "./opportunity";

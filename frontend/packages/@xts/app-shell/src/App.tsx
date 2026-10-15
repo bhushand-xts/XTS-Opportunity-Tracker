@@ -2,11 +2,12 @@ import React, { Suspense } from "react";
 import { ApolloProvider } from "@apollo/client";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { getApolloClient } from "@xts/api-client";
-import { AppShell, AuthGate, DashboardContent, Spinner } from "@xts/design-system";
+import { AppShell, AuthGate, DashboardContent, OpportunityRouteAlias, Spinner } from "@xts/design-system";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 // Remote MFEs are loaded on demand via Module Federation (see webpack.config.js).
 const AdminMFE = React.lazy(() => import("admin/App"));
+const OpportunityMFE = React.lazy(() => import("opportunity/App"));
 
 function LoadingFallback({ label }: { label: string }) {
   return (
@@ -28,6 +29,8 @@ export function App() {
                 <Routes>
                   <Route path="/dashboard" element={<DashboardContent />} />
                   <Route path="/admin/*" element={<AdminMFE />} />
+                  <Route path="/opportunity/*" element={<OpportunityMFE />} />
+                  <Route path="/opportunities/*" element={<OpportunityRouteAlias />} />
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </Suspense>
