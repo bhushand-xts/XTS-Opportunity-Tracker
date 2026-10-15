@@ -141,6 +141,7 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
     readiness: { ready: true, issues: [] }, salesRecommendation: null,
   };
 }
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function saveInput(command: SaveCommand) {
   const form = command.form;
   return {
@@ -169,6 +170,9 @@ function saveInput(command: SaveCommand) {
     submissionMethod: form.solicitation.submissionMethod,
     fileName: form.rfp.source?.name ?? null,
     documentType: form.rfp.source?.name ? 'SOURCE' : null,
+    // Only an uploaded document has a UUID; a reloaded record's source id is its file
+    // name, so leave the field out (no change) rather than detaching the existing link.
+    sourceDocumentId: !form.rfp.source ? null : UUID.test(form.rfp.source.id) ? form.rfp.source.id : undefined,
     docSubmissionFormat: form.rfp.outputFormat,
     evaluationBasis: form.rfp.evaluation || null,
   };

@@ -28,3 +28,10 @@ Thumbs.db
 # Editor/IDE
 .vscode/
 .idea/
+
+# Local npm cache
+.npm-cache/
+
+# Uploaded RFP documents and extraction runtime data
+backend/storage/opportunity-documents/
+backend/services/opportunity/tests/.runtime/

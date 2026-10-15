@@ -208,6 +208,9 @@ export const opportunityTypeDefs = `#graphql
     uploadedDt: String
     docSubmissionFormat: String
     evaluationBasis: String
+    # Links the question-extraction upload (question_documents.id) to this opportunity.
+    # Independent of fileName/filePath, which are display metadata only.
+    sourceDocumentId: String
 
     opportunityDescription: String
 
@@ -254,6 +257,9 @@ export const opportunityTypeDefs = `#graphql
     uploadedDt: String
     docSubmissionFormat: String
     evaluationBasis: String
+    # Links the question-extraction upload (question_documents.id) to this opportunity.
+    # Independent of fileName/filePath, which are display metadata only.
+    sourceDocumentId: String
 
     opportunityDescription: String
 

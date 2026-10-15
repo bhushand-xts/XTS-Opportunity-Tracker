@@ -11,7 +11,7 @@ const GRAPHQL_API_URL = process.env.GRAPHQL_API_URL || "http://localhost:4000/gr
 // on this package — importing it back would be a circular dependency.
 const AUTH_STORAGE_KEY = "authState";
 
-function readAuthToken(): string | undefined {
+export function readAuthToken(): string | undefined {
   if (typeof window === "undefined") return undefined;
   try {
     const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);

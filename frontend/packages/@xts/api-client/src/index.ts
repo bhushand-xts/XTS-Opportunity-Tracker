@@ -1,1 +1,1 @@
-export { createApolloClient, getApolloClient } from "./apolloClient";
+export { createApolloClient, getApolloClient, readAuthToken } from "./apolloClient";

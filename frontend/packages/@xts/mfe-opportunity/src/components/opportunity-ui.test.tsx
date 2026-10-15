@@ -73,14 +73,9 @@ describe('RFP preparation', () => {
     const input = await screen.findByLabelText(type === 'GENERIC' ? 'Source document / brief' : 'Source questionnaire');
     expect(input).toBeEnabled();
     fireEvent.change(input, { target: { files: [new File(['document bytes'], 'brief.pdf', { type: 'application/pdf' })] } });
-    if (type === 'QUESTIONNAIRE') {
-      fireEvent.click(screen.getByRole('button', { name: 'Extract questions' }));
-      expect(notification).toHaveBeenCalledWith('AI question extraction is currently under development.');
-    } else {
-      expect(screen.queryByRole('button', { name: 'Extract questions' })).not.toBeInTheDocument();
-      expect(screen.queryByText(/AI extraction/)).not.toBeInTheDocument();
-      expect(notification).not.toHaveBeenCalled();
-    }
+    expect(screen.queryByRole('button', { name: 'Extract questions' })).not.toBeInTheDocument();
+    if (type === 'GENERIC') expect(screen.queryByText(/AI extraction/)).not.toBeInTheDocument();
+    expect(notification).not.toHaveBeenCalled();
     expect(screen.getByText('brief.pdf (selected)')).toBeInTheDocument();
     expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the delivery approach.');
     expect(service.save).not.toHaveBeenCalled(); expect(service.upload).not.toHaveBeenCalled(); expect(service.extract).not.toHaveBeenCalled(); expect(service.extractionStatus).not.toHaveBeenCalled();
@@ -120,7 +115,6 @@ describe('RFP preparation', () => {
   it('keeps document and question controls read-only when editing is not permitted', async () => {
     mount(testService(fixtureOpportunity({ allowedActions: [] })), '/opportunity/401/edit');
     expect(await screen.findByLabelText('Source questionnaire')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Extract questions' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '+ Add question' })).toBeDisabled();
     expect(screen.getByLabelText('Question 1 text')).toBeDisabled();
   });

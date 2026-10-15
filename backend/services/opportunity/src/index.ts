@@ -10,6 +10,7 @@ import env from './config/env';
 import { buildContext } from './graphql/context';
 import opportunityTypes from './graphql/typeDefs/opportunity.typeDefs';
 import opportunityResolvers from './graphql/resolvers/opportunity.resolver';
+import { extractionRouter } from './extraction/routes';
 
 // Opportunity & Pipeline
 
@@ -44,6 +45,7 @@ async function start() {
   app.use('/graphql', expressMiddleware(server, { context: async ({ req }) => buildContext({ req }) }));
 
   app.get('/health', (req, res) => res.json({ status: 'ok', service: 'opportunity' }));
+  app.use('/api/question-extractions', extractionRouter);
 
   app.listen(env.port, () =>
     console.log('opportunity service ready on http://localhost:' + env.port + '/graphql')

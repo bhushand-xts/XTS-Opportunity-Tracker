@@ -1,6 +1,9 @@
 import * as repository from "../repositories/opportunity.repository";
 import * as validator from "../validators/opportunity.validator";
 import * as userService from "../integrations/userService";
+import { transaction } from "../config/db";
+import { attachSource } from "../extraction/repository";
+import { uuidPattern } from "../extraction/types";
 
 import {
   notFound,
@@ -11,6 +14,19 @@ import {
 import type {
   OpportunityInput
 } from "../repositories/opportunity.repository";
+
+// Best-effort: a saved opportunity's question text already stands on its own
+// (it was copied into proposalQuestionSelections). Linking the uploaded source
+// document is a bonus (download/re-extraction later), never load-bearing for save.
+async function attachSourceDocument(opportunityId: number, userId: number, sourceDocumentId: string | null) {
+  // Older records carry a file name rather than an uploaded document's id; there's nothing to link.
+  if (sourceDocumentId !== null && !uuidPattern.test(sourceDocumentId)) return;
+  try {
+    await transaction(client => attachSource(client, opportunityId, userId, sourceDocumentId));
+  } catch (error) {
+    console.error("Could not link the source document to the opportunity", error);
+  }
+}
 
 const SALES_HEAD_ROLE_ID = 20;
 const ESTIMATION_TEAM_ROLE_ID = 22;
@@ -79,12 +95,15 @@ async function create(
     throw conflict("Only a signed-in Sales Representative or Sales Head can create this opportunity.");
   }
   await validateActiveOwner(input.ownerId);
-  return repository.create({
+  const created = await repository.create({
     ...input,
     stageId: 1,
     subStageId: 1,
     assignedTo: null,
   }, userId);
+  const sourceDocumentId = (input as OpportunityInput & { sourceDocumentId?: string | null }).sourceDocumentId;
+  if (sourceDocumentId) await attachSourceDocument(created.opportunityId, userId, sourceDocumentId);
+  return created;
 }
 
 async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunityInput, ctx: any) {
@@ -211,6 +230,14 @@ function assertCanEdit(opportunity: repository.Opportunity, userId: number, role
     (opportunity.stageId === 2 && opportunity.subStageId === 5)
   );
   if (!salesRepCanEdit && !salesHeadCanEdit) throw conflict("You cannot edit this opportunity at its current workflow step.");
+}
+
+// Used by question extraction to confirm the caller may attach/upload a source
+// document to this opportunity. Same edit policy as every other opportunity edit.
+async function assertExtractionEdit(opportunityId: number, userId: number, roleId: number | null | undefined) {
+  const current = await repository.findById(opportunityId);
+  if (!current) throw notFound("Opportunity not found.");
+  assertCanEdit(current, userId, roleId);
 }
 
 async function resubmitBySalesRepresentative(
@@ -351,11 +378,14 @@ async function update(
     Object.entries(input).filter(([, value]) => value !== undefined)
   ) as OpportunityInput;
 
-  return repository.update(
+  const updated = await repository.update(
     opportunityId,
     { ...current, ...patch },
     userId
   );
+  const sourceDocumentId = (input as OpportunityInput & { sourceDocumentId?: string | null }).sourceDocumentId;
+  if (sourceDocumentId !== undefined) await attachSourceDocument(opportunityId, userId, sourceDocumentId);
+  return updated;
 }
 
 async function validateActiveOwner(ownerId: number | null | undefined) {
@@ -433,5 +463,6 @@ export {
   createRfpIntakeOpportunity,
   updateRfpIntakeOpportunity,
   transitionWorkflow,
-  update
+  update,
+  assertExtractionEdit
 };
