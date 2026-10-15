@@ -1,8 +1,6 @@
-# Local dev only — containerizes gateway + user + admin, the same set the
-# gateway composes by default today (ENABLED_SUBGRAPHS defaults to
-# "user,admin" in gateway/src/config/services.ts). `opportunity` isn't wired
-# in here since it isn't part of that default either; add a service block
-# for it the same way once it's actually needed.
+# Local dev only — containerizes gateway + user + admin + opportunity,
+# matching the gateway's default ENABLED_SUBGRAPHS ("user,opportunity,admin"
+# in gateway/src/config/services.ts).
 #
 # Still uses the existing remote Postgres (each service's own .env,
 # untouched) — no database container. Every container mounts the whole
@@ -29,6 +27,7 @@ services:
       # other containers by their Compose service name.
       USER_URL: http://user:4001/graphql
       ADMIN_URL: http://admin:4010/graphql
+      OPPORTUNITY_URL: http://opportunity:4003/graphql
       # Overridable via a backend/.env file (docker compose auto-loads one
       # from this same directory) for deployed environments where the
       # frontend isn't on localhost — falls back to local-dev's value when
@@ -46,6 +45,8 @@ services:
       user:
         condition: service_healthy
       admin:
+        condition: service_healthy
+      opportunity:
         condition: service_healthy
     # A one-off timing issue can still happen; restart rather than staying
     # crashed (the container itself exits on a failed introspection).
@@ -93,6 +94,28 @@ services:
       - /app/node_modules
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:4010/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  opportunity:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        SERVICE_PATH: services/opportunity
+    ports:
+      - "4003:4003"
+    env_file:
+      - services/opportunity/.env
+    environment:
+      USER_SERVICE_URL: http://user:4001/graphql
+    volumes:
+      - .:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4003/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 3s
       timeout: 3s
       retries: 10
