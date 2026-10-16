@@ -1,7 +1,8 @@
 import { readAuthToken } from '@xts/api-client';
 import type { PreparedQuestion, QuestionExtractionAccepted, QuestionExtractionStatus, SourceDocument } from '@xts/api-contracts';
 
-export const extractionEnabled = process.env.QUESTION_EXTRACTION_ENABLED === 'true' && process.env.OPPORTUNITY_USE_LOCAL_WORKFLOW !== 'true';
+// On unless explicitly disabled, so a checkout without frontend/.env still extracts.
+export const extractionEnabled = process.env.QUESTION_EXTRACTION_ENABLED !== 'false' && process.env.OPPORTUNITY_USE_LOCAL_WORKFLOW !== 'true';
 const gateway = process.env.GRAPHQL_API_URL || 'http://localhost:4000/graphql';
 // Preserve existing deployments that use a relative /graphql gateway URL.
 const base = `${gateway.replace(/\/graphql\/?$/, '').replace(/\/$/, '')}/api/question-extractions`;

@@ -22,8 +22,9 @@ const env: Env = {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
-  extractionEnabled: process.env.QUESTION_EXTRACTION_ENABLED === 'true',
-  extractionSecret: process.env.EXTRACTION_SERVICE_SECRET || '',
+  // On unless explicitly disabled; the secret falls back to the opportunity service's local default outside production.
+  extractionEnabled: process.env.QUESTION_EXTRACTION_ENABLED !== 'false',
+  extractionSecret: process.env.EXTRACTION_SERVICE_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'xts-local-development-extraction-secret-v1'),
   // The extraction REST routes live on the opportunity service's HTTP server,
   // alongside its GraphQL endpoint.
   extractionUrl: (process.env.OPPORTUNITY_URL || 'http://localhost:4003/graphql').replace(/\/graphql\/?$/, ''),

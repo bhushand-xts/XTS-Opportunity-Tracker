@@ -1,3 +1,4 @@
+import path from 'node:path';
 // Reads env vars ONCE. Never call process.env anywhere else.
 
 function required(name: string): string {
@@ -51,7 +52,14 @@ export interface Env {
   adminServiceUrl: string;
 }
 
-const aiExtraction = process.env.GROQ_AI_EXTRACTION === 'true';
+// Extraction works on a fresh checkout without extra .env entries: values set in .env always win;
+// missing ones fall back to the working local setup. Production must set the secret explicitly.
+const flag = (name: string, fallback: boolean) => process.env[name] === undefined || process.env[name] === '' ? fallback : process.env[name] === 'true';
+const groqKey = process.env.GROQ_API_KEY || '';
+const zdrConfirmed = flag('GROQ_ZDR_CONFIRMED', false);
+// AI is on by default once a key and the zero-data-retention confirmation are present; otherwise local rules are used.
+const aiExtraction = flag('GROQ_AI_EXTRACTION', !!groqKey && zdrConfirmed);
+const LOCAL_EXTRACTION_SECRET = 'xts-local-development-extraction-secret-v1';
 
 const env: Env = {
   port: Number(process.env.PORT || 4003),
@@ -65,14 +73,15 @@ const env: Env = {
   },
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://localhost:4001/graphql',
   extraction: {
-    enabled: process.env.QUESTION_EXTRACTION_ENABLED === 'true',
-    storageRoot: process.env.DOCUMENT_STORAGE_ROOT || '',
-    serviceSecret: process.env.EXTRACTION_SERVICE_SECRET || '',
+    enabled: flag('QUESTION_EXTRACTION_ENABLED', true),
+    // npm scripts run from services/opportunity, so this is backend/storage/opportunity-documents.
+    storageRoot: process.env.DOCUMENT_STORAGE_ROOT || path.resolve(process.cwd(), '../../storage/opportunity-documents'),
+    serviceSecret: process.env.EXTRACTION_SERVICE_SECRET || (process.env.NODE_ENV === 'production' ? '' : LOCAL_EXTRACTION_SECRET),
     aiExtraction,
-    apiKey: process.env.GROQ_API_KEY || '',
-    model: process.env.GROQ_MODEL || (aiExtraction ? 'openai/gpt-oss-20b' : 'local-rules-v1'),
-    zdrConfirmed: process.env.GROQ_ZDR_CONFIRMED === 'true',
-    quotaScope: process.env.GROQ_QUOTA_SCOPE || 'question-extraction-groq',
+    apiKey: groqKey,
+    model: process.env.GROQ_MODEL || (aiExtraction ? 'openai/gpt-oss-120b' : 'local-rules-v1'),
+    zdrConfirmed,
+    quotaScope: process.env.GROQ_QUOTA_SCOPE || 'question-extraction-groq-120b',
     tokensPerMinute: Number(process.env.GROQ_TOKENS_PER_MINUTE || 8000),
     tokensPerDay: Number(process.env.GROQ_TOKENS_PER_DAY || 200000),
     requestsPerMinute: Number(process.env.GROQ_REQUESTS_PER_MINUTE || 30),

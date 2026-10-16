@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readdir, stat, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import env from '../config/env';
 import { pool, query } from '../config/db';
@@ -14,7 +15,16 @@ import { prepareStorage, storagePath, discard, loadInstructions } from './storag
 import { ExtractionError, uuidPattern } from './types';
 
 // Jobs created while AI extraction was off carry the local model tag and stay local.
-const usesAi = (job: repo.Job) => env.extraction.aiExtraction && !!env.extraction.apiKey && env.extraction.zdrConfirmed && job.model !== 'local-rules-v1';
+const aiReady = env.extraction.aiExtraction && !!env.extraction.apiKey && env.extraction.zdrConfirmed;
+const usesAi = (job: repo.Job) => aiReady && job.model !== 'local-rules-v1';
+// Only take jobs this machine can finish: the uploaded file is on this machine's disk, and an AI job
+// needs AI configured here. Otherwise another machine's worker would run it with basic rules or fail it.
+// A job whose document record is gone is still claimed, so it fails as DOCUMENT_NOT_FOUND as before.
+function canProcess(job: { model: string; storage_key: string | null }) {
+  if (job.storage_key === null) return true;
+  if (job.model !== 'local-rules-v1' && !aiReady) return false;
+  try { return existsSync(storagePath(job.storage_key)); } catch { return false; }
+}
 
 let stopping = false;
 process.on('SIGTERM', () => { stopping = true; });
@@ -89,7 +99,7 @@ async function main() {
   while (!stopping) {
     try {
       if (Date.now() > nextCleanup) { await cleanup(); nextCleanup = Date.now() + 3600000; }
-      const job = await repo.claim();
+      const job = await repo.claim(canProcess);
       if (job) await processJob(job); else await delay(2000);
     } catch { console.error('Extraction worker iteration failed; retrying without logging document data.'); await delay(5000); }
   }

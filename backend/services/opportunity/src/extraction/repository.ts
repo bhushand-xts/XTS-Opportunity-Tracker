@@ -89,12 +89,22 @@ export async function results(id: string) {
   });
   return { completed: rows.filter(row => row.candidates !== null).length, total: rows.length, questions };
 }
-export async function claim() {
-  return (await query<Job>(`UPDATE question_extraction_jobs SET state='PROCESSING', lease_token=$1,
-    lease_until=now()+interval '5 minutes', attempts=attempts+1,updated_at=now()
-    WHERE id=(SELECT id FROM question_extraction_jobs WHERE
-      (state='QUEUED' AND next_attempt_at<=now()) OR (state='PROCESSING' AND lease_until<now())
-      ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`, [randomUUID()]))[0];
+// Workers on different machines can share this database, but each machine keeps its own uploaded
+// files and AI settings. A worker only claims a job it can finish (see canProcess in worker.ts);
+// the rest stay queued for the machine that holds the file.
+export async function claim(canProcess: (job: { model: string; storage_key: string | null }) => boolean) {
+  const ready = `((state='QUEUED' AND next_attempt_at<=now()) OR (state='PROCESSING' AND lease_until<now()))`;
+  const candidates = await query<{ id: string; model: string; storage_key: string | null }>(`SELECT j.id,j.model,d.storage_key
+    FROM question_extraction_jobs j LEFT JOIN question_documents d ON d.id=j.document_id
+    WHERE ${ready.replace(/state|next_attempt_at|lease_until/g, column => `j.${column}`)} ORDER BY j.created_at LIMIT 50`);
+  for (const candidate of candidates) {
+    if (!canProcess(candidate)) continue;
+    const job = (await query<Job>(`UPDATE question_extraction_jobs SET state='PROCESSING', lease_token=$1,
+      lease_until=now()+interval '5 minutes', attempts=attempts+1,updated_at=now()
+      WHERE id=(SELECT id FROM question_extraction_jobs WHERE id=$2 AND ${ready} FOR UPDATE SKIP LOCKED) RETURNING *`, [randomUUID(), candidate.id]))[0];
+    if (job) return job;
+  }
+  return undefined;
 }
 export async function heartbeat(j: Job) {
   return (await query(`UPDATE question_extraction_jobs SET lease_until=now()+interval '5 minutes'
