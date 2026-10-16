@@ -167,6 +167,10 @@ extractionRouter.get('/:jobId', wrap(async (req, res) => {
 }));
 extractionRouter.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) return;
+  // Opportunity access errors carry their own codes; report them instead of a generic failure.
+  const access = (error as { extensions?: { code?: unknown } } | null)?.extensions?.code;
+  if (access === 'NOT_FOUND') { res.status(404).json({ code: 'OPPORTUNITY_NOT_FOUND' }); return; }
+  if (access === 'FORBIDDEN' || access === 'CONFLICT') { res.status(403).json({ code: 'OPPORTUNITY_EDIT_NOT_ALLOWED' }); return; }
   const known = error instanceof ExtractionError;
   res.status(error instanceof multer.MulterError ? 400 : known ? error.status : 503)
     .json({ code: error instanceof multer.MulterError ? 'INVALID_OR_OVERSIZED_UPLOAD' : known ? error.code : 'EXTRACTION_UNAVAILABLE' });

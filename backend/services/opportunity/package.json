@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "concurrently -n opportunity,extraction-worker \"tsx watch src/index.ts\" \"tsx watch src/extraction/worker.ts\"",
     "worker": "tsx watch src/extraction/worker.ts",
     "build": "tsc",
     "start": "node dist/services/opportunity/src/index.js",
@@ -24,6 +24,7 @@
     "js-tiktoken": "^1.0.21",
     "mammoth": "^1.13.0",
     "multer": "^2.4.0",
+    "pdfjs-dist": "^6.4.299",
     "pg": "8.13.1",
     "yauzl": "^3.4.0"
   },

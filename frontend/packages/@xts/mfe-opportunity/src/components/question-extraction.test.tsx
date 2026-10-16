@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { MockedProvider } from '@apollo/client/testing';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OpportunityDetail, QuestionExtractionStatus } from '@xts/api-contracts';
 import { newDraft } from '../lib/workflow';
@@ -130,7 +130,9 @@ describe('prompt-driven question extraction', () => {
     startExtraction();
     await waitFor(() => expect(api.status).toHaveBeenCalled());
     expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), 'Extract: security questions only.');
-    expect(progress()).toHaveTextContent('%');
+    // No percentage before progress; a spinner shows instead.
+    expect(progress()).toHaveTextContent('Reading the document...');
+    expect(progress()).not.toHaveTextContent('%');
     expect(extractButton()).toBeDisabled();
     await act(async () => pending.resolve(success));
     expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Describe security controls.');
@@ -193,19 +195,26 @@ describe('prompt-driven question extraction', () => {
     fireEvent.click(screen.getByText('Toggle saving'));
     expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Describe security controls.');
   });
-  it('does not restore a removed candidate when later progress repeats it', async () => {
+  it('locks the questions while extraction runs and unlocks them when it finishes', async () => {
     const pending = deferred<QuestionExtractionStatus>();
     api.retry.mockResolvedValue(accepted);
     api.status.mockResolvedValueOnce({ ...success, state: 'PROCESSING', stage: 'EXTRACTING', completed: 1, total: 2 }).mockReturnValueOnce(pending.promise);
     await mount(); await upload();
     startExtraction();
     expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Describe security controls.');
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Remove question 2' }));
-    await act(async () => pending.resolve({ ...success, questions: [...success.questions,
-      { id: 'extracted-2', text: 'Explain availability.', sourceReference: 'Page 4 (b9)', validated: false }] }));
-    expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Explain availability.');
-    expect(screen.queryByDisplayValue('Describe security controls.')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Question 2 text')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove question 2' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '+ Add question' })).toBeDisabled();
+    await act(async () => pending.resolve(success));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove question 2' })).toBeEnabled());
+  });
+  it('removes empty question boxes when a new file is uploaded, keeping written manual questions', async () => {
+    await mount();
+    fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
+    expect(screen.getByLabelText('Question 2 text')).toHaveValue('');
+    await upload();
+    expect(screen.getByLabelText('Question 1 text')).toHaveValue('Existing manual question');
+    expect(screen.queryByLabelText('Question 2 text')).not.toBeInTheDocument();
   });
   it('rejects an unsupported document without uploading it', async () => {
     await mount();
@@ -232,14 +241,14 @@ describe('prompt-driven question extraction', () => {
     expect(api.cancel).toHaveBeenCalledWith(document.id, 'job-1');
     expect(api.cancel).toHaveBeenCalledTimes(1);
   });
-  it('cancels the running extraction when the RFP type is switched', async () => {
+  it('keeps the RFP type locked while extraction runs', async () => {
     api.retry.mockResolvedValue(accepted); api.status.mockReturnValue(new Promise(() => {}));
     await mount(); await upload();
     startExtraction();
     await waitFor(() => expect(api.status).toHaveBeenCalled());
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    fireEvent.click(screen.getByRole('button', { name: /Generic RFP/ }));
-    expect(api.cancel).toHaveBeenCalledWith(document.id, 'job-1');
+    // The RFP type can't be switched while extraction runs, so the job keeps going.
+    expect(screen.getByRole('button', { name: /Generic RFP/ })).toBeDisabled();
+    expect(api.cancel).not.toHaveBeenCalled();
   });
   it('cancels the running extraction when the form is left or the tab is closed', async () => {
     api.retry.mockResolvedValue(accepted); api.status.mockReturnValue(new Promise(() => {}));
@@ -270,16 +279,16 @@ describe('prompt-driven question extraction', () => {
       api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(categorized);
       await mount(); await upload();
       startExtraction();
-      await screen.findByLabelText('Question 4 text');
+      await screen.findByRole('tab', { name: /^Other/ });
     }
     it('shows underline tabs for categories present, with counts, and the list in a scrollable panel', async () => {
       await extractCategorized();
       const tabs = screen.getAllByRole('tab').map(element => element.textContent);
-      expect(tabs).toEqual(['All (4)', 'Technical (2)', 'Pricing & Commercial (1)', 'Other (1)']);
-      expect(tab(/^All/)).toHaveAttribute('data-state', 'active');
+      expect(tabs).toEqual(['Technical (2)', 'Pricing & Commercial (1)', 'Other (1)']);
+      expect(tab(/^Technical/)).toHaveAttribute('data-state', 'active');
       expect(screen.getByRole('tablist', { name: 'Question categories' })).toHaveClass('opp-question-tabs');
       expect(screen.getByRole('region', { name: 'Extracted questions' })).toHaveClass('opp-question-panel');
-      expect(screen.getByLabelText('Question 1 text')).toHaveValue('Existing manual question');
+      expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the technology platform.');
     });
     it('filters a tab to its questions in document order', async () => {
       await extractCategorized();
@@ -289,22 +298,24 @@ describe('prompt-driven question extraction', () => {
       expect(screen.getByLabelText('Question 2 text')).toHaveValue('Describe your hosting environment.');
       expect(screen.queryByLabelText('Question 3 text')).not.toBeInTheDocument();
     });
-    it('adds a manual question into the open tab without moving the Add button', async () => {
+    it('adds a manual question to the open tab with a section picker inside its box', async () => {
       await extractCategorized();
       fireEvent.mouseDown(tab(/^Pricing/));
       await waitFor(() => expect(tab(/^Pricing/)).toHaveAttribute('data-state', 'active'));
+      expect(screen.queryByRole('combobox', { name: 'Question 1 section' })).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
       expect(tab(/^Pricing/)).toHaveTextContent('Pricing & Commercial (2)');
       expect(screen.getByLabelText('Question 2 text')).toHaveValue('');
+      expect(screen.getByRole('combobox', { name: 'Question 2 section' })).toHaveTextContent('Select Question Category');
       expect(screen.getByRole('button', { name: '+ Add question' }).closest('[role="region"]')).toBeNull();
     });
-    it('falls back to All when the open tab becomes empty', async () => {
+    it('falls back to the first section when the open tab becomes empty', async () => {
       await extractCategorized();
       fireEvent.mouseDown(tab(/^Pricing/));
       await waitFor(() => expect(tab(/^Pricing/)).toHaveAttribute('data-state', 'active'));
       vi.spyOn(window, 'confirm').mockReturnValue(true);
       fireEvent.click(screen.getByRole('button', { name: 'Remove question 1' }));
-      await waitFor(() => expect(tab(/^All/)).toHaveAttribute('data-state', 'active'));
+      await waitFor(() => expect(tab(/^Technical/)).toHaveAttribute('data-state', 'active'));
       expect(screen.queryByRole('tab', { name: /^Pricing/ })).not.toBeInTheDocument();
     });
   });
@@ -359,11 +370,14 @@ describe('reopening a saved opportunity', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Extract questions' })).toBeEnabled());
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Extract questions' }));
-    await waitFor(() => expect(screen.getByDisplayValue('Describe your hosting and security approach.')).toBeInTheDocument());
+    // The manual question is kept in its own section tab, which opens first.
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Technical (1)' })).toBeInTheDocument());
+    expect(screen.getByDisplayValue('Manual staffing question')).toBeInTheDocument();
     expect(confirm).toHaveBeenCalled();
     expect(api.retry).toHaveBeenCalledWith(restoredSource.document.id, expect.any(String), expect.any(AbortSignal), '');
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Technical (1)' }));
+    await waitFor(() => expect(screen.getByDisplayValue('Describe your hosting and security approach.')).toBeInTheDocument());
     expect(screen.queryByDisplayValue('Describe your hosting environment.')).not.toBeInTheDocument();
-    expect(screen.getByDisplayValue('Manual staffing question')).toBeInTheDocument();
   });
   it('still works when nothing was stored for the opportunity', async () => {
     api.source.mockRejectedValue(new Error('offline'));

@@ -4,6 +4,9 @@ import * as userService from "../integrations/userService";
 import { roleAccess } from '../integrations/adminService';
 import { opportunityAccess, type OpportunityAccess } from '../lib/opportunityAccess';
 import { documentUploadAudit } from '../lib/documentStorage';
+import { transaction } from "../config/db";
+import { attachSource } from "../extraction/repository";
+import { uuidPattern } from "../extraction/types";
 
 import {
   notFound,
@@ -14,6 +17,19 @@ import {
 import type {
   OpportunityInput
 } from "../repositories/opportunity.repository";
+
+// Best-effort: a saved opportunity's question text already stands on its own
+// (it was copied into proposalQuestionSelections). Linking the uploaded source
+// document is a bonus (download/re-extraction later), never load-bearing for save.
+async function attachSourceDocument(opportunityId: number, userId: number, sourceDocumentId: string | null) {
+  // Older records carry a file name rather than an uploaded document's id; there's nothing to link.
+  if (sourceDocumentId !== null && !uuidPattern.test(sourceDocumentId)) return;
+  try {
+    await transaction(client => attachSource(client, opportunityId, userId, sourceDocumentId));
+  } catch (error) {
+    console.error("Could not link the source document to the opportunity", error);
+  }
+}
 
 async function accessFor(ctx: any): Promise<OpportunityAccess> {
   if (ctx?.opportunityAccess) return ctx.opportunityAccess;
@@ -64,13 +80,16 @@ async function create(
   const access = await accessFor(ctx), userId = access.userId;
   if (!access.create) throw conflict('You do not have permission to create opportunities.');
   await validateActiveOwner(input.ownerId);
-  return repository.create({
+  const created = await repository.create({
     ...input,
     ...documentUploadAudit(input.filePath, userId),
     stageId: 1,
     subStageId: 1,
     assignedTo: null,
   }, userId);
+  const sourceDocumentId = (input as OpportunityInput & { sourceDocumentId?: string | null }).sourceDocumentId;
+  if (sourceDocumentId) await attachSourceDocument(created.opportunityId, userId, sourceDocumentId);
+  return created;
 }
 
 async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunityInput, ctx: any) {
@@ -179,6 +198,14 @@ type WorkflowAction = repository.OpportunityWorkflowAction;
 
 function assertCanEdit(opportunity: repository.Opportunity, access: OpportunityAccess) {
   if (!access.canEdit(opportunity)) throw conflict('You cannot edit this opportunity at its current workflow step.');
+}
+
+// Used by question extraction to confirm the caller may attach/upload a source document to
+// this opportunity. Same edit policy as every other opportunity edit.
+async function assertExtractionEdit(opportunityId: number, userId: number, _roleId?: number | null) {
+  const current = await repository.findById(opportunityId);
+  if (!current) throw notFound("Opportunity not found.");
+  assertCanEdit(current, await accessFor({ user: { id: userId } }));
 }
 
 async function resubmitBySalesRepresentative(
@@ -315,11 +342,14 @@ async function update(
     Object.entries(input).filter(([, value]) => value !== undefined)
   ) as OpportunityInput;
 
-  return repository.update(
+  const updated = await repository.update(
     opportunityId,
     { ...current, ...patch, ...documentUploadAudit(patch.filePath === undefined ? current.filePath : patch.filePath, userId, current) },
     userId
   );
+  const sourceDocumentId = (input as OpportunityInput & { sourceDocumentId?: string | null }).sourceDocumentId;
+  if (sourceDocumentId !== undefined) await attachSourceDocument(opportunityId, userId, sourceDocumentId);
+  return updated;
 }
 
 async function validateActiveOwner(ownerId: number | null | undefined) {
@@ -405,5 +435,6 @@ export {
   createRfpIntakeOpportunity,
   updateRfpIntakeOpportunity,
   transitionWorkflow,
-  update
+  update,
+  assertExtractionEdit
 };

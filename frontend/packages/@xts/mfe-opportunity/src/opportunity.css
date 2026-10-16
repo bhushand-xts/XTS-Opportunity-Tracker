@@ -42,6 +42,8 @@
 .opp-file-name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
 .opp-upload-controls button { flex-shrink: 0; }
 .opp-upload-status { grid-column: 2; min-width: 0; overflow-wrap: anywhere; font-size: 11px; color: #64748b; }
+/* Extraction status, instructions and progress span the full row so they don't widen the label column. */
+.opp-upload-extraction { grid-column: 1 / -1; min-width: 0; }
 @media (max-width: 640px) {
   .opp-upload { grid-template-columns: minmax(0, 1fr); }
   .opp-upload-status { grid-column: 1; }
@@ -108,6 +110,11 @@
 .opp-question-tabs > button { margin-bottom: -1px; padding: 6px 10px; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; box-shadow: none; color: hsl(var(--muted-foreground)); }
 .opp-question-tabs > button:hover { color: hsl(var(--foreground)); }
 .opp-question-tabs > button[data-state=active] { background: transparent; background-image: none; box-shadow: none; color: hsl(var(--primary)); border-bottom-color: hsl(var(--primary)); }
+/* Question box with the section picker inside its bottom-right corner (manual questions). */
+.opp-question-input { position: relative; flex: 1; min-width: 0; }
+.opp-question-input textarea { width: 100%; }
+.opp-question-input textarea.opp-question-with-section { padding-bottom: 32px; }
+.opp-question-input .opp-question-section { position: absolute; right: 6px; bottom: 6px; width: auto; height: 24px; gap: 4px; padding: 0 8px; font-size: 11px; background: hsl(var(--muted)); border-color: transparent; }
 .opp-question-panel { max-height: 28rem; overflow-y: auto; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 8px; }
 .opp-progress { margin: 12px 0; }.opp-progress li { display: flex; gap: 8px; padding-bottom: 12px; font-size: 13px; }.opp-progress li > span { width: 26px; height: 26px; display: grid; place-items: center; flex-shrink: 0; border: 1px solid hsl(var(--border)); border-radius: 50%; }.opp-progress small { display: block; color: hsl(var(--muted-foreground)); margin-top: 3px; }.opp-progress .current > span { background: #6352cc; color: white; }.opp-progress .complete > span { background: #e7f6f0; color: #18745f; }
 .opp-assignment { display: grid; grid-template-columns: minmax(220px,.65fr) minmax(0,1.35fr); gap: 12px; align-items: start; }.opp-task { white-space: normal; height: auto; width: 100%; text-align: left; justify-content: start; padding: 9px 10px; }

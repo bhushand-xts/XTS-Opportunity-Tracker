@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Check, FileText, MessageCircle, Trash2 } from 'lucide-react';
-import { Button, Checkbox, Label, Progress, Tabs, TabsList, TabsTrigger, Textarea } from '@xts/design-system';
+import { Button, Checkbox, Label, Progress, Spinner, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Tabs, TabsList, TabsTrigger, Textarea } from '@xts/design-system';
 import type {
   OpportunityDetail,
   OpportunityDraft,
@@ -33,7 +33,6 @@ import { Choice, Field, Notice } from './ui';
 const extractedQuestion = (question: PreparedQuestion) => question.id.startsWith('extracted-');
 // Same fixed list the backend asks the AI to choose from, in tab order.
 const QUESTION_CATEGORIES = ['Company & Qualifications', 'Team', 'Approach & Delivery', 'Technical', 'Security & Compliance', 'Pricing & Commercial', 'References', 'Other'];
-const ALL = 'All';
 const normalizeQuestion = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
 function extractionState(state: QuestionExtractionStatus['state']): NonNullable<RfpDraft['extraction']>['state'] {
   if (state === 'SUCCEEDED') return 'SUCCEEDED';
@@ -45,7 +44,7 @@ function extractionPercent(status: QuestionExtractionStatus | undefined): number
   return Math.min(100, Math.round((status.completed / Math.max(status.total, 1)) * 100));
 }
 
-export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUploadingChange }: { form: OpportunityDraft; setForm: Dispatch<SetStateAction<OpportunityDraft>>; saved?: OpportunityDetail; disabled: boolean; onUploadingChange?: (uploading: boolean) => void }) {
+export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUploadingChange, onExtractingChange }: { form: OpportunityDraft; setForm: Dispatch<SetStateAction<OpportunityDraft>>; saved?: OpportunityDetail; disabled: boolean; onUploadingChange?: (uploading: boolean) => void; onExtractingChange?: (extracting: boolean) => void }) {
   const [error, setError] = useState<string>(), [selectedFile, setSelectedFile] = useState<File>();
   const [job, setJob] = useState<{ id: string; documentId: string }>();
   const [status, setStatus] = useState<QuestionExtractionStatus>();
@@ -61,7 +60,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     return () => { mounted.current = false; onUploadingChange?.(false); };
   }, [onUploadingChange]);
   const [instructions, setInstructions] = useState(''), [instructionsError, setInstructionsError] = useState<string>();
-  const [questionTab, setQuestionTab] = useState(ALL), [showInstructions, setShowInstructions] = useState(false);
+  const [questionTab, setQuestionTab] = useState(''), [showInstructions, setShowInstructions] = useState(false);
   const instructionsRef = useRef<HTMLTextAreaElement>(null);
   const rfpTypeError = useFieldError('RFP type');
   // Always read the latest form/disabled from async extraction callbacks, never a stale closure.
@@ -89,6 +88,10 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     };
   }, []);
   const extracting = Boolean(job) && (!status || status.state === 'QUEUED' || status.state === 'PROCESSING');
+  // The form is locked while extraction runs. Kept apart from `disabled`, which would stop results merging.
+  const locked = disabled || extracting;
+  useEffect(() => { onExtractingChange?.(extracting); }, [extracting, onExtractingChange]);
+  useEffect(() => () => onExtractingChange?.(false), [onExtractingChange]);
   // Saved questions keep only their text. On reopening, categories (and whether a question came
   // from the document) are recovered from the stored extraction. Kept out of the form so
   // reopening never counts as an unsaved change.
@@ -114,8 +117,11 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved?.id]);
+  // A new manual question stays in the tab it was added from until its section is chosen.
+  const draftTabs = useRef(new Map<string, string>());
+  const chosenCategory = (question: PreparedQuestion) => question.category ?? restored.categories.get(question.id);
   const categoryOf = (question: PreparedQuestion) => {
-    const category = question.category ?? restored.categories.get(question.id);
+    const category = chosenCategory(question) ?? draftTabs.current.get(question.id);
     return category && QUESTION_CATEGORIES.includes(category) ? category : 'Other';
   };
   // Questions that came from the document, including saved ones recovered on reopening; these are
@@ -192,7 +198,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     }
     setInstructionsError(undefined);
     if (rfp.questions.some(fromDocument) && !window.confirm('Extract again? Previously extracted questions will be replaced; manually added questions are kept.')) return;
-    update({ questions: rfp.questions.filter(q => !fromDocument(q)) });
+    update({ questions: rfp.questions.filter(q => !fromDocument(q) && q.text.trim()) });
     const { controller, generation } = restart();
     try {
       const accepted = await questionExtractionService.retry(uploaded.id, crypto.randomUUID(), controller.signal, instructions);
@@ -218,7 +224,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     generationRef.current++;
     abortRef.current?.abort(); abortRef.current = undefined; cancelRunning();
     setSelectedFile(undefined); setUploaded(undefined); setJob(undefined); setStatus(undefined); setError(undefined);
-    setInstructions(''); setInstructionsError(undefined); setShowInstructions(false); setQuestionTab(ALL);
+    setInstructions(''); setInstructionsError(undefined); setShowInstructions(false); setQuestionTab('');
     removedRef.current.clear();
     setRestored({ categories: new Map<string, string>(), fromDocument: new Set<string>() });
     setForm(current => ({
@@ -239,7 +245,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     if (rfp.type === 'QUESTIONNAIRE' && extractionEnabled) {
       if (rfp.questions.some(fromDocument) && !window.confirm('Replace the source document? Previously extracted questions will be removed; manually added questions are kept.')) return;
       setError(undefined); setSelectedFile(file);
-      update({ questions: rfp.questions.filter(q => !fromDocument(q)) });
+      update({ questions: rfp.questions.filter(q => !fromDocument(q) && q.text.trim()) });
       // Upload only; the user extracts once their instructions are ready.
       await uploadDocument(file);
       return;
@@ -261,89 +267,96 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
   const counts = new Map<string, number>();
   rfp.questions.forEach(question => counts.set(categoryOf(question), (counts.get(categoryOf(question)) ?? 0) + 1));
   const categories = QUESTION_CATEGORIES.filter(category => counts.has(category));
-  // A tab that has become empty (re-extraction, removals) falls back to All.
-  const activeTab = questionTab !== ALL && counts.has(questionTab) ? questionTab : ALL;
-  const visible = activeTab === ALL ? rfp.questions
-    : rfp.questions.filter(question => categoryOf(question) === activeTab)
-      .sort((a, b) => (a.sourceOrder ?? Infinity) - (b.sourceOrder ?? Infinity));
+  // The total is shown in the heading, so there is no All tab; an emptied tab falls back to the first section.
+  const activeTab = counts.has(questionTab) ? questionTab : categories[0] ?? '';
+  const visible = rfp.questions.filter(question => categoryOf(question) === activeTab)
+    .sort((a, b) => (a.sourceOrder ?? Infinity) - (b.sourceOrder ?? Infinity));
   const questionRow = (question: PreparedQuestion, index: number) => <div key={question.id} className="flex min-w-0 items-start gap-2">
     <span className="w-6 shrink-0 pt-2 text-sm text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
     <Label htmlFor={`question-${question.id}`} className="sr-only">{`Question ${index + 1} text`}</Label>
-    <Textarea id={`question-${question.id}`} rows={2} className="min-h-[44px] min-w-0 flex-1 resize-y text-sm" placeholder="Enter question" value={question.text} disabled={disabled} onChange={event => update({ questions: rfp.questions.map(q => q.id === question.id ? { ...q, text: event.target.value, validated: false } : q) })} />
-    <Button type="button" variant="ghost" size="icon" className="shrink-0" aria-label={`Remove question ${index + 1}`} title={`Remove question ${index + 1}`} disabled={disabled} onClick={() => {
+    <div className="opp-question-input">
+      <Textarea id={`question-${question.id}`} rows={2} className={`min-h-[44px] min-w-0 resize-y text-sm${tabbed && !fromDocument(question) ? ' opp-question-with-section' : ''}`} placeholder="Enter question" value={question.text} disabled={locked} onChange={event => update({ questions: rfp.questions.map(q => q.id === question.id ? { ...q, text: event.target.value, validated: false } : q) })} />
+      {/* Manually added questions choose their section inside the box; the tab follows the question. */}
+      {tabbed && !fromDocument(question) && <Select value={chosenCategory(question) ?? ''} disabled={locked} onValueChange={category => { update({ questions: rfp.questions.map(q => q.id === question.id ? { ...q, category } : q) }); setQuestionTab(category); }}>
+        <SelectTrigger className="opp-question-section" aria-label={`Question ${index + 1} section`}><SelectValue placeholder="Select Question Category" /></SelectTrigger>
+        <SelectContent>{[...new Set([...categories, ...(chosenCategory(question) ? [categoryOf(question)] : [])])].map(category => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent>
+      </Select>}
+    </div>
+    <Button type="button" variant="ghost" size="icon" className="shrink-0" aria-label={`Remove question ${index + 1}`} title={`Remove question ${index + 1}`} disabled={locked} onClick={() => {
       if (!window.confirm('Remove this question? Its response and approval will be invalidated when the opportunity is saved.')) return;
       if (extractedQuestion(question)) extractionCandidateKeys(question).forEach(key => removedRef.current.add(key));
       update({ questions: rfp.questions.filter(q => q.id !== question.id) });
     }}><Trash2 className="size-4" /></Button>
   </div>;
-  return <div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="RFP type" aria-invalid={Boolean(rfpTypeError)}>{([{ type: 'QUESTIONNAIRE', label: 'Questionnaire-based', hint: 'Fixed set of questions', icon: MessageCircle }, { type: 'GENERIC', label: 'Generic RFP', hint: 'Full written proposal', icon: FileText }] as const).map(choice => <Button key={choice.type} type="button" variant="outline" className={`opp-type ${rfp.type === choice.type ? 'opp-selected' : ''}`} aria-pressed={rfp.type === choice.type} disabled={disabled} onClick={() => choose(choice.type)}><span className="opp-type-icon" aria-hidden="true"><choice.icon className="size-4" /></span><span className="min-w-0 flex-1 text-left"><strong className="block">{choice.label}</strong><span className="mt-1 block text-xs font-normal text-muted-foreground">{choice.hint}</span></span><span className="opp-type-indicator" aria-hidden="true">{rfp.type === choice.type && <Check className="size-3" />}</span></Button>)}</div>
+  return <div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="RFP type" aria-invalid={Boolean(rfpTypeError)}>{([{ type: 'QUESTIONNAIRE', label: 'Questionnaire-based', hint: 'Fixed set of questions', icon: MessageCircle }, { type: 'GENERIC', label: 'Generic RFP', hint: 'Full written proposal', icon: FileText }] as const).map(choice => <Button key={choice.type} type="button" variant="outline" className={`opp-type ${rfp.type === choice.type ? 'opp-selected' : ''}`} aria-pressed={rfp.type === choice.type} disabled={locked} onClick={() => choose(choice.type)}><span className="opp-type-icon" aria-hidden="true"><choice.icon className="size-4" /></span><span className="min-w-0 flex-1 text-left"><strong className="block">{choice.label}</strong><span className="mt-1 block text-xs font-normal text-muted-foreground">{choice.hint}</span></span><span className="opp-type-indicator" aria-hidden="true">{rfp.type === choice.type && <Check className="size-3" />}</span></Button>)}</div>
     {rfpTypeError && <p role="alert" className="text-xs text-destructive">{rfpTypeError}</p>}
     <p className="text-xs text-muted-foreground">Save queues the opportunity for Sales Head approval.</p>
     <details className="opp-details" open><summary>Solicitation & procurement details</summary><div className="opp-fields opp-procurement-fields p-3">
-      <Field label="Solicitation / reference number" value={form.solicitation.reference} onChange={v => solicitation('reference', v)} disabled={disabled} required />
-      <Field label="Issuing agency / department" value={form.solicitation.issuingAgency} onChange={v => solicitation('issuingAgency', v)} disabled={disabled} required />
-      <Field label="Procurement contact" value={form.solicitation.procurementContact} onChange={v => solicitation('procurementContact', v)} disabled={disabled} />
-      <Choice label="Submission method" value={form.solicitation.submissionMethod} options={[{ id: 'PORTAL', label: 'Online portal' }, { id: 'EMAIL', label: 'Email' }, { id: 'PHYSICAL', label: 'Physical submission' }]} onChange={v => solicitation('submissionMethod', v as Solicitation['submissionMethod'])} disabled={disabled} required />
+      <Field label="Solicitation / reference number" value={form.solicitation.reference} onChange={v => solicitation('reference', v)} disabled={locked} required />
+      <Field label="Issuing agency / department" value={form.solicitation.issuingAgency} onChange={v => solicitation('issuingAgency', v)} disabled={locked} required />
+      <Field label="Procurement contact" value={form.solicitation.procurementContact} onChange={v => solicitation('procurementContact', v)} disabled={locked} />
+      <Choice label="Submission method" value={form.solicitation.submissionMethod} options={[{ id: 'PORTAL', label: 'Online portal' }, { id: 'EMAIL', label: 'Email' }, { id: 'PHYSICAL', label: 'Physical submission' }]} onChange={v => solicitation('submissionMethod', v as Solicitation['submissionMethod'])} disabled={locked} required />
       {rfp.type === 'QUESTIONNAIRE' && <>
-      <Field label="Contract term" value={form.solicitation.contractTerm} onChange={v => solicitation('contractTerm', v)} disabled={disabled} />
-      <Field label="Incumbent vendor" value={form.solicitation.incumbentVendor} onChange={v => solicitation('incumbentVendor', v)} disabled={disabled} />
-      <Choice label="Pre-bid meeting" value={form.solicitation.preBidMeeting} options={[{ id: 'UNCONFIRMED', label: 'To be confirmed' }, { id: 'YES', label: 'Yes' }, { id: 'NO', label: 'No' }]} onChange={v => solicitation('preBidMeeting', v as Solicitation['preBidMeeting'])} disabled={disabled} />
+      <Field label="Contract term" value={form.solicitation.contractTerm} onChange={v => solicitation('contractTerm', v)} disabled={locked} />
+      <Field label="Incumbent vendor" value={form.solicitation.incumbentVendor} onChange={v => solicitation('incumbentVendor', v)} disabled={locked} />
+      <Choice label="Pre-bid meeting" value={form.solicitation.preBidMeeting} options={[{ id: 'UNCONFIRMED', label: 'To be confirmed' }, { id: 'YES', label: 'Yes' }, { id: 'NO', label: 'No' }]} onChange={v => solicitation('preBidMeeting', v as Solicitation['preBidMeeting'])} disabled={locked} />
       </>}
     </div></details>
-    <details className="opp-details" open><summary>Important dates</summary><div className="opp-fields p-3">{(['questionsDue', 'submissionDeadline'] as const).map((key, i) => <Field key={key} label={['Questions due', 'Submission deadline'][i]} value={form.dates[key]} type="date" onChange={v => date(key, v)} disabled={disabled} required={key === 'submissionDeadline'} />)}</div></details>
+    <details className="opp-details" open><summary>Important dates</summary><div className="opp-fields p-3">{(['questionsDue', 'submissionDeadline'] as const).map((key, i) => <Field key={key} label={['Questions due', 'Submission deadline'][i]} value={form.dates[key]} type="date" onChange={v => date(key, v)} disabled={locked} required={key === 'submissionDeadline'} />)}</div></details>
     {rfp.type && <>
       <div className="opp-upload">
         <Label htmlFor="opportunity-source">{rfp.type === 'GENERIC' ? 'Source document / brief' : 'Source questionnaire'}</Label>
         <div className="opp-upload-controls">
           <div className="opp-file-picker">
-            <input className="sr-only" id="opportunity-source" type="file" accept={rfp.type === 'QUESTIONNAIRE' && extractionEnabled ? '.pdf,.doc,.docx,.txt,.xlsx,.csv' : '.pdf,.doc,.docx,.txt'} disabled={disabled} aria-busy={uploading} aria-describedby="opportunity-source-status" onChange={e => { void selectFile(e.target.files?.[0]); e.target.value = ''; }} />
-            <label htmlFor="opportunity-source" className="opp-file-choose" aria-disabled={disabled}>Choose File</label>
+            <input className="sr-only" id="opportunity-source" type="file" accept={rfp.type === 'QUESTIONNAIRE' && extractionEnabled ? '.pdf,.doc,.docx,.txt,.xlsx,.csv' : '.pdf,.doc,.docx,.txt'} disabled={locked} aria-busy={uploading} aria-describedby="opportunity-source-status" onChange={e => { void selectFile(e.target.files?.[0]); e.target.value = ''; }} />
+            <label htmlFor="opportunity-source" className="opp-file-choose" aria-disabled={locked}>Choose File</label>
             <div className="opp-file-name">
-              {uploading ? <span role="status">Uploading {selectedFile?.name ?? 'document'}...</span> : rfp.source ? <DocumentDownload document={rfp.source} opportunityId={saved?.id ?? null} disabled={disabled} /> : <span>No file chosen</span>}
+              {uploading ? <span role="status">Uploading {selectedFile?.name ?? 'document'}...</span> : rfp.source ? <DocumentDownload document={rfp.source} opportunityId={saved?.id ?? null} disabled={locked} /> : <span>No file chosen</span>}
             </div>
           </div>
-          {rfp.type === 'QUESTIONNAIRE' && <Button type="button" disabled={disabled || !extractionEnabled || !uploaded || extracting} onClick={() => void extractQuestions()}>{extracting ? 'Extracting...' : 'Extract questions'}</Button>}
+          {rfp.type === 'QUESTIONNAIRE' && <Button type="button" disabled={locked || !extractionEnabled || !uploaded || extracting} onClick={() => void extractQuestions()}>{extracting ? 'Extracting...' : 'Extract questions'}</Button>}
         </div>
         <div id="opportunity-source-status" className="opp-upload-status">
           <span>PDF, Word or text · Max 25 MB</span>
         </div>
-        {rfp.type === 'QUESTIONNAIRE' && extractionEnabled && <div className="mt-3 space-y-2">
+        {rfp.type === 'QUESTIONNAIRE' && extractionEnabled && <div className="opp-upload-extraction mt-3 space-y-2">
           {uploaded && !uploading && <p className="text-xs text-muted-foreground">Document uploaded. Extract the questions, or add instructions to focus on specific topics.</p>}
-          <Button type="button" variant="link" className="h-auto p-0 underline" aria-expanded={showInstructions} aria-controls="extraction-instructions-panel" disabled={disabled} onClick={() => setShowInstructions(open => !open)}>
+          <Button type="button" variant="link" className="h-auto p-0 underline" aria-expanded={showInstructions} aria-controls="extraction-instructions-panel" disabled={locked} onClick={() => setShowInstructions(open => !open)}>
             {showInstructions ? 'Hide extraction instructions' : instructions.trim() ? 'Edit extraction instructions' : '+ Add extraction instructions'}
           </Button>
           {showInstructions && <div id="extraction-instructions-panel" className="space-y-1">
             <Label htmlFor="extraction-instructions" className="sr-only">Extraction instructions</Label>
-            <Textarea id="extraction-instructions" ref={instructionsRef} rows={3} maxLength={MAX_INSTRUCTIONS} value={instructions} disabled={disabled}
+            <Textarea id="extraction-instructions" ref={instructionsRef} rows={3} maxLength={MAX_INSTRUCTIONS} value={instructions} disabled={locked}
               placeholder="Optional: focus on specific topics, e.g. technical and pricing questions. Leave empty to extract all questions."
               aria-invalid={Boolean(instructionsError)} aria-describedby={instructionsError ? 'extraction-instructions-error' : undefined}
               onChange={event => { setInstructions(event.target.value); if (!event.target.value.trim() || !instructionsTooShort(event.target.value.trim())) setInstructionsError(undefined); }} />
             <span className="block text-right text-xs text-muted-foreground">{instructions.length}/{MAX_INSTRUCTIONS}</span>
           </div>}
           {instructionsError && <p id="extraction-instructions-error" role="alert" className="text-xs text-destructive">{instructionsError}</p>}
+          {error && <p id="extraction-error" role="alert" className="text-xs text-destructive">{error}</p>}
           {job && <div role="status" aria-label="Extraction progress" className="mt-2 space-y-1">
             <Progress value={extractionPercent(status)} />
-            <p className="text-xs text-muted-foreground">{extractionPercent(status)}% ? {status ? extractionProgress(status) : 'Reading the document...'}</p>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">{extracting && <Spinner className="size-3 shrink-0" aria-hidden="true" />}<span>{extractionPercent(status) > 0 ? `${extractionPercent(status)}% · ` : ''}{status ? extractionProgress(status) : 'Reading the document...'}</span></p>
           </div>}
         </div>}
       </div>
-      {error && <Notice error={error} />}
+      {error && !(rfp.type === 'QUESTIONNAIRE' && extractionEnabled) && <Notice error={error} />}
       {rfp.type === 'GENERIC' && <>
-        <h3 className="font-semibold">Proposal structure</h3><Choice label="Submission format" value={rfp.submissionFormat} options={[{ id: 'TECHNICAL_COST', label: 'Technical + Cost volumes' }, { id: 'COMBINED', label: 'Single combined proposal' }]} onChange={v => update({ submissionFormat: v as RfpDraft['submissionFormat'] })} disabled={disabled} />
-        <fieldset className="opp-proposal-sections" disabled={disabled}>
+        <h3 className="font-semibold">Proposal structure</h3><Choice label="Submission format" value={rfp.submissionFormat} options={[{ id: 'TECHNICAL_COST', label: 'Technical + Cost volumes' }, { id: 'COMBINED', label: 'Single combined proposal' }]} onChange={v => update({ submissionFormat: v as RfpDraft['submissionFormat'] })} disabled={locked} />
+        <fieldset className="opp-proposal-sections" disabled={locked}>
           <legend className="text-sm font-medium">Required proposal sections <span className="text-xs font-normal text-muted-foreground">— these become the outline</span></legend>
-          <div className="opp-proposal-options">{sections.map(section => <Label key={String(section.id)} className="opp-proposal-option"><Checkbox disabled={disabled} checked={rfp.sections.some(s => s.key === String(section.id))} onCheckedChange={checked => { if (checked !== true && saved?.responses?.some(r => r.id === `section-${String(section.id)}` && r.answer) && !window.confirm('Remove this section? The affected response and approval will be invalidated when you save.')) return; update({ sections: checked === true ? [...rfp.sections, { key: String(section.id), instructions: section.question }] : rfp.sections.filter(s => s.key !== String(section.id)) }); }} /><span>{section.question}</span></Label>)}</div>
+          <div className="opp-proposal-options">{sections.map(section => <Label key={String(section.id)} className="opp-proposal-option"><Checkbox disabled={locked} checked={rfp.sections.some(s => s.key === String(section.id))} onCheckedChange={checked => { if (checked !== true && saved?.responses?.some(r => r.id === `section-${String(section.id)}` && r.answer) && !window.confirm('Remove this section? The affected response and approval will be invalidated when you save.')) return; update({ sections: checked === true ? [...rfp.sections, { key: String(section.id), instructions: section.question }] : rfp.sections.filter(s => s.key !== String(section.id)) }); }} /><span>{section.question}</span></Label>)}</div>
           {loading && <p role="status">Loading proposal sections...</p>}
           {sectionsError && <Notice error={sectionsError} />}
         </fieldset>
-        <Field label="Evaluation basis / criteria" multiline value={rfp.evaluation} onChange={v => update({ evaluation: v })} disabled={disabled} />
+        <Field label="Evaluation basis / criteria" multiline value={rfp.evaluation} onChange={v => update({ evaluation: v })} disabled={locked} />
       </>}
       <div className="w-full space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Questions · {rfp.questions.length}</h3><div className="flex flex-wrap gap-2"><Button type="button" variant="link" disabled={disabled} onClick={() => update({ questions: [...rfp.questions, { id: `draft-${crypto.randomUUID()}`, text: '', sourceReference: '', validated: false, ...(tabbed && activeTab !== ALL ? { category: activeTab } : {}) }] })}>+ Add question</Button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Questions · {rfp.questions.length}</h3><div className="flex flex-wrap gap-2"><Button type="button" variant="link" disabled={locked} onClick={() => { const id = `draft-${crypto.randomUUID()}`; if (tabbed && activeTab) draftTabs.current.set(id, activeTab); update({ questions: [...rfp.questions, { id, text: '', sourceReference: '', validated: false }] }); }}>+ Add question</Button></div></div>
         {tabbed && rfp.questions.length > 0 ? <>
           <Tabs value={activeTab} onValueChange={setQuestionTab}>
             <TabsList className="opp-question-tabs" aria-label="Question categories">
-              {[ALL, ...categories].map(tab => <TabsTrigger key={tab} value={tab}>{`${tab} (${tab === ALL ? rfp.questions.length : counts.get(tab)})`}</TabsTrigger>)}
+              {categories.map(tab => <TabsTrigger key={tab} value={tab}>{`${tab} (${counts.get(tab)})`}</TabsTrigger>)}
             </TabsList>
           </Tabs>
           <div className="opp-question-panel space-y-2" role="region" aria-label="Extracted questions">{visible.map(questionRow)}</div>

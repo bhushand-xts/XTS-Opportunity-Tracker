@@ -25,6 +25,11 @@ const errors: Record<string, string> = {
   INVALID_INSTRUCTIONS: 'The extraction instructions are invalid.',
   CANCELLED: 'Extraction was cancelled.',
   INSTRUCTIONS_TOO_SHORT: "Describe what to extract in a few words, e.g. 'pricing and technical questions'.",
+  ACCESS_DENIED: 'You do not have permission to upload documents or extract questions. Contact your administrator.',
+  OPPORTUNITY_NOT_FOUND: 'This opportunity could not be found. It may have been removed.',
+  OPPORTUNITY_EDIT_NOT_ALLOWED: 'You cannot upload documents or extract questions for this opportunity at its current workflow step.',
+  INVALID_TEXT_ENCODING: 'Text and CSV files must be saved as UTF-8.',
+  DOCUMENT_NOT_FOUND: 'The source document is no longer available. Choose the file again.',
 };
 export const MAX_INSTRUCTIONS = 4000;
 // Same rule as the backend: at least 15 characters and 2 real words, so "a" can't trigger a full run.
@@ -106,12 +111,12 @@ export function extractionProgress(result: QuestionExtractionStatus) {
   if (result.state === 'PARTIAL') return `Extraction incomplete${batches}${pages}. Available questions are ready for review; retry to finish.`;
   if (result.stage === 'RATE_LIMITED') {
     const wait = result.retryAfterSeconds ? ` Retry in about ${Math.ceil(result.retryAfterSeconds)} seconds.` : '';
-    return `Waiting for the provider's available quota${batches}${pages}.${wait} You can continue editing.`;
+    return `Waiting for the provider's available quota${batches}${pages}.${wait}`;
   }
-  if (result.stage === 'PARSING') return 'Reading all document pages, including scanned content. You can continue editing.';
+  if (result.stage === 'PARSING') return 'Reading all document pages, including scanned content.';
   if (result.stage === 'RETRYING') return `Retrying unfinished sections${batches}${pages}. Completed questions have been kept.`;
-  if (result.state === 'QUEUED') return 'Questions queued for extraction. You can continue editing.';
-  return `Extracting questions${batches}${pages}. You can continue editing.`;
+  if (result.state === 'QUEUED') return 'Questions queued for extraction.';
+  return `Extracting questions${batches}${pages}.`;
 }
 export function pollDelay(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {

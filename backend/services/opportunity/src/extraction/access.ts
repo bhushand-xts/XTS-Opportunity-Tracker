@@ -1,12 +1,12 @@
-import { findUser } from '../integrations/userService';
 import * as opportunityService from '../services/opportunity.service';
 import { DocumentRecord } from './repository';
 import { ExtractionError } from './types';
 
+// Any user with the opportunity upload permission (create or edit) may upload and extract,
+// the same rule as the opportunity's own document upload.
 export async function mayUpload(userId: number, opportunityId: number | null) {
-  const user = await findUser(userId);
-  if (![20, 24].includes(user?.roleId ?? 0)) throw new ExtractionError('ACCESS_DENIED', 403);
-  if (opportunityId !== null) await opportunityService.assertExtractionEdit(opportunityId, userId, user?.roleId);
+  if (!(await opportunityService.canUploadDocument({ user: { id: userId } }))) throw new ExtractionError('ACCESS_DENIED', 403);
+  if (opportunityId !== null) await opportunityService.assertExtractionEdit(opportunityId, userId);
 }
 export async function mayRead(doc: DocumentRecord | undefined, userId: number, edit = false) {
   if (!doc || doc.deleting) throw new ExtractionError('DOCUMENT_NOT_FOUND', 404);
