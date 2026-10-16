@@ -4,7 +4,7 @@ export type LocalDate = string;
 export type OpportunityState = 'PREPARATION_PENDING' | 'IN_PROGRESS' | 'SALES_REVIEW' | 'GATE1_PENDING' | 'GATE1_GO' | 'SALES_REJECTED' | 'GATE1_NO_GO';
 export type ResponseState = 'UNASSIGNED' | 'ASSIGNED' | 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'CHANGES_REQUESTED';
 export type Module = 'overview' | 'responses' | 'estimation' | 'scope' | 'assignment' | 'activity';
-export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
+export type Action = 'WORKFLOW_APPROVE' | 'WORKFLOW_REQUEST_CHANGES' | 'WORKFLOW_HOLD' | 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
 export interface DirectoryUser { id: string; name: string; email: string; roles: string[]; active: boolean; }
 export interface Contact { id?: string; name: string; title: string; email: string; phone: string; decisionRole: string; decisionRoleOther?: string; }
 export type AdditionalContact = Contact;
@@ -39,7 +39,7 @@ export interface OpportunityDraft {
   solicitation: Solicitation; dates: ImportantDates; context: RfpContext; rfp: RfpDraft;
 }
 export interface OpportunitySummary {
-  id: string; number: string; title: string; estimatedValue: Decimal; estimatedValueUsd?: Decimal; currencyCode: string; currencySymbol?: string;
+  id: string; number: string; title: string; estimatedValue: Decimal; estimatedValueUsd?: Decimal; currencyCode: string; currencySymbol?: string; currencyName?: string; stageId?: number | null; subStageId?: number | null;
   clientName: string | null; owner: DirectoryUser | null; priority: OpportunityDraft['priority'];
   state: OpportunityState; rfpType: RfpDraft['type']; submissionDeadline: LocalDate | null;
   revision: number; packageRevision: number | null; allowedActions: Action[];

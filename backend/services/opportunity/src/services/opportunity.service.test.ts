@@ -84,6 +84,25 @@ test('workflow authorization follows stage permissions and retains transition or
   await assert.rejects(service.transitionWorkflow(10, 'APPROVE', null, null, ctx()), /current step/);
 });
 
+test('Sales Head review keeps changes/hold in Identified and approval advances to qualifying', async t => {
+  t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 123, isActive: true }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: [{ menuId: 2, permissionKey: 'approve' }] }));
+  t.mock.method(repository, 'findById', async () => record);
+  const transition = t.mock.method(repository, 'transitionWorkflow', async (...args: unknown[]) => args);
+  const lookupReason = t.mock.method(admin, 'reasonCode', async () => ({ id: 3, reasonName: 'Missing information', isActive: true }));
+  await assert.rejects(service.transitionWorkflow(10, 'HOLD', 'Free text', null, ctx()), /Select a reason code/);
+  assert.equal(transition.mock.calls.length, 0);
+  lookupReason.mock.mockImplementation(async () => ({ id: 3, reasonName: 'Missing information', isActive: false }));
+  await assert.rejects(service.transitionWorkflow(10, 'HOLD', null, null, ctx(), 3), /active hold reason/);
+  assert.equal(transition.mock.calls.length, 0);
+  lookupReason.mock.mockImplementation(async () => ({ id: 3, reasonName: 'Missing information', isActive: true }));
+  for (const [action, stage, substage] of [['REQUEST_CHANGES', 1, 2], ['HOLD', 1, 3], ['APPROVE', 2, 4]] as const) {
+    await service.transitionWorkflow(10, action, 'Review note', null, ctx(), action === 'HOLD' ? 3 : undefined);
+    assert.deepEqual(transition.mock.calls.at(-1)?.arguments.slice(0, 3), [10, stage, substage]);
+    if (action === 'HOLD') assert.equal(transition.mock.calls.at(-1)?.arguments[5], 'Hold reason [3]: Missing information');
+  }
+});
+
 test('editing and resubmission preserve creator, owner and workflow constraints', async t => {
   let current = { ...record, subStageId: 2 };
   t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 987, isActive: true }));
@@ -99,6 +118,23 @@ test('editing and resubmission preserve creator, owner and workflow constraints'
   current = { ...current, createdBy: 99 };
   await assert.rejects(service.update(10, { opportunityName: 'Updated' }, ctx()), /cannot edit/);
   await assert.rejects(service.transitionWorkflow(10, 'RESUBMIT', null, null, ctx()), /Only the creator/);
+});
+
+test('Sales Representative creator restriction controls returned actions and rejects direct updates', async t => {
+  let current = { ...record, createdBy: 99, ownerId: 7, assignedTo: 7 };
+  t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 123, isActive: true }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: [{ menuId: 1, permissionKey: 'edit' }, { menuId: 5, permissionKey: 'view' }], role: { roleName: 'Sales Representative' } }));
+  t.mock.method(repository, 'findAll', async () => [current]);
+  t.mock.method(repository, 'findById', async () => current);
+  const update = t.mock.method(repository, 'update', async () => current);
+  assert.deepEqual((await service.get(10, ctx())).allowedActions, []);
+  assert.deepEqual((await service.list(ctx()))[0].allowedActions, []);
+  await assert.rejects(service.update(10, { opportunityName: 'Forbidden' }, ctx()), /cannot edit/);
+  assert.equal(update.mock.calls.length, 0);
+  current = { ...current, createdBy: 7 };
+  assert.deepEqual((await service.get(10, ctx())).allowedActions, ['EDIT']);
+  await service.update(10, { opportunityName: 'Own opportunity' }, ctx());
+  assert.equal(update.mock.calls.length, 1);
 });
 
 test('inactive users and permission service failures do not grant access', async t => {

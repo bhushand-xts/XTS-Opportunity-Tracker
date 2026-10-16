@@ -1,3 +1,5 @@
+import { stageStatus } from '../lib/opportunityStages';
+import type { OpportunitySummary } from '@xts/api-contracts';
 import { useFieldError } from './FieldValidation';
 import { useId, type ReactNode } from 'react';
 import { Briefcase, Layers, Users } from 'lucide-react';
@@ -24,7 +26,7 @@ export function Notice({ error, title = 'Unable to complete this action', retry 
   return <Alert variant="destructive" role="alert"><AlertTitle>{title}</AlertTitle><AlertDescription>{typeof error === 'string' ? error : error.message}{retry && <Button type="button" variant="outline" size="sm" className="ml-3 mt-2" onClick={retry}>Retry</Button>}</AlertDescription></Alert>;
 }
 export function Loading({ label = 'Loading opportunity…' }: { label?: string }) { return <div role="status" className="flex items-center gap-2 py-12 text-sm text-muted-foreground"><Spinner className="size-4" />{label}</div>; }
-export function Status({ state }: { state: OpportunityState }) { return <Badge className={`opp-status opp-state-${state}`}>{STATE_LABELS[state]}</Badge>; }
+export function Status({ state, opportunity }: { state: OpportunityState; opportunity?: OpportunitySummary }) { return <Badge className={`opp-status max-w-full whitespace-normal text-left opp-state-${state}`}>{opportunity ? stageStatus(opportunity) : STATE_LABELS[state]}</Badge>; }
 export function Values({ values }: { values: [string, ReactNode][] }) {
   return <dl className="opp-values">{values.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value === null || value === undefined || value === '' ? 'Not provided' : value}</dd></div>)}</dl>;
 }

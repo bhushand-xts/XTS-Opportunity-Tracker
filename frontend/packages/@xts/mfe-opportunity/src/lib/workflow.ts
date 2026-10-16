@@ -106,7 +106,8 @@ export function estimateTotal(rows: EstimateRow[]): Decimal {
   const cents = rows.reduce((sum, row) => sum + BigInt(rowAmount(row).replace('.', '')), 0n);
   return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
 }
-export function money(value: Decimal, code: string) {
+export function money(value: Decimal, code: string, symbol?: string) {
+  if (symbol?.trim()) return `${symbol.trim()} ${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(Number(value)); }
   catch { return `${code} ${value}`; }
 }

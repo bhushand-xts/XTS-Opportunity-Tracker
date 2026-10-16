@@ -144,7 +144,7 @@ export function createLocalOpportunityService(store: MockOpportunityStore, loadD
     const work = async () => {
       const directory = await loadDirectory(!reads.has(method));
       const service = createMockOpportunityService(store, () => directory.actorId, directory);
-      return Reflect.apply(service[method], service, args);
+      return Reflect.apply(service[method]!, service, args);
     };
     return !reads.has(method) && typeof navigator !== 'undefined' && navigator.locks
       ? navigator.locks.request(store.lockName ?? 'opportunity-local-workflow', work) : work();

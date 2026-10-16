@@ -314,6 +314,7 @@ export const opportunityTypeDefs = `#graphql
       opportunityId: Int!
       action: OpportunityWorkflowAction!
       comment: String
+      reasonCodeId: Int
       opportunityDescription: String
     ): Opportunity!
   }

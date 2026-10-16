@@ -1,5 +1,15 @@
 import { gql } from '@apollo/client';
 
+export const TRANSITION_OPPORTUNITY = gql`
+  mutation TransitionOpportunity($opportunityId: Int!, $action: OpportunityWorkflowAction!, $comment: String, $reasonCodeId: Int) {
+    transitionOpportunity(opportunityId: $opportunityId, action: $action, comment: $comment, reasonCodeId: $reasonCodeId) { opportunityId stageId subStageId }
+  }
+`;
+
+export const GET_HOLD_REASONS = gql`
+  query OpportunityHoldReasons { reasonCodesList { id reasonName isActive displayOrder } }
+`;
+
 // Implemented master-data operations only. No proposed workflow is sent live.
 export const GET_OPPORTUNITY_LOOKUPS = gql`
   query OpportunityLookups {
@@ -62,7 +72,7 @@ export const LIST_OPPORTUNITIES = gql`
   ${OPPORTUNITY_FIELDS}
   query ListOpportunities($queue: String = "PIPELINE") {
     opportunities(queue: $queue) { ...OpportunityFields }
-    currencies { currencyId currencyCode currencySymbol }
+    currencies { currencyId currencyCode currencySymbol currencyName }
   }
 `;
 
@@ -70,7 +80,7 @@ export const GET_OPPORTUNITY = gql`
   ${OPPORTUNITY_FIELDS}
   query GetOpportunity($opportunityId: Int!) {
     opportunity(opportunityId: $opportunityId) { ...OpportunityFields }
-    currencies { currencyId currencyCode currencySymbol }
+    currencies { currencyId currencyCode currencySymbol currencyName }
   }
 `;
 

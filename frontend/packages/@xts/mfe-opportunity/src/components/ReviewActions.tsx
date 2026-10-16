@@ -5,9 +5,13 @@ import { decisionError } from '../lib/workflow';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useSave } from '../hooks/useSave';
 import { Field, Notice, Panel } from './ui';
+import { WorkflowReviewActions } from './WorkflowReviewActions';
 
 const LABELS = { SALES_APPROVE: 'Approve & Send to CEO', SALES_REJECT: 'Reject Opportunity', GATE1_GO: 'Approve Go', GATE1_NO_GO: 'Decide No-Go' };
 export function ReviewActions({ opportunity: o, onSaved }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void }) {
+  return o.stageId != null ? <WorkflowReviewActions opportunity={o} onSaved={onSaved} /> : <LegacyReviewActions opportunity={o} onSaved={onSaved} />;
+}
+function LegacyReviewActions({ opportunity: o, onSaved }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void }) {
   const service = useOpportunityService(), mutation = useSave();
   const [decision, setDecision] = useState<DecisionCommand['decision']>(), [reason, setReason] = useState(''), [confirmed, setConfirmed] = useState(false), [validation, setValidation] = useState<string>();
   const decisions = (Object.keys(LABELS) as DecisionCommand['decision'][]).filter(action => o.allowedActions.includes(action) && (action.startsWith('SALES_') ? o.state === 'SALES_REVIEW' : o.state === 'GATE1_PENDING'));

@@ -9,9 +9,26 @@ const menus: AccessMenu[] = [
   { menuId: 104, menuKey: 'my_approvals', menuName: 'My Approvals', parentId: 101, routePath: '/opportunities/approvals', isActive: true },
   { menuId: 105, menuKey: 'gate_2_approval', menuName: 'Gate-2 Approval', parentId: null, routePath: null, isActive: true },
   { menuId: 106, menuKey: 'estimation', menuName: 'Estimation', parentId: null, routePath: null, isActive: true },
+  { menuId: 140, menuKey: 'opportunity_review', menuName: 'Sales Review', parentId: null, routePath: null, isActive: true },
+  { menuId: 141, menuKey: 'gate_1_approval', menuName: 'Gate-1 Go/No-Go', parentId: null, routePath: null, isActive: true },
 ];
 const record: WorkflowRecord = { stageId: 1, subStageId: 1, createdBy: 55, ownerId: 55, assignedTo: null };
 const grant = (menuId: number, permissionKey: string) => ({ menuId, permissionKey });
+
+test('uses Sales Review and Gate-1 grants and enforces each decision permission independently', () => {
+  const access = opportunityAccess(1, menus, ['approve', 'request_changes', 'hold'].map(permission => grant(140, permission)));
+  assert.deepEqual(access.actions(record), ['WORKFLOW_APPROVE', 'WORKFLOW_REQUEST_CHANGES', 'WORKFLOW_HOLD']);
+  const holdOnly = opportunityAccess(1, menus, [grant(140, 'hold')]);
+  assert.deepEqual(holdOnly.actions(record), ['WORKFLOW_HOLD']);
+  assert.equal(holdOnly.canReviewAction(record, 'APPROVE'), false);
+  assert.equal(holdOnly.canReviewAction(record, 'REQUEST_CHANGES'), false);
+  assert.equal(holdOnly.canReviewAction(record, 'HOLD'), true);
+  assert.deepEqual(access.actions({ ...record, subStageId: 2 }), []);
+  const ceo = opportunityAccess(1, menus, ['approve', 'request_changes', 'hold'].map(permission => grant(141, permission)));
+  assert.deepEqual(ceo.actions({ ...record, stageId: 2, subStageId: 4 }), ['WORKFLOW_APPROVE', 'WORKFLOW_REQUEST_CHANGES', 'WORKFLOW_HOLD']);
+  assert.deepEqual(ceo.actions(record), []);
+  assert.deepEqual(opportunityAccess(1, menus, []).actions(record), []);
+});
 
 test('uses assigned permissions with arbitrary menu IDs and no role identity', () => {
   const access = opportunityAccess(1, menus, [grant(101, 'add'), grant(101, 'edit'), grant(102, 'view'), grant(104, 'approve')]);
@@ -21,6 +38,33 @@ test('uses assigned permissions with arbitrary menu IDs and no role identity', (
   assert.equal(access.review, true);
   assert.equal(access.gateReview, false);
   assert.equal(access.estimate, false);
+});
+
+test('review actions match existing Sales Head and CEO stage/substage gates', () => {
+  const sales = opportunityAccess(1, menus, [grant(104, 'approve')]);
+  const ceo = opportunityAccess(1, menus, [grant(105, 'approve')]);
+  const expected = ['WORKFLOW_APPROVE', 'WORKFLOW_REQUEST_CHANGES', 'WORKFLOW_HOLD'];
+  for (const subStageId of [1, 3]) assert.deepEqual(sales.actions({ ...record, subStageId }), expected);
+  assert.deepEqual(sales.actions({ ...record, subStageId: 2 }), []);
+  assert.deepEqual(sales.actions({ ...record, stageId: 2, subStageId: 4 }), []);
+  for (const subStageId of [4, 6]) assert.deepEqual(ceo.actions({ ...record, stageId: 2, subStageId }), expected);
+  assert.deepEqual(ceo.actions(record), []);
+  assert.deepEqual(ceo.actions({ ...record, stageId: 2, subStageId: 5 }), []);
+});
+
+test('Sales Representatives edit only records they created, with menu and workflow checks retained', () => {
+  for (const role of [{ roleName: 'Sales Representative' }, { roleName: 'Sales', roleCode: 'SALES_REPRESENTATIVE' }]) {
+    const access = opportunityAccess(1, menus, [grant(101, 'edit')], role);
+    for (const [stageId, subStageId] of [[1, 1], [1, 2], [1, 3], [2, 5]]) {
+      const editable = { ...record, stageId, subStageId };
+      assert.equal(access.canEdit({ ...editable, createdBy: 1 }), true);
+      assert.equal(access.canEdit({ ...editable, ownerId: 1, assignedTo: 1 }), false);
+      assert.equal(access.canEdit({ ...editable, createdBy: null }), false);
+    }
+    assert.equal(access.canEdit({ ...record, createdBy: 1, stageId: 3, subStageId: 7 }), false);
+    assert.equal(opportunityAccess(1, menus, [], role).canEdit({ ...record, createdBy: 1 }), false);
+  }
+  assert.equal(opportunityAccess(1, menus, [grant(101, 'edit')], { roleName: 'Sales Head' }).canEdit(record), true);
 });
 
 test('does not grant writes from view, or opportunity creation from approvals Add', () => {

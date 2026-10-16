@@ -1,3 +1,4 @@
+import { GET_HOLD_REASONS } from '../services/opportunity.queries';
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -31,7 +32,7 @@ function mount(service: OpportunityService, route = '/opportunity', userId = '10
     userList: [{ id: 101, firstName: 'Test', lastName: 'Owner', email: 'owner@example.test', roleId: 1, isActive: true }, { id: 102, firstName: 'Test', lastName: 'Reviewer', email: 'reviewer@example.test', roleId: 1, isActive: true }],
     rolesList: [{ id: 1, roleName: 'Test role', roleCode: 'TEST', isActive: true }],
   } }, maxUsageCount: 100 }];
-  return render(<MockedProvider mocks={[...ownerMocks, { request: { query: GET_PROPOSAL_SECTIONS }, result: { data: { rfpQuestionsList: [{ id: 7, question: 'Executive summary', description: null, displayOrder: 1, isActive: true }, { id: 8, question: 'Inactive section', description: null, displayOrder: 2, isActive: false }] } }, maxUsageCount: 100 }]}><OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId, view: true, pipeline: true, add: true, edit: true, work: true, approvals: true }}><MemoryRouter initialEntries={[route]}><UnsavedProvider><Location /><Routes><Route path="/opportunity" element={<PipelinePage />} /><Route path="/opportunity/approvals" element={<PipelinePage queue="MY_APPROVALS" />} /><Route path="/opportunity/work" element={<PipelinePage queue="MY_WORK" />} /><Route path="/opportunity/new" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/edit" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /><Route path="/opportunity/:id/review" element={<OpportunityDetailsPage review />} /></Routes></UnsavedProvider></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider></MockedProvider>);
+  return render(<MockedProvider mocks={[...ownerMocks, { request: { query: GET_HOLD_REASONS }, result: { data: { reasonCodesList: [{ id: 3, reasonName: 'Missing information', isActive: true, displayOrder: 1 }, { id: 9, reasonName: 'Inactive reason', isActive: false, displayOrder: 2 }] } }, maxUsageCount: 100 }, { request: { query: GET_PROPOSAL_SECTIONS }, result: { data: { rfpQuestionsList: [{ id: 7, question: 'Executive summary', description: null, displayOrder: 1, isActive: true }, { id: 8, question: 'Inactive section', description: null, displayOrder: 2, isActive: false }] } }, maxUsageCount: 100 }]}><OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId, view: true, pipeline: true, add: true, edit: true, work: true, approvals: true }}><MemoryRouter initialEntries={[route]}><UnsavedProvider><Location /><Routes><Route path="/opportunity" element={<PipelinePage />} /><Route path="/opportunity/approvals" element={<PipelinePage queue="MY_APPROVALS" />} /><Route path="/opportunity/work" element={<PipelinePage queue="MY_WORK" />} /><Route path="/opportunity/new" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/edit" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /><Route path="/opportunity/:id/review" element={<OpportunityDetailsPage review />} /></Routes></UnsavedProvider></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider></MockedProvider>);
 }
 function testService(initial = fixtureOpportunity()): OpportunityService {
   let record = initial;
@@ -46,6 +47,32 @@ function testService(initial = fixtureOpportunity()): OpportunityService {
   };
 }
 describe('RFP preparation', () => {
+  it.each([
+    ['APPROVE', 'Approve & Send to CEO', 2, 4],
+    ['REQUEST_CHANGES', 'Request changes', 1, 2],
+    ['HOLD', 'On hold', 1, 3],
+  ] as const)('uses persisted stage/substage review actions: %s', async (action, label, nextStage, nextSubstage) => {
+    const initial = fixtureOpportunity();
+    Object.assign(initial, { stageId: 1, subStageId: 1, packageRevision: null, allowedActions: ['WORKFLOW_APPROVE', 'WORKFLOW_REQUEST_CHANGES', 'WORKFLOW_HOLD'] });
+    const service = testService(initial);
+    service.transition = vi.fn(async () => ({ ...initial, stageId: nextStage, subStageId: nextSubstage, allowedActions: [] }));
+    mount(service, '/opportunity/401/details');
+    expect(await screen.findByRole('button', { name: label })).toBeInTheDocument();
+    expect(screen.getAllByText('Identified · Pending Review').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    if (action === 'REQUEST_CHANGES') fireEvent.change(screen.getByLabelText(/Changes requested/), { target: { value: 'Please revise the brief' } });
+    if (action === 'HOLD') {
+      expect(screen.queryByLabelText('Decision note')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Confirm decision' })).toBeDisabled();
+      await waitFor(() => expect(screen.getByRole('combobox', { name: 'Hold reason' })).not.toBeDisabled());
+      await screen.findByRole('option', { name: 'Missing information' });
+      fireEvent.change(screen.getByRole('combobox', { name: 'Hold reason' }), { target: { value: '3' } });
+      expect(screen.queryByRole('option', { name: 'Inactive reason' })).not.toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm decision' }));
+    await waitFor(() => action === 'HOLD' ? expect(service.transition).toHaveBeenCalledWith('401', action, '', 3) : expect(service.transition).toHaveBeenCalledWith('401', action, action === 'REQUEST_CHANGES' ? 'Please revise the brief' : ''));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
   it.each(['QUESTIONNAIRE', 'GENERIC'] as const)('switches RFP type without an alert and clears only type-specific fields: %s', async type => {
     const initial = fixtureOpportunity();
     initial.form.rfp.type = type;
@@ -223,6 +250,23 @@ describe('Opportunity UI using test-only service fixtures', () => {
     expect(screen.queryByText('Version')).not.toBeInTheDocument();
     if (type === 'GENERIC') expect(screen.queryByText('Vendor demonstration required')).not.toBeInTheDocument();
     else expect(screen.getByText('Vendor demonstration required')).toBeInTheDocument();
+  });
+  it('shows simplified opportunity details with currency, visible sections and reversed progress', async () => {
+    const initial = fixtureOpportunity();
+    Object.assign(initial, { currencyCode: 'B', currencySymbol: '$', currencyName: 'US Dollar', estimatedValue: '4335', state: 'SALES_REVIEW' });
+    initial.form.rfp.type = 'GENERIC';
+    initial.form.rfp.sections = [{ key: 'selected', instructions: 'Selected proposal section' }];
+    initial.form.rfp.questions = [{ id: 'q1', text: 'Saved proposal question?', sourceReference: '', validated: false }];
+    mount(testService(initial), '/opportunity/401/details');
+    expect(await screen.findByText('$ (US Dollar)')).toBeInTheDocument();
+    expect(screen.getAllByText('$ 4,335.00')).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: 'Important dates & context' })).toBeInTheDocument();
+    expect(screen.getByText('Selected proposal section').closest('details')).toBeNull();
+    expect(screen.getByText('Saved proposal question?')).toBeVisible();
+    for (const label of ['Issue date', 'Proposal due date', 'Submission timezone', 'Instructions', 'Additional deadline', 'Notes', 'Scope of work', 'Opportunity overview', 'Key technical / functional requirements', 'Submission destination']) expect(screen.queryByText(label)).not.toBeInTheDocument();
+    const progress = screen.getByRole('complementary', { name: 'Opportunity approval and progress' }).querySelector('ol')!;
+    expect(Array.from(progress.querySelectorAll('strong')).map(element => element.textContent)).toEqual(['Gate 1 Go', 'Gate 1 pending', 'Pending']);
+    expect(progress.lastElementChild).toHaveClass('current');
   });
   it('Save Opportunity persists before returning to Pipeline and keeps actions after response content', async () => {
     const initial = fixtureOpportunity();

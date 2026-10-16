@@ -41,10 +41,11 @@ export const opportunityResolvers = {
     transitionOpportunity: async (_: unknown, args: {
       opportunityId: number;
       action: "REQUEST_CHANGES" | "HOLD" | "APPROVE" | "RESUBMIT";
+      reasonCodeId?: number | null;
       comment?: string | null;
       opportunityDescription?: string | null;
     }, ctx: any) => service.transitionWorkflow(
-      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx
+      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx, args.reasonCodeId
     ),
 
     createOpportunity: async (

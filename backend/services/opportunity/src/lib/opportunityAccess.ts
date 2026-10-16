@@ -3,18 +3,21 @@ export interface AccessMenu {
   routePath: string | null; isActive: boolean;
 }
 export interface AccessGrant { menuId: number; permissionKey: string; }
+export interface AccessRole { roleName: string; roleCode?: string | null; }
 export interface WorkflowRecord { stageId: number | null; subStageId: number | null; createdBy: number | null; ownerId: number | null; assignedTo: number | null; }
-type Area = 'opportunities' | 'pipeline' | 'work' | 'approvals' | 'gate' | 'estimation' | 'reestimation';
+type Area = 'opportunities' | 'pipeline' | 'work' | 'approvals' | 'salesReview' | 'gate1' | 'gate' | 'estimation' | 'reestimation';
 const normalize = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, '_');
 const areas: Record<Area, string[]> = {
   opportunities: ['opportunity', 'opportunities', 'opportunity_management', 'opportunity_tracking'],
   pipeline: ['pipeline'], work: ['my_work'], approvals: ['my_approvals'],
+  salesReview: ['opportunity_review', 'sales_review'], gate1: ['gate_1_approval', 'gate1_approval', 'gate_1_go/no_go'],
   gate: ['gate_2_approval', 'gate2_approval', 'gate_2', 'gate2'],
   estimation: ['estimation'], reestimation: ['re_estimation', 'reestimation'],
 };
 
-/** Role names and IDs never grant access. Only active menu assignments do. */
-export function opportunityAccess(userId: number, menus: AccessMenu[], grants: AccessGrant[]) {
+/** Menu assignments grant access; role identity may only restrict it further. */
+export function opportunityAccess(userId: number, menus: AccessMenu[], grants: AccessGrant[], role?: AccessRole) {
+  const creatorOnly = [role?.roleName, role?.roleCode].some(value => value && ['sales_representative', 'sales_rep'].includes(normalize(value)));
   const byId = new Map(menus.map(menu => [menu.menuId, menu]));
   function active(menu: AccessMenu): boolean {
     const seen = new Set<number>();
@@ -50,7 +53,8 @@ export function opportunityAccess(userId: number, menus: AccessMenu[], grants: A
   const create = has(['opportunities'], 'add');
   const edit = has(['opportunities'], 'edit');
   const readClients = has(['opportunities'], 'view') || create || edit;
-  const review = has(['approvals'], 'approve');
+  const review = has(['approvals'], 'approve') || ['approve', 'request_changes', 'hold'].some(permission => has(['salesReview'], permission));
+  const gate1Review = ['approve', 'request_changes', 'hold'].some(permission => has(['gate1'], permission));
   const gateReview = has(['gate'], 'approve');
   const estimate = has(['estimation'], 'edit') || has(['estimation'], 'add') || has(['estimation'], 'submit');
   const viewAll = has(['opportunities', 'pipeline'], 'view');
@@ -65,23 +69,36 @@ export function opportunityAccess(userId: number, menus: AccessMenu[], grants: A
     if (!canListQueue(queue)) return false;
     if (queue === 'MY_WORK') return own(record);
     if (queue === 'MY_APPROVALS') return record.stageId === 1 ||
-      ([2, 4].includes(record.stageId ?? 0) && (has(['gate'], 'view') || gateReview));
+      ([2, 4].includes(record.stageId ?? 0) && (has(['gate'], 'view') || gateReview || (record.stageId === 2 && gate1Review)));
     return true;
   }
   function canView(record: WorkflowRecord) {
     if (viewAll || (own(record) && (create || edit || has(['work'], 'view')))) return true;
     if (record.stageId === 1) return has(['approvals'], 'view') || review;
-    if (record.stageId === 2) return has(['gate'], 'view') || gateReview;
+    if (record.stageId === 2) return has(['gate'], 'view') || gateReview || gate1Review;
     if ([3, 4, 5].includes(record.stageId ?? 0)) return has(['gate', 'estimation', 'reestimation'], 'view') || estimate || gateReview;
     return false;
   }
   function canEdit(record: WorkflowRecord) {
     if (!edit) return false;
+    if (creatorOnly && record.createdBy !== userId) return false;
     if (record.stageId === 1 && record.subStageId === 2) return record.createdBy === userId;
     return (record.stageId === 1 && [1, 3].includes(record.subStageId ?? 0)) ||
       (record.stageId === 2 && record.subStageId === 5);
   }
-  const canList = viewAll || create || edit || review || gateReview || estimate || has(['work', 'approvals', 'gate', 'estimation', 'reestimation'], 'view');
-  return { userId, has, create, edit, readClients, review, gateReview, estimate, canList, canListQueue, canViewInQueue, canView, canEdit };
+  const canList = viewAll || create || edit || review || gateReview || gate1Review || estimate || has(['work', 'approvals', 'gate', 'estimation', 'reestimation'], 'view');
+  function canReviewAction(record: WorkflowRecord, action: string) {
+    const permission = normalize(action);
+    if (!['approve', 'request_changes', 'hold'].includes(permission)) return false;
+    if (record.stageId === 1 && [1, 3].includes(record.subStageId ?? 0)) return has(['approvals'], 'approve') || has(['salesReview'], permission);
+    if (record.stageId === 2 && [4, 6].includes(record.subStageId ?? 0)) return gateReview || has(['gate1'], permission);
+    return false;
+  }
+  function actions(record: WorkflowRecord): string[] {
+    const result = canEdit(record) ? ['EDIT'] : [];
+    for (const action of ['APPROVE', 'REQUEST_CHANGES', 'HOLD']) if (canReviewAction(record, action)) result.push(`WORKFLOW_${action}`);
+    return result;
+  }
+  return { userId, has, create, edit, readClients, review, gateReview, estimate, canList, canListQueue, canViewInQueue, canView, canEdit, canReviewAction, actions };
 }
 export type OpportunityAccess = ReturnType<typeof opportunityAccess>;

@@ -1,7 +1,7 @@
 import * as repository from "../repositories/opportunity.repository";
 import * as validator from "../validators/opportunity.validator";
 import * as userService from "../integrations/userService";
-import { roleAccess } from '../integrations/adminService';
+import { roleAccess, reasonCode } from '../integrations/adminService';
 import { opportunityAccess, type OpportunityAccess } from '../lib/opportunityAccess';
 import { documentUploadAudit } from '../lib/documentStorage';
 
@@ -28,7 +28,7 @@ async function loadAccess(ctx: any): Promise<OpportunityAccess> {
   const user = await userService.findUser(userId);
   if (user?.isActive !== true || !user.roleId) throw conflict('An active user with assigned permissions is required.');
   const access = await roleAccess(user.roleId);
-  return opportunityAccess(userId, access.menus, access.roleAccess);
+  return opportunityAccess(userId, access.menus, access.roleAccess, access.role ?? undefined);
 }
 
 function validateProposalQuestions(input: OpportunityInput) {
@@ -43,7 +43,7 @@ function validateProposalQuestions(input: OpportunityInput) {
 async function list(ctx: any, queue = 'PIPELINE') {
   const access = await accessFor(ctx);
   if (!access.canListQueue(queue)) throw conflict('You do not have permission to view this workflow.');
-  return (await repository.findAll()).filter(record => access.canViewInQueue(record, queue)).map(record => ({ ...record, allowedActions: access.canEdit(record) ? ['EDIT'] : [] }));
+  return (await repository.findAll()).filter(record => access.canViewInQueue(record, queue)).map(record => ({ ...record, allowedActions: access.actions(record) }));
 }
 
 async function get(opportunityId: number, ctx: any) {
@@ -51,7 +51,7 @@ async function get(opportunityId: number, ctx: any) {
   const opportunity = await repository.findById(opportunityId);
   if (!opportunity) throw notFound('Opportunity not found.');
   if (!access.canView(opportunity)) throw conflict('You do not have permission to view this opportunity.');
-  return { ...opportunity, allowedActions: access.canEdit(opportunity) ? ['EDIT'] : [] };
+  return { ...opportunity, allowedActions: access.actions(opportunity) };
 }
 
 async function create(
@@ -202,10 +202,10 @@ async function reviewBySalesHead(
   userId: number,
   access: OpportunityAccess,
   action: WorkflowAction,
-  comment: string | null
+  comment: string | null,
+  reasonCodeId?: number | null
 ) {
-  if (!access.review || opportunity.stageId !== 1 ||
-      ![1, 3].includes(opportunity.subStageId ?? 0)) {
+  if (!access.canReviewAction(opportunity, action) || opportunity.stageId !== 1) {
     throw conflict("Approval permission is required to review an opportunity pending review or on hold.");
   }
 
@@ -214,7 +214,10 @@ async function reviewBySalesHead(
     return repository.transitionWorkflow(opportunityId, 1, 2, opportunity.createdBy, userId, comment.trim());
   }
   if (action === "HOLD") {
-    return repository.transitionWorkflow(opportunityId, 1, 3, null, userId, comment?.trim() || null);
+    if (!Number.isInteger(reasonCodeId) || reasonCodeId! <= 0) throw validationFailed('Select a reason code before placing the opportunity on hold.');
+    const reason = await reasonCode(reasonCodeId!);
+    if (!reason?.isActive) throw validationFailed('Select an active hold reason code.');
+    return repository.transitionWorkflow(opportunityId, 1, 3, null, userId, `Hold reason [${reason.id}]: ${reason.reasonName}`);
   }
   if (action === "APPROVE") {
     return repository.transitionWorkflow(opportunityId, 2, 4, null, userId, comment?.trim() || null);
@@ -231,7 +234,7 @@ async function reviewByCeo(
   comment: string | null
 ) {
   const canReview = opportunity.stageId === 2 && [4, 6].includes(opportunity.subStageId ?? 0);
-  if (!access.gateReview || !canReview) {
+  if (!access.canReviewAction(opportunity, action) || !canReview) {
     throw conflict("Gate approval permission is required to review a pending or held Go/No-Go opportunity.");
   }
 
@@ -253,7 +256,8 @@ async function transitionWorkflow(
   action: WorkflowAction,
   comment: string | null,
   opportunityDescription: string | null,
-  ctx: any
+  ctx: any,
+  reasonCodeId?: number | null
 ) {
   const access = await accessFor(ctx), userId = access.userId;
   const opportunity = await repository.findById(opportunityId);
@@ -279,7 +283,7 @@ async function transitionWorkflow(
     return resubmitBySalesRepresentative(opportunityId, opportunity, userId, access, comment, opportunityDescription);
   }
   if (opportunity.stageId === 1) {
-    return reviewBySalesHead(opportunityId, opportunity, userId, access, action, comment);
+    return reviewBySalesHead(opportunityId, opportunity, userId, access, action, comment, reasonCodeId);
   }
   if (opportunity.stageId === 2) {
     return reviewByCeo(opportunityId, opportunity, userId, access, action, comment);
@@ -394,7 +398,7 @@ export async function canUploadDocument(ctx: any) {
 }
 
 export async function allowedActions(opportunity: repository.Opportunity, ctx: any) {
-  return (await accessFor(ctx)).canEdit(opportunity) ? ['EDIT'] : [];
+  return (await accessFor(ctx)).actions(opportunity);
 }
 
 export {

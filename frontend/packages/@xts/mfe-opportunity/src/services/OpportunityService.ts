@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import { TRANSITION_OPPORTUNITY } from './opportunity.queries';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY, type OwnerDirectoryData } from './userDirectory.queries';
 import { mapOwnerDirectory } from './useOwnerDirectory';
 import { getApolloClient } from '@xts/api-client';
@@ -11,6 +12,7 @@ export class IntegrationUnavailable extends Error {
 }
 /** Service methods return persisted server state. Never return optimistic/fake success. */
 export interface OpportunityService {
+  transition?(id: string, action: 'APPROVE' | 'REQUEST_CHANGES' | 'HOLD', comment: string, reasonCodeId?: number): Promise<OpportunityDetail>;
   globalActions(): Promise<Action[]>;
   list(filter: ListFilter, signal?: AbortSignal): Promise<Page<OpportunitySummary>>;
   detail(id: string, signal?: AbortSignal, mode?: 'WORK' | 'DETAILS' | 'REVIEW'): Promise<OpportunityDetail>;
@@ -36,7 +38,7 @@ async function unavailable(capability: string): Promise<never> { throw new Integ
 import { DECISION_ROLE_IDS, SERVICE_LINES } from '../lib/opportunityOptions';
 
 interface BackendContact { fullName: string; titleRole: string; email: string; phone: string; roleInDecision: number | null; roleInDecisionOther?: string | null; }
-interface BackendCurrency { currencyId: number; currencyCode: string; currencySymbol?: string; }
+interface BackendCurrency { currencyId: number; currencyCode: string; currencySymbol?: string; currencyName?: string; }
 interface BackendOpportunity {
   allowedActions?: Action[];
   opportunityId: number; opportunityNumber: string | null; opportunityName: string | null;
@@ -107,7 +109,7 @@ function mapClient(c: BackendClient): OpportunityClient {
     accountTypeName: c.accountType ?? '', industryName: c.sector ?? '', allowedActions: [],
   };
 }
-function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], currencyCode: string, currencySymbol?: string): OpportunityDetail {
+function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], currencyCode: string, currencySymbol?: string, currencyName?: string): OpportunityDetail {
   const currentState = state(o);
   const owner = user(o.ownerId, directory);
   const client = o.clientId ? mapClient({
@@ -121,8 +123,8 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
   }));
   return {
     id: String(o.opportunityId), number: o.opportunityNumber ?? String(o.opportunityId), title: o.opportunityName ?? '',
-    estimatedValue: String(o.estimatedValue ?? ''), estimatedValueUsd: String(o.estimatedValueUsd ?? ''), currencyCode, currencySymbol, clientName: o.clientName, owner, priority: priority(o.priority),
-    state: currentState, rfpType: rfpType(o.rfpType), submissionDeadline: o.proposalDueDate, revision: 1,
+    estimatedValue: String(o.estimatedValue ?? ''), estimatedValueUsd: String(o.estimatedValueUsd ?? ''), currencyCode, currencySymbol, currencyName, clientName: o.clientName, owner, priority: priority(o.priority),
+    state: currentState, stageId: o.stageId, subStageId: o.subStageId, rfpType: rfpType(o.rfpType), submissionDeadline: o.proposalDueDate, revision: 1,
     packageRevision: null, allowedActions: actions(o),
     form: {
       title: o.opportunityName ?? '', estimatedValue: String(o.estimatedValue ?? ''), estimatedValueUsd: String(o.estimatedValueUsd ?? ''), serviceLineOther: o.serviceLine && !SERVICE_LINES.includes(o.serviceLine) ? o.serviceLine : '', currencyId: String(o.currencyId ?? ''),
@@ -183,6 +185,10 @@ function saveInput(command: SaveCommand) {
  * backend/schema validation is complete. Never fall back to a development mock.
  */
 export const productionOpportunityService: OpportunityService = {
+  async transition(id, action, comment, reasonCodeId) {
+    await getApolloClient().mutate({ mutation: TRANSITION_OPPORTUNITY, variables: { opportunityId: Number(id), action, comment: comment.trim() || null, reasonCodeId } });
+    return productionOpportunityService.detail(id);
+  },
   async globalActions() {
     const { data } = await getApolloClient().query<{ opportunityClientCreateAllowed: boolean; opportunityClientUpdateAllowed: boolean }>({ query: GET_CLIENT_CREATE_ACCESS, fetchPolicy: 'network-only', errorPolicy: 'none' });
     const actions: Action[] = [];
@@ -196,14 +202,14 @@ export const productionOpportunityService: OpportunityService = {
     const directory = await opportunityUsers();
     return page(data.opportunities.map(o => {
       const currency = data.currencies?.find(currency => currency.currencyId === o.currencyId);
-      return mapOpportunity(o, directory, currency?.currencyCode ?? '', currency?.currencySymbol);
+      return mapOpportunity(o, directory, currency?.currencyCode ?? '', currency?.currencySymbol, currency?.currencyName);
     }).filter(o => !q || `${o.title} ${o.clientName ?? ''} ${o.number}`.toLowerCase().includes(q)));
   },
   async detail(id) {
     const { data } = await getApolloClient().query<{ opportunity: BackendOpportunity | null; currencies?: BackendCurrency[] }>({ query: GET_OPPORTUNITY, variables: { opportunityId: Number(id) }, fetchPolicy: 'network-only' });
     if (!data.opportunity) throw new Error('Opportunity not found.');
     const currency = data.currencies?.find(currency => currency.currencyId === data.opportunity!.currencyId);
-    return mapOpportunity(data.opportunity, await opportunityUsers(), currency?.currencyCode ?? '', currency?.currencySymbol);
+    return mapOpportunity(data.opportunity, await opportunityUsers(), currency?.currencyCode ?? '', currency?.currencySymbol, currency?.currencyName);
   },
   async save(command) {
     const client = getApolloClient();
