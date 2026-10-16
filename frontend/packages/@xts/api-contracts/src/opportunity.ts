@@ -39,7 +39,7 @@ export interface OpportunityDraft {
   solicitation: Solicitation; dates: ImportantDates; context: RfpContext; rfp: RfpDraft;
 }
 export interface OpportunitySummary {
-  id: string; number: string; title: string; estimatedValue: Decimal; currencyCode: string;
+  id: string; number: string; title: string; estimatedValue: Decimal; estimatedValueUsd?: Decimal; currencyCode: string; currencySymbol?: string;
   clientName: string | null; owner: DirectoryUser | null; priority: OpportunityDraft['priority'];
   state: OpportunityState; rfpType: RfpDraft['type']; submissionDeadline: LocalDate | null;
   revision: number; packageRevision: number | null; allowedActions: Action[];

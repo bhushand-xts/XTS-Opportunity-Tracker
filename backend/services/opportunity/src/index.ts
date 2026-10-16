@@ -12,7 +12,7 @@ import opportunityTypes from './graphql/typeDefs/opportunity.typeDefs';
 import opportunityResolvers from './graphql/resolvers/opportunity.resolver';
 import cors from 'cors';
 import documentRoutes from './routes/document.routes';
-import { canCreateClient } from './services/opportunity.service';
+import { canUploadDocument } from './services/opportunity.service';
 
 // Opportunity & Pipeline
 
@@ -83,7 +83,7 @@ async function start() {
         return;
       }
 
-      if (req.method === 'POST' && !await canCreateClient({ user: { id } })) {
+      if (req.method === 'POST' && !await canUploadDocument({ user: { id } })) {
         res.status(403).json({ message: 'You cannot upload documents.' });
         return;
       }

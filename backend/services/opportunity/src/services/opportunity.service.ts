@@ -1,6 +1,8 @@
 import * as repository from "../repositories/opportunity.repository";
 import * as validator from "../validators/opportunity.validator";
 import * as userService from "../integrations/userService";
+import { roleAccess } from '../integrations/adminService';
+import { opportunityAccess, type OpportunityAccess } from '../lib/opportunityAccess';
 import { documentUploadAudit } from '../lib/documentStorage';
 
 import {
@@ -13,10 +15,21 @@ import type {
   OpportunityInput
 } from "../repositories/opportunity.repository";
 
-const SALES_HEAD_ROLE_ID = 20;
-const ESTIMATION_TEAM_ROLE_ID = 22;
-const SALES_REP_ROLE_ID = 24;
-const CEO_ROLE_ID = 23;
+async function accessFor(ctx: any): Promise<OpportunityAccess> {
+  if (ctx?.opportunityAccess) return ctx.opportunityAccess;
+  const pending = loadAccess(ctx);
+  if (ctx) ctx.opportunityAccess = pending;
+  return pending;
+}
+
+async function loadAccess(ctx: any): Promise<OpportunityAccess> {
+  const userId = ctx?.user?.id;
+  if (!Number.isInteger(userId) || userId <= 0) throw conflict('A signed-in user is required.');
+  const user = await userService.findUser(userId);
+  if (user?.isActive !== true || !user.roleId) throw conflict('An active user with assigned permissions is required.');
+  const access = await roleAccess(user.roleId);
+  return opportunityAccess(userId, access.menus, access.roleAccess);
+}
 
 function validateProposalQuestions(input: OpportunityInput) {
   if (input.proposalQuestionSelections === undefined) return;
@@ -27,43 +40,18 @@ function validateProposalQuestions(input: OpportunityInput) {
   }
 }
 
-async function list(ctx: any) {
-  const userId = ctx?.user?.id;
-  if (!Number.isInteger(userId) || userId <= 0) {
-    throw conflict("A signed-in user is required to view opportunities.");
-  }
-  const user = await userService.findUser(userId);
-  if (user?.roleId === SALES_REP_ROLE_ID) return repository.findOwnedBy(userId);
-  if (user?.roleId === SALES_HEAD_ROLE_ID) return repository.findAll();
-  if (user?.roleId === CEO_ROLE_ID) return repository.findByWorkflowStage(2, [4, 5, 6], true);
-  if (user?.roleId === ESTIMATION_TEAM_ROLE_ID) return repository.findByWorkflowStage(3, [7], true);
-  throw conflict("You do not have permission to view this workflow.");
+async function list(ctx: any, queue = 'PIPELINE') {
+  const access = await accessFor(ctx);
+  if (!access.canListQueue(queue)) throw conflict('You do not have permission to view this workflow.');
+  return (await repository.findAll()).filter(record => access.canViewInQueue(record, queue)).map(record => ({ ...record, allowedActions: access.canEdit(record) ? ['EDIT'] : [] }));
 }
 
 async function get(opportunityId: number, ctx: any) {
-  const userId = ctx?.user?.id;
-  if (!Number.isInteger(userId) || userId <= 0) throw conflict("A signed-in user is required.");
-  const user = await userService.findUser(userId);
+  const access = await accessFor(ctx);
   const opportunity = await repository.findById(opportunityId);
-
-  if (!opportunity) {
-    throw notFound("Opportunity not found");
-  }
-  const isSalesRepresentativeOwner = user?.roleId === SALES_REP_ROLE_ID && opportunity.createdBy === userId;
-  const isRoleReviewer = (user?.roleId === CEO_ROLE_ID && (
-    (opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0)) ||
-    (opportunity.stageId === 3 && opportunity.subStageId === 7) ||
-    (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) ||
-    (opportunity.stageId === 5 && opportunity.subStageId === 10))) ||
-    (user?.roleId === ESTIMATION_TEAM_ROLE_ID && (
-      (opportunity.stageId === 3 && opportunity.subStageId === 7) ||
-      (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) ||
-      (opportunity.stageId === 5 && opportunity.subStageId === 10)));
-  if (!isSalesRepresentativeOwner && user?.roleId !== SALES_HEAD_ROLE_ID && !isRoleReviewer) {
-    throw conflict("You do not have permission to view this opportunity.");
-  }
-
-  return opportunity;
+  if (!opportunity) throw notFound('Opportunity not found.');
+  if (!access.canView(opportunity)) throw conflict('You do not have permission to view this opportunity.');
+  return { ...opportunity, allowedActions: access.canEdit(opportunity) ? ['EDIT'] : [] };
 }
 
 async function create(
@@ -73,12 +61,8 @@ async function create(
   validateProposalQuestions(input);
   validator.validateCreateOpportunity(input);
 
-  const userId = ctx?.user?.id;
-  if (!Number.isInteger(userId) || userId <= 0) throw conflict("A signed-in Sales Representative or Sales Head is required.");
-  const creator = await userService.findUser(userId);
-  if (![SALES_REP_ROLE_ID, SALES_HEAD_ROLE_ID].includes(creator?.roleId ?? 0)) {
-    throw conflict("Only a signed-in Sales Representative or Sales Head can create this opportunity.");
-  }
+  const access = await accessFor(ctx), userId = access.userId;
+  if (!access.create) throw conflict('You do not have permission to create opportunities.');
   await validateActiveOwner(input.ownerId);
   return repository.create({
     ...input,
@@ -136,14 +120,8 @@ async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunity
     throw validationFailed("A valid opportunity source and RFP type are required.");
   }
 
-  const userId = ctx?.user?.id;
-  if (!Number.isInteger(userId) || userId <= 0) {
-    throw conflict("A signed-in user is required to create an opportunity");
-  }
-  const creator = await userService.findUser(userId);
-  if (![SALES_REP_ROLE_ID, SALES_HEAD_ROLE_ID].includes(creator?.roleId ?? 0)) {
-    throw conflict("Only a signed-in Sales Representative or Sales Head can create this opportunity.");
-  }
+  const access = await accessFor(ctx), userId = access.userId;
+  if (!access.create) throw conflict('You do not have permission to create opportunities.');
   await validateActiveOwner(input.ownerId);
   return repository.finalizeRfpIntakeOpportunity(input, userId, null);
 }
@@ -186,15 +164,10 @@ async function updateRfpIntakeOpportunity(
     throw validationFailed("Complete the required opportunity fields before saving.");
   }
 
-  const userId = ctx?.user?.id;
-  if (!Number.isInteger(userId) || userId <= 0) throw conflict("A signed-in user is required.");
-  const user = await userService.findUser(userId);
-  if (![SALES_REP_ROLE_ID, SALES_HEAD_ROLE_ID].includes(user?.roleId ?? 0)) {
-    throw conflict("Only Sales Representatives and Sales Heads can edit opportunities.");
-  }
+  const access = await accessFor(ctx), userId = access.userId;
   const current = await repository.findById(opportunityId);
   if (!current) throw notFound("Opportunity not found.");
-  assertCanEdit(current, userId, user?.roleId);
+  assertCanEdit(current, access);
   if (input.ownerId !== current.ownerId) throw conflict("The opportunity owner cannot be changed during review.");
 
   const updated = await repository.updateRfpIntakeOpportunity(opportunityId, input, userId);
@@ -204,27 +177,20 @@ async function updateRfpIntakeOpportunity(
 
 type WorkflowAction = repository.OpportunityWorkflowAction;
 
-function assertCanEdit(opportunity: repository.Opportunity, userId: number, roleId: number | null | undefined) {
-  const salesRepCanEdit = roleId === SALES_REP_ROLE_ID && opportunity.createdBy === userId &&
-    opportunity.stageId === 1 && opportunity.subStageId === 2;
-  const salesHeadCanEdit = roleId === SALES_HEAD_ROLE_ID && (
-    (opportunity.stageId === 1 && opportunity.subStageId === 2 && opportunity.createdBy === userId) ||
-    (opportunity.stageId === 1 && [1, 3].includes(opportunity.subStageId ?? 0)) ||
-    (opportunity.stageId === 2 && opportunity.subStageId === 5)
-  );
-  if (!salesRepCanEdit && !salesHeadCanEdit) throw conflict("You cannot edit this opportunity at its current workflow step.");
+function assertCanEdit(opportunity: repository.Opportunity, access: OpportunityAccess) {
+  if (!access.canEdit(opportunity)) throw conflict('You cannot edit this opportunity at its current workflow step.');
 }
 
 async function resubmitBySalesRepresentative(
   opportunityId: number,
   opportunity: repository.Opportunity,
   userId: number,
-  userRoleId: number | null | undefined,
+  access: OpportunityAccess,
   comment: string | null,
   opportunityDescription: string | null
 ) {
   const returnedFromSalesHead = opportunity.stageId === 1 && opportunity.subStageId === 2;
-  if (![SALES_REP_ROLE_ID, SALES_HEAD_ROLE_ID].includes(userRoleId ?? 0) || opportunity.createdBy !== userId || !returnedFromSalesHead) {
+  if (!access.edit || opportunity.createdBy !== userId || !returnedFromSalesHead) {
     throw conflict("Only the creator can resubmit an opportunity with requested changes.");
   }
   return repository.transitionWorkflow(opportunityId, 1, 1, null, userId, comment?.trim() || null, opportunityDescription?.trim() || null);
@@ -234,13 +200,13 @@ async function reviewBySalesHead(
   opportunityId: number,
   opportunity: repository.Opportunity,
   userId: number,
-  userRoleId: number | null | undefined,
+  access: OpportunityAccess,
   action: WorkflowAction,
   comment: string | null
 ) {
-  if (userRoleId !== SALES_HEAD_ROLE_ID || opportunity.stageId !== 1 ||
+  if (!access.review || opportunity.stageId !== 1 ||
       ![1, 3].includes(opportunity.subStageId ?? 0)) {
-    throw conflict("Only a Sales Head can review an opportunity pending review or on hold.");
+    throw conflict("Approval permission is required to review an opportunity pending review or on hold.");
   }
 
   if (action === "REQUEST_CHANGES") {
@@ -260,13 +226,13 @@ async function reviewByCeo(
   opportunityId: number,
   opportunity: repository.Opportunity,
   userId: number,
-  userRoleId: number | null | undefined,
+  access: OpportunityAccess,
   action: WorkflowAction,
   comment: string | null
 ) {
   const canReview = opportunity.stageId === 2 && [4, 6].includes(opportunity.subStageId ?? 0);
-  if (userRoleId !== CEO_ROLE_ID || !canReview) {
-    throw conflict("Only a CEO can review a pending or held Go/No-Go opportunity.");
+  if (!access.gateReview || !canReview) {
+    throw conflict("Gate approval permission is required to review a pending or held Go/No-Go opportunity.");
   }
 
   if (action === "REQUEST_CHANGES") {
@@ -289,38 +255,36 @@ async function transitionWorkflow(
   opportunityDescription: string | null,
   ctx: any
 ) {
-  const userId = ctx?.user?.id;
-  if (!Number.isInteger(userId) || userId <= 0) throw conflict("A signed-in user is required.");
-  const user = await userService.findUser(userId);
+  const access = await accessFor(ctx), userId = access.userId;
   const opportunity = await repository.findById(opportunityId);
-  if (!opportunity) throw notFound("Opportunity not found.");
+  if (!opportunity) throw notFound('Opportunity not found.');
 
-  if (action === "SUBMIT_ESTIMATE") {
-    if (user?.roleId !== ESTIMATION_TEAM_ROLE_ID || opportunity.stageId !== 3 || opportunity.subStageId !== 7) {
-      throw conflict("Only the Estimation Team can submit an in-progress estimate for approval.");
+  if (action === 'SUBMIT_ESTIMATE') {
+    if (!access.estimate || opportunity.stageId !== 3 || opportunity.subStageId !== 7) {
+      throw conflict('Estimation submission permission and an in-progress estimate are required.');
     }
     return repository.transitionWorkflow(opportunityId, 4, 8, null, userId, comment?.trim() || null);
   }
-  if (user?.roleId === CEO_ROLE_ID && opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) {
-    if (action === "HOLD") return repository.transitionWorkflow(opportunityId, 4, 9, null, userId, comment?.trim() || null);
-    if (action === "APPROVE") return repository.transitionWorkflow(opportunityId, 5, 10, null, userId, comment?.trim() || null);
-    throw validationFailed("Use Hold or Approve for estimate review.");
+  if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) {
+    if (!access.gateReview) throw conflict('Gate approval permission is required to review estimates.');
+    if (action === 'HOLD') return repository.transitionWorkflow(opportunityId, 4, 9, null, userId, comment?.trim() || null);
+    if (action === 'APPROVE') return repository.transitionWorkflow(opportunityId, 5, 10, null, userId, comment?.trim() || null);
+    throw validationFailed('Use Hold or Approve for estimate review.');
   }
-  if (action === "RESUBMIT") {
-    if (user?.roleId === SALES_HEAD_ROLE_ID && opportunity.stageId === 2 && opportunity.subStageId === 5) {
+  if (action === 'RESUBMIT') {
+    if (opportunity.stageId === 2 && opportunity.subStageId === 5) {
+      assertCanEdit(opportunity, access);
       return repository.transitionWorkflow(opportunityId, 2, 4, null, userId, comment?.trim() || null);
     }
-    return resubmitBySalesRepresentative(
-      opportunityId, opportunity, userId, user?.roleId, comment, opportunityDescription
-    );
+    return resubmitBySalesRepresentative(opportunityId, opportunity, userId, access, comment, opportunityDescription);
   }
-  if (user?.roleId === SALES_HEAD_ROLE_ID) {
-    return reviewBySalesHead(opportunityId, opportunity, userId, user.roleId, action, comment);
+  if (opportunity.stageId === 1) {
+    return reviewBySalesHead(opportunityId, opportunity, userId, access, action, comment);
   }
-  if (user?.roleId === CEO_ROLE_ID) {
-    return reviewByCeo(opportunityId, opportunity, userId, user.roleId, action, comment);
+  if (opportunity.stageId === 2) {
+    return reviewByCeo(opportunityId, opportunity, userId, access, action, comment);
   }
-  throw conflict("Only Sales Heads and CEOs can perform workflow actions.");
+  throw conflict('No workflow action is available at the current step.');
 }
 
 async function update(
@@ -341,10 +305,8 @@ async function update(
 
   validator.validateUpdateOpportunity({ ...current, ...Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) });
 
-  const userId = ctx?.user?.id;
-  if (!Number.isInteger(userId) || userId <= 0) throw conflict("A signed-in user is required.");
-  const user = await userService.findUser(userId);
-  assertCanEdit(current, userId, user?.roleId);
+  const access = await accessFor(ctx), userId = access.userId;
+  assertCanEdit(current, access);
   if (input.ownerId !== undefined && input.ownerId !== current.ownerId) {
     throw conflict("The opportunity owner cannot be changed during review.");
   }
@@ -367,8 +329,8 @@ async function validateActiveOwner(ownerId: number | null | undefined) {
 }
 
 async function listClients(ctx: any) {
-  const user = await userService.findUser(ctx?.user?.id);
-  if (![SALES_REP_ROLE_ID, SALES_HEAD_ROLE_ID].includes(user?.roleId ?? 0)) throw conflict("A signed-in Sales Representative or Sales Head is required.");
+  const access = await accessFor(ctx);
+  if (!access.readClients) throw conflict('You do not have permission to view clients.');
   return repository.findClients();
 }
 
@@ -382,12 +344,8 @@ export async function updateClient(clientId: number, input: repository.RfpIntake
 }
 
 async function saveDirectoryClient(id: number | null, input: repository.RfpIntakeClientInput, contacts: repository.RfpIntakeContactInput[], ctx: any) {
-  const userId = ctx?.user?.id;
-  if (!Number.isInteger(userId) || userId <= 0) throw conflict("A signed-in user is required.");
-  const user = await userService.findUser(userId);
-  if (user?.isActive !== true || ![SALES_REP_ROLE_ID, SALES_HEAD_ROLE_ID].includes(user?.roleId ?? 0)) {
-    throw conflict("Only Sales Representatives and Sales Heads can create or update clients.");
-  }
+  const access = await accessFor(ctx), userId = access.userId;
+  if (!(id === null ? access.create : access.edit)) throw conflict('You do not have permission to create or update clients.');
   const fields: [string, string | null | undefined, number, boolean][] = [
     ['Client name', input.clientName, 255, true], ['Account type', input.accountType, 100, true],
     ['Sector', input.sector, 100, true], ['Website', input.website, 500, false],
@@ -421,10 +379,22 @@ async function saveDirectoryClient(id: number | null, input: repository.RfpIntak
 }
 
 export async function canCreateClient(ctx: any) {
-  const userId = ctx?.user?.id;
-  if (!Number.isInteger(userId) || userId <= 0) return false;
-  const user = await userService.findUser(userId);
-  return user?.isActive === true && [SALES_REP_ROLE_ID, SALES_HEAD_ROLE_ID].includes(user.roleId ?? 0);
+  if (!Number.isInteger(ctx?.user?.id) || ctx.user.id <= 0) return false;
+  return (await accessFor(ctx)).create;
+}
+
+export async function canUpdateClient(ctx: any) {
+  if (!Number.isInteger(ctx?.user?.id) || ctx.user.id <= 0) return false;
+  return (await accessFor(ctx)).edit;
+}
+
+export async function canUploadDocument(ctx: any) {
+  const access = await accessFor(ctx);
+  return access.create || access.edit;
+}
+
+export async function allowedActions(opportunity: repository.Opportunity, ctx: any) {
+  return (await accessFor(ctx)).canEdit(opportunity) ? ['EDIT'] : [];
 }
 
 export {

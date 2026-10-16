@@ -31,7 +31,7 @@ function mount(service: OpportunityService, route = '/opportunity', userId = '10
     userList: [{ id: 101, firstName: 'Test', lastName: 'Owner', email: 'owner@example.test', roleId: 1, isActive: true }, { id: 102, firstName: 'Test', lastName: 'Reviewer', email: 'reviewer@example.test', roleId: 1, isActive: true }],
     rolesList: [{ id: 1, roleName: 'Test role', roleCode: 'TEST', isActive: true }],
   } }, maxUsageCount: 100 }];
-  return render(<MockedProvider mocks={[...ownerMocks, { request: { query: GET_PROPOSAL_SECTIONS }, result: { data: { rfpQuestionsList: [{ id: 7, question: 'Executive summary', description: null, displayOrder: 1, isActive: true }, { id: 8, question: 'Inactive section', description: null, displayOrder: 2, isActive: false }] } }, maxUsageCount: 100 }]}><OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId, view: true, add: true, edit: true, work: true, approvals: true }}><MemoryRouter initialEntries={[route]}><UnsavedProvider><Location /><Routes><Route path="/opportunity" element={<PipelinePage />} /><Route path="/opportunity/approvals" element={<PipelinePage queue="MY_APPROVALS" />} /><Route path="/opportunity/work" element={<PipelinePage queue="MY_WORK" />} /><Route path="/opportunity/new" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/edit" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /><Route path="/opportunity/:id/review" element={<OpportunityDetailsPage review />} /></Routes></UnsavedProvider></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider></MockedProvider>);
+  return render(<MockedProvider mocks={[...ownerMocks, { request: { query: GET_PROPOSAL_SECTIONS }, result: { data: { rfpQuestionsList: [{ id: 7, question: 'Executive summary', description: null, displayOrder: 1, isActive: true }, { id: 8, question: 'Inactive section', description: null, displayOrder: 2, isActive: false }] } }, maxUsageCount: 100 }]}><OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId, view: true, pipeline: true, add: true, edit: true, work: true, approvals: true }}><MemoryRouter initialEntries={[route]}><UnsavedProvider><Location /><Routes><Route path="/opportunity" element={<PipelinePage />} /><Route path="/opportunity/approvals" element={<PipelinePage queue="MY_APPROVALS" />} /><Route path="/opportunity/work" element={<PipelinePage queue="MY_WORK" />} /><Route path="/opportunity/new" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/edit" element={<OpportunityFormPage />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /><Route path="/opportunity/:id/review" element={<OpportunityDetailsPage review />} /></Routes></UnsavedProvider></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider></MockedProvider>);
 }
 function testService(initial = fixtureOpportunity()): OpportunityService {
   let record = initial;
@@ -62,7 +62,7 @@ describe('RFP preparation', () => {
     const confirm = vi.spyOn(window, 'confirm');
     mount(service, '/opportunity/401/edit');
     await screen.findByLabelText('Question 1 text');
-    fireEvent.click(screen.getByRole('button', { name: type === 'QUESTIONNAIRE' ? /Generic RFP/ : /RFP Questionnaire/ }));
+    fireEvent.click(screen.getByRole('button', { name: type === 'QUESTIONNAIRE' ? /Generic RFP/ : /Questionnaire-based/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Question 1 text')).not.toBeInTheDocument();
     expect(screen.getByLabelText(/Opportunity name/)).toHaveValue('Cloud transformation');
@@ -74,7 +74,7 @@ describe('RFP preparation', () => {
     expect(submitted.clientId).toBe(initial.form.clientId);
     expect(submitted.solicitation.reference).toBe(initial.form.solicitation.reference);
     expect(submitted.solicitation.submissionMethod).toBe('PORTAL');
-    expect(submitted.rfp.source).toEqual(initial.form.rfp.source);
+    expect(submitted.rfp.source).toBeNull();
     expect(submitted.rfp.questions).toEqual([]);
     if (type === 'QUESTIONNAIRE') {
       expect(submitted.solicitation).toMatchObject({ contractTerm: '', incumbentVendor: '', preBidMeeting: '' });
@@ -225,7 +225,10 @@ describe('Opportunity UI using test-only service fixtures', () => {
     else expect(screen.getByText('Vendor demonstration required')).toBeInTheDocument();
   });
   it('Save Opportunity persists before returning to Pipeline and keeps actions after response content', async () => {
-    const service = testService(); mount(service, '/opportunity/401/edit');
+    const initial = fixtureOpportunity();
+    Object.assign(initial.form, { estimatedValueUsd: '100.00', priority: 'MEDIUM' });
+    initial.form.solicitation.submissionMethod = 'PORTAL';
+    const service = testService(initial); mount(service, '/opportunity/401/edit');
     const title = await screen.findByLabelText(/Opportunity name/); fireEvent.change(title, { target: { value: 'Saved revised opportunity' } });
     const save = screen.getByRole('button', { name: /^(Save|Update) Opportunity$/ });
     expect(screen.getByText('Question & answer progress').compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -293,8 +296,8 @@ describe('Opportunity UI using test-only service fixtures', () => {
     const session = () => createLocalOpportunityService(createLocalOpportunityStore(storage, directory), async () => ({ ...directory, actorId }));
     let service = session();
     const form = newDraft(actorId);
-    Object.assign(form, { title: 'Automatic approval flow', estimatedValue: '100.00', currencyId: '1', serviceLine: 'Data & platform engineering', clientId: 'local-test-client' });
-    Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
+    Object.assign(form, { title: 'Automatic approval flow', estimatedValue: '100.00', estimatedValueUsd: '100.00', priority: 'MEDIUM', currencyId: '1', serviceLine: 'Data & platform engineering', clientId: 'local-test-client' });
+    Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement', submissionMethod: 'PORTAL' });
     form.dates.submissionDeadline = '2026-11-25'; form.rfp.type = 'GENERIC';
     const created = await service.save({ id: null, expectedRevision: null, idempotencyKey: 'ui-auto-create', form });
     actorId = '2017'; service = session(); mount(service, '/opportunity/approvals', actorId);

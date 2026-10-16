@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Check, FileText, MessageCircle, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button, Checkbox, Input, Label, Textarea } from '@xts/design-system';
 import type { OpportunityDetail, OpportunityDraft, RfpDraft, Solicitation, ImportantDates } from '@xts/api-contracts';
@@ -33,8 +33,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
         ? { ...current.solicitation, contractTerm: '', incumbentVendor: '', preBidMeeting: '' }
         : current.solicitation,
       rfp: {
-        ...current.rfp, type, questions: [],
-        ...(current.rfp.type === 'QUESTIONNAIRE' ? { extraction: null } : {}),
+        ...current.rfp, type, source: null, extraction: null, questions: [],
         ...(current.rfp.type === 'GENERIC' ? { sections: [], submissionFormat: 'TECHNICAL_COST' as const, evaluation: '' } : {}),
       },
     }));
@@ -60,9 +59,9 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
       if (mounted.current) { setUploading(false); onUploadingChange?.(false); }
     }
   }
-  return <div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="RFP type" aria-invalid={Boolean(rfpTypeError)}>{([{ type: 'QUESTIONNAIRE', label: 'RFP Questionnaire', hint: 'Extract and review questions from a document' }, { type: 'GENERIC', label: 'Generic RFP', hint: 'Build a response from proposal sections' }] as const).map(choice => <Button key={choice.type} type="button" variant="outline" className={`opp-type ${rfp.type === choice.type ? 'opp-selected' : ''}`} aria-pressed={rfp.type === choice.type} disabled={disabled} onClick={() => choose(choice.type)}><span className="text-left"><strong className="block">{choice.label}</strong><span className="mt-1 block text-xs font-normal text-muted-foreground">{choice.hint}</span></span></Button>)}</div>
+  return <div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="RFP type" aria-invalid={Boolean(rfpTypeError)}>{([{ type: 'QUESTIONNAIRE', label: 'Questionnaire-based', hint: 'Fixed set of questions', icon: MessageCircle }, { type: 'GENERIC', label: 'Generic RFP', hint: 'Full written proposal', icon: FileText }] as const).map(choice => <Button key={choice.type} type="button" variant="outline" className={`opp-type ${rfp.type === choice.type ? 'opp-selected' : ''}`} aria-pressed={rfp.type === choice.type} disabled={disabled} onClick={() => choose(choice.type)}><span className="opp-type-icon" aria-hidden="true"><choice.icon className="size-4" /></span><span className="min-w-0 flex-1 text-left"><strong className="block">{choice.label}</strong><span className="mt-1 block text-xs font-normal text-muted-foreground">{choice.hint}</span></span><span className="opp-type-indicator" aria-hidden="true">{rfp.type === choice.type && <Check className="size-3" />}</span></Button>)}</div>
     {rfpTypeError && <p role="alert" className="text-xs text-destructive">{rfpTypeError}</p>}
-    <p className="text-xs text-muted-foreground">Save queues the opportunity for Sales Head approval. Select an RFP type to continue.</p>
+    <p className="text-xs text-muted-foreground">Save queues the opportunity for Sales Head approval.</p>
     <details className="opp-details" open><summary>Solicitation & procurement details</summary><div className="opp-fields opp-procurement-fields p-3">
       <Field label="Solicitation / reference number" value={form.solicitation.reference} onChange={v => solicitation('reference', v)} disabled={disabled} required />
       <Field label="Issuing agency / department" value={form.solicitation.issuingAgency} onChange={v => solicitation('issuingAgency', v)} disabled={disabled} required />
@@ -78,11 +77,20 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     {rfp.type && <>
       <div className="opp-upload">
         <Label htmlFor="opportunity-source">{rfp.type === 'GENERIC' ? 'Source document / brief' : 'Source questionnaire'}</Label>
-        <p role="status" className="my-2 text-sm break-words">{uploading ? `Uploading ${selectedFile?.name ?? 'document'}...` : rfp.source?.name || 'Choose a PDF, Word or text document'}</p>
-        <Input id="opportunity-source" type="file" accept=".pdf,.doc,.docx,.txt" disabled={disabled} aria-busy={uploading} onChange={e => { void selectFile(e.target.files?.[0]); e.target.value = ''; }} />
-        {rfp.source && <DocumentDownload document={rfp.source} opportunityId={saved?.id ?? null} disabled={uploading} />}
+        <div className="opp-upload-controls">
+          <div className="opp-file-picker">
+            <input className="sr-only" id="opportunity-source" type="file" accept=".pdf,.doc,.docx,.txt" disabled={disabled} aria-busy={uploading} aria-describedby="opportunity-source-status" onChange={e => { void selectFile(e.target.files?.[0]); e.target.value = ''; }} />
+            <label htmlFor="opportunity-source" className="opp-file-choose" aria-disabled={disabled}>Choose File</label>
+            <div className="opp-file-name">
+              {uploading ? <span role="status">Uploading {selectedFile?.name ?? 'document'}...</span> : rfp.source ? <DocumentDownload document={rfp.source} opportunityId={saved?.id ?? null} disabled={disabled} /> : <span>No file chosen</span>}
+            </div>
+          </div>
+          {rfp.type === 'QUESTIONNAIRE' && <Button type="button" disabled={disabled} onClick={() => toast.info('AI question extraction is currently under development.')}>Extract questions</Button>}
+        </div>
+        <div id="opportunity-source-status" className="opp-upload-status">
+          <span>PDF, Word or text · Max 25 MB</span>
+        </div>
       </div>
-      {rfp.type === 'QUESTIONNAIRE' && <Button type="button" disabled={disabled} onClick={() => toast.info('AI question extraction is currently under development.')}>Extract questions</Button>}
       {error && <Notice error={error} />}
       {rfp.type === 'GENERIC' && <>
         <h3 className="font-semibold">Proposal structure</h3><Choice label="Submission format" value={rfp.submissionFormat} options={[{ id: 'TECHNICAL_COST', label: 'Technical + Cost volumes' }, { id: 'COMBINED', label: 'Single combined proposal' }]} onChange={v => update({ submissionFormat: v as RfpDraft['submissionFormat'] })} disabled={disabled} />

@@ -19,6 +19,7 @@ export interface Env {
   port: number;
   db: DbConfig;
   userServiceUrl: string;
+  adminServiceUrl: string;
 }
 
 const env: Env = {
@@ -32,6 +33,7 @@ const env: Env = {
     max: Number(process.env.DB_POOL_MAX || 10),
   },
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://localhost:4001/graphql',
+  adminServiceUrl: process.env.ADMIN_SERVICE_URL || 'http://localhost:4010/graphql',
 };
 
 export default env;

@@ -40,7 +40,7 @@ export function newDraft(ownerId: string): OpportunityDraft {
     solicitation: { reference: '', version: '', issuingAgency: '', procurementContact: '', submissionMethod: '', vendorDemo: 'UNCONFIRMED', portalUrl: '', submissionEmail: '', deliveryInstructions: '', contractTerm: '', incumbentVendor: '', preBidMeeting: '', submissionTimezone: 'Asia/Kolkata' },
     dates: { issueDate: '', questionsDue: '', proposalDue: '', submissionDeadline: '', additionalDeadline: '', additionalDeadlineLabel: '' },
     context: { instructions: '', submissionRequirements: '', opportunityOverview: '', scopeOfWork: '', requirements: '', notes: '' },
-    rfp: { type: null, source: null, extraction: null, questions: [], sections: [], submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: '' },
+    rfp: { type: 'GENERIC', source: null, extraction: null, questions: [], sections: [], submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: '' },
   };
 }
 export function isPreparing(o: OpportunityDetail) { return o.state === 'PREPARATION_PENDING' || o.state === 'IN_PROGRESS' || o.state === 'SALES_REVIEW'; }
