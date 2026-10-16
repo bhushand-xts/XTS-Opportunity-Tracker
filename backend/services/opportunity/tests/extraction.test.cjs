@@ -516,3 +516,23 @@ function describe_spreadsheets() {
     assert.throws(() => detectKind(Buffer.from([0, 1, 2]), 'rfp.csv'));
   });
 }
+test('reopening restores categories from the stored extraction, with keyword fallback, and returns the linked document', async () => {
+  const service = require(compiled + 'services/opportunity.service');
+  const docId = randomUUID();
+  const restores = [
+    stub(service, { get: async () => ({ proposalQuestions: ['Describe   your hosting environment.', 'What are your annual licence fees?', 'Tell us something'] }) }),
+    stub(db, { query: async sql => sql.includes('question_document_sources') ? [{ id: docId, original_name: 'rfp.pdf' }] : [{ id: 'job-1' }] }),
+    stub(repo, { results: async () => ({ completed: 1, total: 1, questions: [{ id: 'extracted-1', text: 'Describe your hosting environment.', sourceReference: 'Page 2', validated: false, category: 'Approach & Delivery' }] }) }),
+  ];
+  try {
+    await withRouter(async (url, headers) => {
+      const body = await (await fetch(`${url}/source/42`, { headers })).json();
+      assert.deepEqual(body.document, { id: docId, name: 'rfp.pdf', downloadUrl: null });
+      assert.deepEqual(body.categories, [
+        { text: 'Describe   your hosting environment.', category: 'Approach & Delivery', fromDocument: true },
+        { text: 'What are your annual licence fees?', category: 'Pricing & Commercial', fromDocument: false },
+        { text: 'Tell us something', category: 'Other', fromDocument: false },
+      ]);
+    });
+  } finally { restores.forEach(restore => restore()); }
+});

@@ -13,7 +13,7 @@ const extractedQuestion = (question: PreparedQuestion) => question.id.startsWith
 // Same fixed list the backend asks the AI to choose from, in tab order.
 const QUESTION_CATEGORIES = ['Company & Qualifications', 'Team', 'Approach & Delivery', 'Technical', 'Security & Compliance', 'Pricing & Commercial', 'References', 'Other'];
 const ALL = 'All';
-const categoryOf = (question: PreparedQuestion) => question.category && QUESTION_CATEGORIES.includes(question.category) ? question.category : 'Other';
+const normalizeQuestion = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
 function extractionState(state: QuestionExtractionStatus['state']): NonNullable<RfpDraft['extraction']>['state'] {
   if (state === 'SUCCEEDED') return 'SUCCEEDED';
   if (state === 'QUEUED' || state === 'PROCESSING') return 'PROCESSING';
@@ -60,6 +60,38 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
     };
   }, []);
   const extracting = Boolean(job) && (!status || status.state === 'QUEUED' || status.state === 'PROCESSING');
+  // Saved questions keep only their text. On reopening, categories (and whether a question came
+  // from the document) are recovered from the stored extraction. Kept out of the form so
+  // reopening never counts as an unsaved change.
+  const [restored, setRestored] = useState({ categories: new Map<string, string>(), fromDocument: new Set<string>() });
+  useEffect(() => {
+    if (!saved?.id || !extractionEnabled || form.rfp.type !== 'QUESTIONNAIRE') return;
+    let active = true;
+    const generation = generationRef.current;
+    questionExtractionService.source(saved.id).then(result => {
+      if (!active) return;
+      const byText = new Map((result.categories ?? []).map(entry => [normalizeQuestion(entry.text), entry]));
+      const categories = new Map<string, string>(), fromDocument = new Set<string>();
+      for (const question of formRef.current.rfp.questions) {
+        const match = byText.get(normalizeQuestion(question.text));
+        if (!match || question.category) continue;
+        categories.set(question.id, match.category);
+        if (match.fromDocument) fromDocument.add(question.id);
+      }
+      setRestored({ categories, fromDocument });
+      // The linked document lets Extract run without choosing the file again, unless a new file was picked meanwhile.
+      if (result.document && generationRef.current === generation) setUploaded(current => current ?? result.document!);
+    }).catch(() => {});
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved?.id]);
+  const categoryOf = (question: PreparedQuestion) => {
+    const category = question.category ?? restored.categories.get(question.id);
+    return category && QUESTION_CATEGORIES.includes(category) ? category : 'Other';
+  };
+  // Questions that came from the document, including saved ones recovered on reopening; these are
+  // what a re-extraction or a replaced file replaces.
+  const fromDocument = (question: PreparedQuestion) => extractedQuestion(question) || restored.fromDocument.has(question.id);
   useEffect(() => {
     if (!status || disabledRef.current) return;
     const incoming = status.questions.filter(q => !removedRef.current.has(q.id) && !removedRef.current.has(extractionCandidateKeys(q)[1]));
@@ -126,8 +158,8 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
       return;
     }
     setInstructionsError(undefined);
-    if (rfp.questions.some(extractedQuestion) && !window.confirm('Extract again? Previously extracted questions will be replaced; manually added questions are kept.')) return;
-    update({ questions: rfp.questions.filter(q => !extractedQuestion(q)) });
+    if (rfp.questions.some(fromDocument) && !window.confirm('Extract again? Previously extracted questions will be replaced; manually added questions are kept.')) return;
+    update({ questions: rfp.questions.filter(q => !fromDocument(q)) });
     const { controller, generation } = restart();
     try {
       const accepted = await questionExtractionService.retry(uploaded.id, crypto.randomUUID(), controller.signal, instructions);
@@ -160,9 +192,9 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
     if (!file) return;
     if (!/\.(pdf|docx?|txt|xlsx|csv)$/i.test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) { setError('Choose a non-empty PDF, Word, Excel (.xlsx), CSV or text document up to 25 MB.'); return; }
     if (rfp.type === 'QUESTIONNAIRE' && extractionEnabled) {
-      if (rfp.questions.some(extractedQuestion) && !window.confirm('Replace the source document? Previously extracted questions will be removed; manually added questions are kept.')) return;
+      if (rfp.questions.some(fromDocument) && !window.confirm('Replace the source document? Previously extracted questions will be removed; manually added questions are kept.')) return;
       setError(undefined); setSelectedFile(file);
-      update({ questions: rfp.questions.filter(q => !extractedQuestion(q)) });
+      update({ questions: rfp.questions.filter(q => !fromDocument(q)) });
       // Upload only; the user extracts once their instructions are ready.
       void uploadDocument(file);
       return;

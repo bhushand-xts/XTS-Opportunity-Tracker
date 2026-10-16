@@ -9,6 +9,8 @@ import * as repo from './repository';
 import { mayRead, mayUpload } from './access';
 import { prepareStorage, storagePath, hashFile, discard, saveInstructions } from './storage';
 import { MAX_INSTRUCTIONS, normalizeInstructions, instructionsTooShort } from './compactSource';
+import { normalize } from './groq';
+import { categoryFor } from './localMatch';
 import { promptVersion } from './policy';
 import { DocumentKind, ExtractionError, uuid } from './types';
 
@@ -108,11 +110,18 @@ extractionRouter.get('/source/:opportunityId', wrap(async (req, res) => {
   if (!Number.isSafeInteger(id) || id <= 0) throw new ExtractionError('INVALID_OPPORTUNITY');
   // Check access even when no source exists.
   const service = await import('../services/opportunity.service');
-  await service.get(id, { user: { id: user(req) } });
+  const opportunity = await service.get(id, { user: { id: user(req) } });
   const rows = await query<{ id: string; original_name: string }>(`SELECT d.id,d.original_name FROM question_document_sources s JOIN question_documents d ON d.id=s.document_id WHERE s.opportunity_id=$1 AND NOT d.deleting`, [id]);
   const latest = rows[0] ? (await query<{ id: string }>(`SELECT id FROM question_extraction_jobs WHERE document_id=$1 AND state='SUCCEEDED' ORDER BY created_at DESC LIMIT 1`, [rows[0].id]))[0] : null;
-  res.json({ document: rows[0] ? { id: rows[0].id, name: rows[0].original_name, downloadUrl: null } : null,
-    questions: latest ? (await repo.results(latest.id)).questions : [] });
+  const questions = latest ? (await repo.results(latest.id)).questions : [];
+  // Saved questions keep only their text, so their categories are recovered from the stored
+  // extraction by text; edited or manual ones fall back to keyword rules. No AI involved.
+  const extracted = new Map(questions.map(question => [normalize(question.text), question.category]));
+  const categories = (opportunity.proposalQuestions ?? []).map(text => {
+    const match = extracted.get(normalize(text));
+    return { text, category: match ?? categoryFor(undefined, text), fromDocument: extracted.has(normalize(text)) };
+  });
+  res.json({ document: rows[0] ? { id: rows[0].id, name: rows[0].original_name, downloadUrl: null } : null, questions, categories });
 }));
 extractionRouter.post('/documents/:documentId/extractions', wrap(async (req, res) => {
   if (env.extraction.aiExtraction && !aiReady()) throw new ExtractionError('EXTRACTION_NOT_CONFIGURED', 503);

@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { MockedProvider } from '@apollo/client/testing';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { QuestionExtractionStatus } from '@xts/api-contracts';
+import type { OpportunityDetail, QuestionExtractionStatus } from '@xts/api-contracts';
 import { newDraft } from '../lib/workflow';
 import { RfpPreparation } from './RfpPreparation';
 
-const api = vi.hoisted(() => ({ start: vi.fn(), status: vi.fn(), retry: vi.fn(), upload: vi.fn(), cancel: vi.fn(), delay: vi.fn() }));
+const api = vi.hoisted(() => ({ start: vi.fn(), status: vi.fn(), retry: vi.fn(), upload: vi.fn(), cancel: vi.fn(), source: vi.fn(), delay: vi.fn() }));
 vi.mock('../services/QuestionExtractionService', async importOriginal => ({
   ...await importOriginal<typeof import('../services/QuestionExtractionService')>(),
   extractionEnabled: true,
@@ -295,5 +295,62 @@ describe('prompt-driven question extraction', () => {
     const signal = api.upload.mock.calls[0][2] as AbortSignal;
     view.unmount();
     expect(signal.aborted).toBe(true);
+  });
+});
+
+describe('reopening a saved opportunity', () => {
+  const restoredSource = {
+    document: { id: '7c1e2d3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f', name: 'rfp.pdf', downloadUrl: null },
+    categories: [
+      { text: 'Describe your hosting environment.', category: 'Technical', fromDocument: true },
+      { text: 'Manual staffing question', category: 'Team', fromDocument: false },
+    ],
+  };
+  async function mountSaved() {
+    function Harness() {
+      const [form, setForm] = useState(() => {
+        const form = newDraft('1'); form.rfp.type = 'QUESTIONNAIRE';
+        form.rfp.source = { id: 'rfp.pdf', name: 'rfp.pdf', downloadUrl: null };
+        form.rfp.questions = [
+          { id: 'saved-1', text: 'Describe your hosting environment.', sourceReference: '', validated: true },
+          { id: 'saved-2', text: 'Manual staffing question', sourceReference: '', validated: true },
+        ];
+        return form;
+      });
+      return <MockedProvider><><RfpPreparation form={form} setForm={setForm} saved={{ id: '42' } as OpportunityDetail} disabled={false} />
+        <output data-testid="form">{JSON.stringify(form)}</output></></MockedProvider>;
+    }
+    await act(async () => { render(<Harness />); });
+  }
+  it('restores category tabs and re-enables Extract without choosing the file again, without changing the form', async () => {
+    api.source.mockResolvedValue(restoredSource);
+    await mountSaved();
+    expect(await screen.findByRole('tab', { name: 'Technical (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Team (1)' })).toBeInTheDocument();
+    expect(api.source).toHaveBeenCalledWith('42');
+    expect(screen.getByRole('button', { name: 'Extract questions' })).toBeEnabled();
+    expect(screen.getByTestId('form').textContent).not.toContain('"category"');
+  });
+  it('re-extracting replaces questions that came from the document and keeps manual ones', async () => {
+    api.source.mockResolvedValue(restoredSource);
+    api.retry.mockResolvedValue({ document: restoredSource.document, jobId: 'job-9' });
+    api.status.mockResolvedValue({ id: 'job-9', state: 'SUCCEEDED', completed: 1, total: 1, error: null,
+      questions: [{ id: 'extracted-9', text: 'Describe your hosting and security approach.', sourceReference: 'Page 3', validated: false, category: 'Technical' }] });
+    await mountSaved();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Extract questions' })).toBeEnabled());
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Extract questions' }));
+    await waitFor(() => expect(screen.getByDisplayValue('Describe your hosting and security approach.')).toBeInTheDocument());
+    expect(confirm).toHaveBeenCalled();
+    expect(api.retry).toHaveBeenCalledWith(restoredSource.document.id, expect.any(String), expect.any(AbortSignal), '');
+    expect(screen.queryByDisplayValue('Describe your hosting environment.')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Manual staffing question')).toBeInTheDocument();
+  });
+  it('still works when nothing was stored for the opportunity', async () => {
+    api.source.mockRejectedValue(new Error('offline'));
+    await mountSaved();
+    await waitFor(() => expect(api.source).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Extract questions' })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: 'Other (2)' })).toBeInTheDocument();
   });
 });

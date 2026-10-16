@@ -78,7 +78,11 @@ export const questionExtractionService = {
     return request<QuestionExtractionAccepted>(`/documents/${encodeURIComponent(documentId)}/extractions`, { method: 'POST', signal,
       headers: { 'x-idempotency-key': key, 'content-type': 'application/json' }, body: JSON.stringify({ instructions: instructions ?? '' }) });
   },
-  source(opportunityId: string) { return request<{ document: SourceDocument | null; questions?: PreparedQuestion[] }>(`/source/${encodeURIComponent(opportunityId)}`, { signal: AbortSignal.timeout(3000) }); },
+  // A saved opportunity's linked document and, per saved question text, its recovered category.
+  source(opportunityId: string) {
+    return request<{ document: SourceDocument | null; questions?: PreparedQuestion[]; categories?: { text: string; category: string; fromDocument: boolean }[] }>(
+      `/source/${encodeURIComponent(opportunityId)}`, { signal: AbortSignal.timeout(5000) });
+  },
 };
 export function mergeExtractedQuestions(current: PreparedQuestion[], incoming: PreparedQuestion[]) {
   const ids = new Set(current.map(question => question.id));
