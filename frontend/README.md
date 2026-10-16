@@ -15,7 +15,8 @@ Everything lives in `packages/@xts/`. One `npm install` in this folder installs 
 | `design-system` | Shared UI: shadcn components, `AppShell`, `LoginView`, auth store, Tailwind tokens. |
 | `api-client` | The Apollo Client — gateway URL, auth header, cache. |
 | `api-contracts` | TypeScript types that mirror the backend's GraphQL types. |
-| `mfe-opportunity`, `mfe-solution`, `mfe-approval`, `mfe-dashboard` | Placeholders for later. Not loaded by the shell yet. |
+| `mfe-opportunity` | Opportunity workspace (port **3002**), loaded by the shell at `/opportunity`. |
+| `mfe-solution`, `mfe-approval`, `mfe-dashboard` | Placeholders for later. Not loaded by the shell yet. |
 
 Inside `mfe-admin/src/features/` each screen has the same layout:
 
@@ -119,9 +120,76 @@ then restart both apps (it is read at build time).
 
 | Symptom | Cause / fix |
 |---|---|
-| Red "Couldn't load …" banner, and a CORS error in the browser console | The gateway must allow the frontend origin. `CORS_ORIGIN` in `backend/gateway/.env` defaults to `http://localhost:3000,http://localhost:3001`. Restart the gateway after changing it. |
+| Red "Couldn't load …" banner, and a CORS error in the browser console | The existing gateway must allow the frontend origin. Its default origins are `http://localhost:3000,http://localhost:3001`; standalone Opportunity on 3002 requires that origin to be allowed already. Use the shell on 3000 for the existing configuration. |
 | "Failed to fetch" | The gateway isn't running on port 4000, or `GRAPHQL_API_URL` is wrong. |
 | "Loading module…" never ends inside the app | `npm run dev:admin` isn't running (port 3001). |
 | Blank page or no sidebar after an update | An old login is stored in the browser. Hard-refresh (`Ctrl+Shift+R`); if it persists, run `localStorage.clear()` in the browser console and reload. The app now clears a stale login by itself and shows the login screen. |
 | "Please sign in with a registered account to make changes" | You are signed in with the demo SSO button. Log out and use a real account. |
 | "Port 3000 is already in use" | Another copy of the app is running. Stop it, or close the old terminal. |
+
+## Opportunity MFE
+
+From `frontend/`, run `npm run dev:opportunity` in its own terminal alongside
+`npm run dev:shell`. Open http://localhost:3000 and select **Opportunity** in the
+sidebar. The entry discovers existing Opportunity records through `menus(asTree: false)`
+using their menu keys, names and routes. Active records with role access feed one
+sidebar entry; the name and icon come from an authorized record. Role Menu Permission
+Assignment controls each record's actual `menuKey`, and Opportunity access checks
+consider grants across all matching active records.
+On the local gateway checked on 2026-10-12, active **12 / Opportunities** and
+**29 / Opportunity Management** are connected. **28 / Opportunity Tracking** is
+excluded while inactive, and **5 / Permission Master** belongs to Administration.
+The MFE opens at `/opportunity`; `/opportunities` is supported as an alias.
+No fixed menu ID, duplicate menu or database change is required.
+
+For standalone development, open http://localhost:3002; the app provides the
+same authentication, sidebar, header, and `/opportunity` routing as the shell.
+The MFE uses the real workflow GraphQL adapter by default with the existing login,
+signed-in user's role and Bearer token. Set `OPPORTUNITY_USE_LOCAL_WORKFLOW=false` in
+`frontend/.env` for backend workflow testing, then restart the dev servers. No additional
+workflow API flag is required. The same routes and screens use the configured
+`GRAPHQL_API_URL`; a failed request never substitutes synthetic data.
+
+The frontend is prepared for **Save -> Pending -> Sales Head approval -> Gate 1
+pending -> CEO Go / No-Go**, with decisions directly on **Overview** and no manual
+submission/approver picker. Expected backend routing uses real active eligible
+Sales Head/CEO users and returns `approvalAssignees`; the frontend never invents
+assignee IDs or authorizes a decision through a role display name. Owner Pending
+edits must refresh package/revisions, and stale or wrong-user decisions must fail.
+Question/answer completion is not an approval prerequisite.
+
+**The unchanged backend does not implement the required workflow APIs yet.** The
+prepared contract is in `../docs/opportunity/graphql-contract.md`. Real saving,
+cross-user queues, stage transitions, assignments and decisions cannot work until
+that backend contract is confirmed and implemented. Current login, menus, user/
+role directories and master reads remain real; unsupported workflow requests show
+errors instead of fabricated success. Backend source changes were reverted; no database migration or business writes were applied.
+Temporary ignored backend environment settings still require restoration from their original backup.
+
+To validate the existing screens with actual users before workflow APIs are ready,
+set `OPPORTUNITY_USE_LOCAL_WORKFLOW=true` in `frontend/.env` and restart the MFE.
+The role switcher is removed: use normal login/logout in the same browser profile
+and app address. Login identity, active users/roles, Opportunity menu grants and
+masters come from the existing gateway. Only workflow/client records are local.
+The local Pipeline starts empty; use the clearly labelled UI Test Client or add
+a local test client. Previously seeded synthetic opportunities are not imported.
+
+1. Sign in as Sales Representative and save a new Opportunity: Pipeline shows Pending.
+2. Sign out and sign in as Sales Head. Open My Approvals and the opportunity's
+   Overview. Approve & Send to CEO, or reject with a reason.
+3. After Sales approval, sign in as CEO and open My Approvals. Approve Go or
+   Decide No-Go with a reason. Decisions appear above Opportunity Progress.
+4. Sign back in as Representative and verify the same record's Pipeline status.
+
+Eligible Sales Head/CEO users share their stage queue; the first valid decision
+advances it. Writes refresh real identity and grants and reject stale revisions.
+Local records survive logout but do not sync across browser profiles/devices or
+origins (ports 3000 and 3002 have separate storage). This verifies frontend UI
+behavior using actual accounts, not backend persistence or server authorization.
+Document upload/extraction still requires backend implementation. Production
+builds always ignore this development flag. Set it false to use the same UI with
+the documented workflow API once the backend contract is implemented.
+
+Use `OPPORTUNITY_REMOTE_URL` to override the default remote origin when building
+the shell and Opportunity MFE. Build with
+`npm run build --workspace=@xts/mfe-opportunity`.

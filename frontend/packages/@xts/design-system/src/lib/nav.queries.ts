@@ -29,3 +29,13 @@ export const GET_NAV_MENUS = gql`
     }
   }
 `;
+
+// MFE navigation is bound to the existing Menu Master record, rather than a
+// separate static label or module-level permission.
+export const GET_MFE_MENU = gql`
+  query GetMfeMenu($menuId: Int!) {
+    menu(menuId: $menuId) {
+      ${NAV_MENU_FIELDS}
+    }
+  }
+`;

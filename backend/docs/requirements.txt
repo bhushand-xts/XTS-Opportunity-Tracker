@@ -10,3 +10,8 @@ npm.cmd install --save-dev nodemon@3.1.9
 npm.cmd list express @apollo/server graphql pg dotenv cors nodemon // verify
 npm.cmd install
 npm.cmd run dev
+
+cd "D:\OT 12oct\backend\services\opportunity"
+npm install multer
+npm install -D @types/multer
+npm install country-state-city
