@@ -291,6 +291,7 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
       mockAbort(signal); actor(); const ids = input.purpose === 'SALES_REVIEWER' ? eligible('SALES') : input.purpose === 'GATE1_APPROVER' ? eligible('CEO') : directory ? users.filter(value => value.active && permitted(value.id, 'view') && permitted(value.id, input.purpose === 'REVIEWER' ? 'approve' : 'edit')).map(value => value.id) : input.purpose === 'OWNER' ? ['101', '102'] : ['103'], term = input.search.trim().toLowerCase();
       return mockPage(users.filter(user => ids.includes(user.id) && `${user.name} ${user.email}`.toLowerCase().includes(term)).map(mockCopy), input.after);
     },
+    download: async () => { throw new Error('Document download requires the backend integration.'); },
     upload: (command, file) => mutate('upload', { ...command, filename: file.name, size: file.size, modified: file.lastModified }, state => {
       if (directory) throw new Error('Document upload requires the backend integration.');
       const record = checked(state, command); editable(record);

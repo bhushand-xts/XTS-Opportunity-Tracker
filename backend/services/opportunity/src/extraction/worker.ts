@@ -7,6 +7,7 @@ import { pool, query } from '../config/db';
 import * as repo from './repository';
 import { tokenChunks, parseDocument } from './parser';
 import { extract, QuotaWait } from './groq';
+import { extractWithRetry } from './retry';
 import { sectionCandidates } from './localMatch';
 import { instructionsHashOf } from './policy';
 import { prepareStorage, storagePath, discard, loadInstructions } from './storage';
@@ -43,7 +44,7 @@ async function processJob(job: repo.Job) {
       // A QuotaWait from extract() propagates: completed chunks are kept and the
       // job is requeued until quota frees up, so the user's prompt is always honored.
       const candidates = await sectionCandidates(chunk.blocks,
-        ai ? blocks => extract(blocks, job.model, job.id, chunk.chunk_index, instructions) : undefined);
+        ai ? blocks => extractWithRetry(blocks, part => extract(part, job.model, job.id, chunk.chunk_index, instructions)) : undefined);
       await repo.completeChunk(job, chunk.chunk_index, candidates);
     }
     await repo.finish(job, 'SUCCEEDED');

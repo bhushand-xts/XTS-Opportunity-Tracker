@@ -3,7 +3,7 @@ import { gql } from '@apollo/client';
 // Implemented master-data operations only. No proposed workflow is sent live.
 export const GET_OPPORTUNITY_LOOKUPS = gql`
   query OpportunityLookups {
-    currencies { currencyId currencyName currencyCode isActive }
+    currencies { currencyId currencyName currencyCode currencySymbol isActive }
     industries { industryId industryName isActive }
     accountTypes { accountTypeId accountName isActive }
   }
@@ -11,6 +11,7 @@ export const GET_OPPORTUNITY_LOOKUPS = gql`
 
 const OPPORTUNITY_FIELDS = gql`
   fragment OpportunityFields on Opportunity {
+    allowedActions
     opportunityId
     opportunityNumber
     opportunityName
@@ -32,6 +33,7 @@ const OPPORTUNITY_FIELDS = gql`
     preBidMeeting
     documentType
     fileName
+    filePath
     docSubmissionFormat
     evaluationBasis
     opportunityDescription
@@ -58,8 +60,9 @@ const OPPORTUNITY_FIELDS = gql`
 
 export const LIST_OPPORTUNITIES = gql`
   ${OPPORTUNITY_FIELDS}
-  query ListOpportunities {
-    opportunities { ...OpportunityFields }
+  query ListOpportunities($queue: String = "PIPELINE") {
+    opportunities(queue: $queue) { ...OpportunityFields }
+    currencies { currencyId currencyCode currencySymbol }
   }
 `;
 
@@ -67,6 +70,7 @@ export const GET_OPPORTUNITY = gql`
   ${OPPORTUNITY_FIELDS}
   query GetOpportunity($opportunityId: Int!) {
     opportunity(opportunityId: $opportunityId) { ...OpportunityFields }
+    currencies { currencyId currencyCode currencySymbol }
   }
 `;
 
@@ -126,7 +130,7 @@ export const UPDATE_OPPORTUNITY_CLIENT = gql`
 `;
 
 export const GET_CLIENT_CREATE_ACCESS = gql`
-  query OpportunityClientCreateAccess { opportunityClientCreateAllowed }
+  query OpportunityClientCreateAccess { opportunityClientCreateAllowed opportunityClientUpdateAllowed }
 `;
 
 export const UPDATE_OPPORTUNITY = gql`

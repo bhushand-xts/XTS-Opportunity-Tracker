@@ -66,12 +66,31 @@ describe('prompt-driven question extraction', () => {
     expect(instructionsBox()).toHaveValue('');
     expect(instructionsToggle()).toHaveAttribute('aria-expanded', 'true');
     await upload();
-    expect(screen.getByText('questions.txt (selected)')).toHaveClass('opp-upload-file');
+    expect(screen.getByText('questions.txt')).toBeInTheDocument();
     expect(api.upload.mock.calls[0][0]).toBeInstanceOf(File);
     expect(api.start).not.toHaveBeenCalled();
     expect(api.retry).not.toHaveBeenCalled();
     expect(extractButton()).toBeEnabled();
     expect(screen.getByTestId('form').textContent).toContain(`"source":{"id":"${document.id}"`);
+  });
+  it('switches type and clears the document and questions without confirmation', async () => {
+    await mount(); await upload();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByRole('button', { name: /Generic RFP/ }));
+    const form = JSON.parse(screen.getByTestId('form').textContent!);
+    expect(form.rfp).toMatchObject({ type: 'GENERIC', source: null, questions: [], sections: [], extraction: null });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByText('questions.txt')).not.toBeInTheDocument();
+  });
+  it('blocks type switching during an upload', async () => {
+    const pending = deferred<{ document: typeof document }>();
+    api.upload.mockReturnValue(pending.promise);
+    await mount(); select();
+    expect(screen.getByRole('button', { name: /Generic RFP/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Generic RFP/ }));
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.type).toBe('QUESTIONNAIRE');
+    await act(async () => pending.resolve({ document }));
+    expect(screen.getByRole('button', { name: /Generic RFP/ })).toBeEnabled();
   });
   it('extracts all questions when no instructions are given', async () => {
     api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);

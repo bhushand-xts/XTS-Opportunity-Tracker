@@ -23,6 +23,7 @@ function StatefulOwner({ initial = '', selected }: { initial?: string; selected?
   return <><OpportunityOwnerSelect value={value} selected={selected} onChange={setValue} /><output aria-label="Chosen user ID">{value}</output></>;
 }
 beforeAll(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   Element.prototype.scrollIntoView = vi.fn();
   Element.prototype.hasPointerCapture = () => false;
   Element.prototype.setPointerCapture = vi.fn();
@@ -38,7 +39,7 @@ describe('Opportunity owner selection from the real master API shape', () => {
     await waitFor(() => expect(screen.getByLabelText('Opportunity owner')).toBeEnabled());
     expect(screen.getByLabelText('Opportunity owner')).toHaveTextContent('Select owner');
     fireEvent.keyDown(screen.getByLabelText('Opportunity owner'), { key: 'Enter' });
-    const option = await screen.findByText('Ada Lovelace');
+    const option = screen.getByText('Ada Lovelace');
     expect(option.closest('[role="option"]')).toBeInTheDocument();
     expect(screen.getByText('Grace Hopper').closest('[role="option"]')).toBeInTheDocument();
     expect(screen.queryByText(/Inactive Owner/)).not.toBeInTheDocument();
@@ -52,12 +53,13 @@ describe('Opportunity owner selection from the real master API shape', () => {
     const trigger = screen.getByLabelText('Opportunity owner');
     expect(trigger).toHaveTextContent('Inactive Owner');
     fireEvent.keyDown(trigger, { key: 'Enter' });
-    const inactiveOption = await screen.findByText(/Inactive Owner/, { selector: '[role="option"] > span:last-child' });
+    const inactiveOption = screen.getByText(/Inactive Owner/, { selector: '[role="option"] > span:last-child' });
     expect(inactiveOption.closest('[role="option"]')).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(screen.getByText('Grace Hopper'));
     expect(screen.getByLabelText('Chosen user ID')).toHaveTextContent('84');
     fireEvent.keyDown(trigger, { key: 'Enter' });
     expect(screen.queryByText(/Inactive Owner/)).not.toBeInTheDocument();
+    fireEvent.click(trigger);
   });
 
   it('shows API errors and retries without creating fake choices', async () => {

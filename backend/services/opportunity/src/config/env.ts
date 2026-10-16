@@ -48,6 +48,7 @@ export interface Env {
   db: DbConfig;
   userServiceUrl: string;
   extraction: ExtractionConfig;
+  adminServiceUrl: string;
 }
 
 const aiExtraction = process.env.GROQ_AI_EXTRACTION === 'true';
@@ -87,6 +88,7 @@ const env: Env = {
     ocrCommand: process.env.OCRMYPDF_COMMAND || 'ocrmypdf',
     childEnv: { PATH: process.env.PATH },
   },
+  adminServiceUrl: process.env.ADMIN_SERVICE_URL || 'http://localhost:4010/graphql',
 };
 
 export default env;

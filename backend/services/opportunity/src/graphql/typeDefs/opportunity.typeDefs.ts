@@ -1,6 +1,7 @@
 export const opportunityTypeDefs = `#graphql
 
   type Opportunity {
+    allowedActions: [String!]!
     opportunityId: Int!
     opportunityNumber: String
     opportunityName: String
@@ -291,7 +292,8 @@ export const opportunityTypeDefs = `#graphql
 
   extend type Query {
     opportunityClientCreateAllowed: Boolean!
-    opportunities: [Opportunity!]!
+    opportunityClientUpdateAllowed: Boolean!
+    opportunities(queue: String = "PIPELINE"): [Opportunity!]!
     opportunityClients: [OpportunityDirectoryClient!]!
 
     opportunity(

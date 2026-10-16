@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalOpportunityPath, hasOpportunityPermission, resolveOpportunityMenus, type OpportunityMenuRecord } from './opportunityMenu';
+import { canonicalOpportunityPath, hasOpportunityPermission, opportunityMenuPermissions, resolveOpportunityMenus, type OpportunityMenuRecord } from './opportunityMenu';
 
 const record = (overrides: Partial<OpportunityMenuRecord>): OpportunityMenuRecord => ({ menuId: 12, menuName: 'Opportunities', menuKey: 'opportunities', icon: 'ListChecks', parentId: null, sortOrder: 5, routePath: null, isActive: true, ...overrides });
 const catalog = [
@@ -40,5 +40,30 @@ describe('Opportunity menu discovery', () => {
     expect(canonicalOpportunityPath('/opportunity/401/details')).toBe('/opportunity/401/details');
     expect(canonicalOpportunityPath('/opportunities/401/details')).toBe('/opportunity/401/details');
     expect(canonicalOpportunityPath('/opportunities')).toBe('/opportunity');
+  });
+  it('discovers workflow child menus without routes under the opportunity parent', () => {
+    const children = [record({}), record({ menuId: 100, menuKey: 'my_approvals', menuName: 'My Approvals', parentId: 12 })];
+    expect(resolveOpportunityMenus(children).map(menu => menu.menuId)).toEqual([12, 100]);
+    expect(resolveOpportunityMenus(children.map(menu => ({ ...menu, isActive: menu.menuId !== 12 })))).toEqual([]);
+  });
+  it('keeps root View separate from revoked Pipeline and full sibling permissions', () => {
+    const menus = resolveOpportunityMenus([
+      record({}),
+      record({ menuId: 100, menuKey: 'pipeline', menuName: 'Pipeline', parentId: 12, routePath: '/opportunities' }),
+      record({ menuId: 101, menuKey: 'my_work', menuName: 'My Work', parentId: 12 }),
+      record({ menuId: 102, menuKey: 'my_approvals', menuName: 'My Approvals', parentId: 12 }),
+    ]);
+    const access = opportunityMenuPermissions(menus, (key, permission) =>
+      key === 'opportunities' ? permission === 'view' : ['my_work', 'my_approvals'].includes(key));
+    expect(access).toEqual({ view: true, pipeline: false, add: false, edit: false, work: true, approvals: true, approve: true });
+  });
+  it('does not inherit parent View for any child queue or child Add/Edit for Opportunities', () => {
+    const menus = resolveOpportunityMenus([
+      record({}), record({ menuId: 100, menuKey: 'pipeline', menuName: 'Pipeline', parentId: 12, routePath: '/opportunities' }),
+    ]);
+    expect(opportunityMenuPermissions(menus, (key, permission) => key === 'opportunities' && permission === 'view')).toEqual({
+      view: true, pipeline: false, add: false, edit: false, work: false, approvals: false, approve: false,
+    });
+    expect(opportunityMenuPermissions(menus, key => key === 'pipeline')).toMatchObject({ pipeline: true, view: false, add: false, edit: false });
   });
 });

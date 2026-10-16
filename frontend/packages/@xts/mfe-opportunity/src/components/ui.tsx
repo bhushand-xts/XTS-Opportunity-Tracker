@@ -4,6 +4,7 @@ import { Briefcase, Layers, Users } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner, Textarea } from '@xts/design-system';
 import type { LookupOption, OpportunityState } from '@xts/api-contracts';
 import { STATE_LABELS } from '../lib/workflow';
+import { SearchableSelect } from './SearchableSelect';
 
 export function Panel({ title, description, tone = 'violet', children, className = '' }: { title: string; description?: string; tone?: 'violet' | 'indigo' | 'teal' | 'neutral'; children: ReactNode; className?: string }) {
   const Icon = tone === 'teal' ? Users : tone === 'indigo' ? Layers : Briefcase;
@@ -13,8 +14,9 @@ export function Field({ label, value, onChange, type = 'text', required = false,
   const id = useId(), error = useFieldError(label);
   return <div className="opp-field min-w-0 space-y-1"><Label htmlFor={id} className={error ? 'text-destructive' : undefined}>{label}{required && <span className="text-destructive"> *</span>}</Label>{multiline ? <Textarea id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} required={required} /> : <Input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} type={type} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} required={required} min={type === 'number' ? '0' : undefined} step={type === 'number' ? 'any' : undefined} />}{error && <p id={`${id}-error`} role="alert" className="text-xs text-destructive">{error}</p>}{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div>;
 }
-export function Choice({ label, value, onChange, options, disabled = false, required = false }: { label: string; value: string; onChange: (value: string) => void; options: LookupOption[]; disabled?: boolean; required?: boolean }) {
+export function Choice({ label, value, onChange, options, disabled = false, required = false, searchable = false }: { label: string; value: string; onChange: (value: string) => void; options: LookupOption[]; disabled?: boolean; required?: boolean; searchable?: boolean }) {
   const id = useId(), error = useFieldError(label);
+  if (searchable) return <div className="opp-field min-w-0 space-y-1"><Label htmlFor={id} className={error ? 'text-destructive' : undefined}>{label}{required && <span className="text-destructive"> *</span>}</Label><SearchableSelect id={id} label={label} value={value} options={options} onChange={onChange} disabled={disabled} required={required} error={error} />{error && <p id={`${id}-error`} role="alert" className="text-xs text-destructive">{error}</p>}</div>;
   return <div className="opp-field min-w-0 space-y-1"><Label htmlFor={id} className={error ? 'text-destructive' : undefined}>{label}{required && <span className="text-destructive"> *</span>}</Label><Select value={value} onValueChange={onChange} disabled={disabled}><SelectTrigger id={id} aria-label={label} aria-required={required} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined}><SelectValue placeholder="Select…" /></SelectTrigger><SelectContent>{options.filter(x => x.id).map(x => <SelectItem key={x.id} value={x.id}>{x.label}</SelectItem>)}</SelectContent></Select>{error && <p id={`${id}-error`} role="alert" className="text-xs text-destructive">{error}</p>}</div>;
 }
 export function options(values: string[]): LookupOption[] { return values.map(x => ({ id: x, label: x })); }

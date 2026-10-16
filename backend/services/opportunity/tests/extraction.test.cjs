@@ -536,3 +536,26 @@ test('reopening restores categories from the stored extraction, with keyword fal
     });
   } finally { restores.forEach(restore => restore()); }
 });
+test('a malformed or cut-off AI answer is retried (cut-off as two halves) at most 3 calls per section; quota waits pass through', async () => {
+  const { extractWithRetry } = require(compiled + 'extraction/retry');
+  const { ExtractionError } = require(compiled + 'extraction/types');
+  const { QuotaWait } = require(compiled + 'extraction/groq');
+  const blocks = [{ id: 'b1', reference: 'Page 1', text: 'Describe A.' }, { id: 'b2', reference: 'Page 1', text: 'Describe B.' }, { id: 'b3', reference: 'Page 1', text: 'Describe C.' }];
+  const ok = ids => ids.map(id => ({ id, text: id, sourceReference: 'Page 1', validated: false }));
+  let calls = 0;
+  assert.deepEqual((await extractWithRetry(blocks, async () => { if (++calls === 1) throw new ExtractionError('AI_OUTPUT_SCHEMA_FAILED'); return ok(['q1']); })).map(q => q.id), ['q1']);
+  assert.equal(calls, 2);
+  const seen = [];
+  const halves = await extractWithRetry(blocks, async part => { seen.push(part.map(b => b.id)); if (seen.length === 1) throw new ExtractionError('INCOMPLETE_AI_RESPONSE'); return ok([part[0].id]); });
+  assert.equal(seen.length, 3); assert.ok(seen[1].length < blocks.length && seen[2].length < blocks.length);
+  assert.equal(halves.length, 2);
+  calls = 0;
+  await assert.rejects(extractWithRetry(blocks, async () => { calls++; throw new ExtractionError('INVALID_AI_RESPONSE'); }), /INVALID_AI_RESPONSE/);
+  assert.equal(calls, 3);
+  calls = 0;
+  await assert.rejects(extractWithRetry(blocks, async () => { calls++; throw new ExtractionError('AI_REQUEST_REJECTED'); }), /AI_REQUEST_REJECTED/);
+  assert.equal(calls, 1);
+  calls = 0;
+  await assert.rejects(extractWithRetry(blocks, async () => { calls++; throw new QuotaWait(30); }), error => error instanceof QuotaWait);
+  assert.equal(calls, 1);
+});

@@ -20,6 +20,7 @@ export interface OpportunityService {
   saveClient(input: { id: string | null; expectedRevision: number | null; idempotencyKey: string; form: ClientDraft }): Promise<OpportunityClient>;
   eligibleUsers(input: { opportunityId: string | null; purpose: 'OWNER' | 'REVIEWER' | 'SALES_REVIEWER' | 'GATE1_APPROVER'; search: string; after: string | null }, signal?: AbortSignal): Promise<Page<DirectoryUser>>;
   upload(command: VersionCommand, file: File): Promise<SourceDocument>;
+  download(opportunityId: string | null, document: SourceDocument): Promise<Blob>;
   extract(command: VersionCommand & { documentId: string }): Promise<OpportunityDetail>;
   extractionStatus(opportunityId: string, jobId: string, signal?: AbortSignal): Promise<OpportunityDetail>;
   saveEstimation(command: VersionCommand & { estimation: Estimation }): Promise<OpportunityDetail>;
@@ -35,13 +36,15 @@ async function unavailable(capability: string): Promise<never> { throw new Integ
 import { DECISION_ROLE_IDS, SERVICE_LINES } from '../lib/opportunityOptions';
 
 interface BackendContact { fullName: string; titleRole: string; email: string; phone: string; roleInDecision: number | null; roleInDecisionOther?: string | null; }
+interface BackendCurrency { currencyId: number; currencyCode: string; currencySymbol?: string; }
 interface BackendOpportunity {
+  allowedActions?: Action[];
   opportunityId: number; opportunityNumber: string | null; opportunityName: string | null;
   sourceTypeId: number | null; clientId: number | null; stageId: number | null; subStageId: number | null;
   ownerId: number | null; assignedTo: number | null; priority: string | null; serviceLine: string | null;
   solicitationNumber: string | null; issuingAgency: string | null; procurementContact: string | null;
   queDueDate: string | null; submissionMethod: string | null; contractTerm: string | null; incumbentVendor: string | null;
-  preBidMeeting: number | null; documentType: string | null; fileName: string | null; docSubmissionFormat: string | null;
+  preBidMeeting: number | null; documentType: string | null; fileName: string | null; filePath: string | null; docSubmissionFormat: string | null;
   evaluationBasis: string | null; opportunityDescription: string | null; leadReceivedDate: string | null;
   proposalDueDate: string | null; estimatedValue: number | null; estimatedValueUsd?: number | null; currencyId: number | null; rfpType: number | null;
   workflowComment: string | null; clientName: string | null; accountType: string | null; sector: string | null;
@@ -87,8 +90,7 @@ function state(o: BackendOpportunity): OpportunitySummary['state'] {
   return 'SALES_REVIEW';
 }
 function actions(o: BackendOpportunity): Action[] {
-  const s = state(o);
-  return s === 'PREPARATION_PENDING' || s === 'SALES_REVIEW' ? ['EDIT'] : [];
+  return o.allowedActions ?? [];
 }
 function mapContact(contact: BackendContact, id?: string) {
   const roles = Object.fromEntries(Object.entries(DECISION_ROLE_IDS).map(([label, id]) => [id, label]));
@@ -105,7 +107,7 @@ function mapClient(c: BackendClient): OpportunityClient {
     accountTypeName: c.accountType ?? '', industryName: c.sector ?? '', allowedActions: [],
   };
 }
-function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], currencyCode = 'INR'): OpportunityDetail {
+function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], currencyCode: string, currencySymbol?: string): OpportunityDetail {
   const currentState = state(o);
   const owner = user(o.ownerId, directory);
   const client = o.clientId ? mapClient({
@@ -119,7 +121,7 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
   }));
   return {
     id: String(o.opportunityId), number: o.opportunityNumber ?? String(o.opportunityId), title: o.opportunityName ?? '',
-    estimatedValue: String(o.estimatedValue ?? ''), currencyCode, clientName: o.clientName, owner, priority: priority(o.priority),
+    estimatedValue: String(o.estimatedValue ?? ''), estimatedValueUsd: String(o.estimatedValueUsd ?? ''), currencyCode, currencySymbol, clientName: o.clientName, owner, priority: priority(o.priority),
     state: currentState, rfpType: rfpType(o.rfpType), submissionDeadline: o.proposalDueDate, revision: 1,
     packageRevision: null, allowedActions: actions(o),
     form: {
@@ -134,7 +136,7 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
       },
       dates: { issueDate: o.leadReceivedDate ?? '', questionsDue: o.queDueDate ?? '', proposalDue: o.proposalDueDate ?? '', submissionDeadline: o.proposalDueDate ?? '', additionalDeadline: '', additionalDeadlineLabel: '' },
       context: { instructions: '', submissionRequirements: '', opportunityOverview: o.opportunityDescription ?? '', scopeOfWork: '', requirements: '', notes: o.workflowComment ?? '' },
-      rfp: { type: rfpType(o.rfpType), source: o.fileName ? { id: o.fileName, name: o.fileName, downloadUrl: null } : null, extraction: null, questions: questions.filter(q => q.masterQuestionId === null), sections: questions.filter(q => q.masterQuestionId !== null).map(q => ({ key: String(q.masterQuestionId), instructions: q.text })), submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: o.evaluationBasis ?? '' },
+      rfp: { type: rfpType(o.rfpType), source: o.fileName ? { id: o.filePath ?? o.fileName, name: o.fileName, storagePath: o.filePath ?? undefined, downloadUrl: null } : null, extraction: null, questions: questions.filter(q => q.masterQuestionId === null), sections: questions.filter(q => q.masterQuestionId !== null).map(q => ({ key: String(q.masterQuestionId), instructions: q.text })), submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: o.evaluationBasis ?? '' },
     },
     client, visibleModules: ['overview', 'activity'], responses: null, estimation: null, scope: null,
     activity: [], responsible: user(o.assignedTo, directory) ?? owner, approvalAssignees: o.assignedTo ? [user(o.assignedTo, directory)!] : [],
@@ -169,6 +171,7 @@ function saveInput(command: SaveCommand) {
     proposalDueDate: form.dates.submissionDeadline || form.dates.proposalDue || null,
     submissionMethod: form.solicitation.submissionMethod,
     fileName: form.rfp.source?.name ?? null,
+    filePath: form.rfp.source?.storagePath ?? null,
     documentType: form.rfp.source?.name ? 'SOURCE' : null,
     // Only an uploaded document has a UUID; a reloaded record's source id is its file
     // name, so leave the field out (no change) rather than detaching the existing link.
@@ -185,19 +188,26 @@ function saveInput(command: SaveCommand) {
  */
 export const productionOpportunityService: OpportunityService = {
   async globalActions() {
-    const { data } = await getApolloClient().query<{ opportunityClientCreateAllowed: boolean }>({ query: GET_CLIENT_CREATE_ACCESS, fetchPolicy: 'network-only', errorPolicy: 'none' });
-    return data.opportunityClientCreateAllowed ? ['CLIENT_CREATE'] : [];
+    const { data } = await getApolloClient().query<{ opportunityClientCreateAllowed: boolean; opportunityClientUpdateAllowed: boolean }>({ query: GET_CLIENT_CREATE_ACCESS, fetchPolicy: 'network-only', errorPolicy: 'none' });
+    const actions: Action[] = [];
+    if (data.opportunityClientCreateAllowed) actions.push('CLIENT_CREATE');
+    if (data.opportunityClientUpdateAllowed) actions.push('CLIENT_UPDATE');
+    return actions;
   },
   async list(filter) {
-    const { data } = await getApolloClient().query<{ opportunities: BackendOpportunity[] }>({ query: LIST_OPPORTUNITIES, fetchPolicy: 'network-only' });
+    const { data } = await getApolloClient().query<{ opportunities: BackendOpportunity[]; currencies?: BackendCurrency[] }>({ query: LIST_OPPORTUNITIES, variables: { queue: filter.queue }, fetchPolicy: 'network-only' });
     const q = filter.search.trim().toLowerCase();
     const directory = await opportunityUsers();
-    return page(data.opportunities.map(o => mapOpportunity(o, directory)).filter(o => !q || `${o.title} ${o.clientName ?? ''} ${o.number}`.toLowerCase().includes(q)));
+    return page(data.opportunities.map(o => {
+      const currency = data.currencies?.find(currency => currency.currencyId === o.currencyId);
+      return mapOpportunity(o, directory, currency?.currencyCode ?? '', currency?.currencySymbol);
+    }).filter(o => !q || `${o.title} ${o.clientName ?? ''} ${o.number}`.toLowerCase().includes(q)));
   },
   async detail(id) {
-    const { data } = await getApolloClient().query<{ opportunity: BackendOpportunity | null }>({ query: GET_OPPORTUNITY, variables: { opportunityId: Number(id) }, fetchPolicy: 'network-only' });
+    const { data } = await getApolloClient().query<{ opportunity: BackendOpportunity | null; currencies?: BackendCurrency[] }>({ query: GET_OPPORTUNITY, variables: { opportunityId: Number(id) }, fetchPolicy: 'network-only' });
     if (!data.opportunity) throw new Error('Opportunity not found.');
-    return mapOpportunity(data.opportunity, await opportunityUsers());
+    const currency = data.currencies?.find(currency => currency.currencyId === data.opportunity!.currencyId);
+    return mapOpportunity(data.opportunity, await opportunityUsers(), currency?.currencyCode ?? '', currency?.currencySymbol);
   },
   async save(command) {
     const client = getApolloClient();
@@ -240,7 +250,52 @@ export const productionOpportunityService: OpportunityService = {
     return mapClient(saved);
   },
   eligibleUsers: () => unavailable('Eligible user directory'),
-  upload: () => unavailable('Document upload'),
+  async upload(_command, file): Promise<SourceDocument> {
+    if (!/\.(pdf|docx?|txt)$/i.test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) {
+      throw new Error('Choose a non-empty PDF, Word or text document up to 25 MB.');
+    }
+    let token: unknown;
+    try {
+      const auth = JSON.parse(localStorage.getItem('authState') ?? '{}');
+      token = auth?.session?.token;
+    } catch {
+      throw new Error('Please sign in again.');
+    }
+    if (typeof token !== 'string' || !token) throw new Error('Please sign in before uploading.');
+    const body = new FormData();
+    body.append('file', file);
+    const response = await fetch('http://localhost:4003/documents/upload', {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body,
+    });
+    const result: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = result && typeof result === 'object' && 'message' in result ? result.message : null;
+      throw new Error(typeof message === 'string' ? message : 'Document upload failed. Please try again.');
+    }
+    if (!result || typeof result !== 'object' || !('id' in result) || typeof result.id !== 'string' || !result.id ||
+        !('name' in result) || typeof result.name !== 'string' || !result.name ||
+        !('storagePath' in result) || typeof result.storagePath !== 'string' || !result.storagePath) {
+      throw new Error('The upload returned incomplete document details.');
+    }
+    return { id: result.id, name: result.name, storagePath: result.storagePath, downloadUrl: null };
+  },
+  async download(opportunityId, document) {
+    const filename = document.storagePath?.split('/').pop();
+    if (!filename) throw new Error('This document has no stored file to download.');
+    let token: unknown;
+    try { token = JSON.parse(localStorage.getItem('authState') ?? '{}')?.session?.token; }
+    catch { throw new Error('Please sign in again.'); }
+    if (typeof token !== 'string' || !token) throw new Error('Please sign in before downloading.');
+    const query = opportunityId ? `?opportunityId=${encodeURIComponent(opportunityId)}` : '';
+    const response = await fetch(`http://localhost:4003/documents/download/${encodeURIComponent(filename)}${query}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(typeof result?.message === 'string' ? result.message : 'Document download failed. Please try again.');
+    }
+    return response.blob();
+  },
   extract: () => unavailable('Question extraction'),
   extractionStatus: () => unavailable('Extraction status'),
   saveEstimation: () => unavailable('Estimation persistence'),
@@ -251,12 +306,12 @@ export const productionOpportunityService: OpportunityService = {
   decide: () => unavailable('Approval decisions'),
   async lookups() {
     const { data } = await getApolloClient().query<{
-      currencies: { currencyId: number; currencyName: string; currencyCode: string; isActive: boolean }[];
+      currencies: { currencyId: number; currencyName: string; currencyCode: string; currencySymbol: string; isActive: boolean }[];
       industries: { industryId: number; industryName: string; isActive: boolean }[];
       accountTypes: { accountTypeId: number; accountName: string; isActive: boolean }[];
     }>({ query: GET_OPPORTUNITY_LOOKUPS, fetchPolicy: 'network-only' });
     return {
-      currencies: data.currencies.filter(x => x.isActive).map(x => ({ id: String(x.currencyId), label: `${x.currencyCode} · ${x.currencyName}`, code: x.currencyCode })),
+      currencies: data.currencies.filter(x => x.isActive).map(x => ({ id: String(x.currencyId), label: `${x.currencySymbol} · ${x.currencyName}`, code: x.currencyCode })),
       industries: data.industries.filter(x => x.isActive).map(x => ({ id: String(x.industryId), label: x.industryName })),
       accountTypes: data.accountTypes.filter(x => x.isActive).map(x => ({ id: String(x.accountTypeId), label: x.accountName })),
     };

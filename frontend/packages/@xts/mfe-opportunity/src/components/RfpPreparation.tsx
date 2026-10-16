@@ -1,11 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
-import { Trash2 } from 'lucide-react';
-import { Button, Checkbox, Input, Label, Progress, Tabs, TabsList, TabsTrigger, Textarea } from '@xts/design-system';
-import type { OpportunityDetail, OpportunityDraft, PreparedQuestion, QuestionExtractionStatus, RfpDraft, Solicitation, ImportantDates, SourceDocument } from '@xts/api-contracts';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { Check, FileText, MessageCircle, Trash2 } from 'lucide-react';
+import { Button, Checkbox, Label, Progress, Tabs, TabsList, TabsTrigger, Textarea } from '@xts/design-system';
+import type {
+  OpportunityDetail,
+  OpportunityDraft,
+  PreparedQuestion,
+  QuestionExtractionStatus,
+  RfpDraft,
+  Solicitation,
+  ImportantDates,
+  SourceDocument,
+} from '@xts/api-contracts';
 import { gql, useQuery } from '@apollo/client';
 import { useFieldError } from './FieldValidation';
-import { extractionCandidateKeys, extractionEnabled, extractionError, extractionProgress, instructionsTooShort, mergeExtractedQuestions, pollDelay, questionExtractionService, ExtractionRequestError, MAX_INSTRUCTIONS } from '../services/QuestionExtractionService';
-
+import {
+  extractionCandidateKeys,
+  extractionEnabled,
+  extractionError,
+  extractionProgress,
+  instructionsTooShort,
+  mergeExtractedQuestions,
+  pollDelay,
+  questionExtractionService,
+  ExtractionRequestError,
+  MAX_INSTRUCTIONS,
+} from '../services/QuestionExtractionService';
+import { useOpportunityService } from '../services/OpportunityService';
+import { DocumentDownload } from './DocumentDownload';
 export const GET_PROPOSAL_SECTIONS = gql`query OpportunityProposalSections { rfpQuestionsList { id question description displayOrder isActive } }`;
 import { Choice, Field, Notice } from './ui';
 
@@ -24,13 +45,21 @@ function extractionPercent(status: QuestionExtractionStatus | undefined): number
   return Math.min(100, Math.round((status.completed / Math.max(status.total, 1)) * 100));
 }
 
-export function RfpPreparation({ form, setForm, saved, disabled }: { form: OpportunityDraft; setForm: (form: OpportunityDraft) => void; saved?: OpportunityDetail; disabled: boolean }) {
+export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUploadingChange }: { form: OpportunityDraft; setForm: Dispatch<SetStateAction<OpportunityDraft>>; saved?: OpportunityDetail; disabled: boolean; onUploadingChange?: (uploading: boolean) => void }) {
   const [error, setError] = useState<string>(), [selectedFile, setSelectedFile] = useState<File>();
   const [job, setJob] = useState<{ id: string; documentId: string }>();
   const [status, setStatus] = useState<QuestionExtractionStatus>();
   // The document uploaded in this session; extraction needs its server id.
   const [uploaded, setUploaded] = useState<SourceDocument>();
   const [uploading, setUploading] = useState(false);
+  const service = useOpportunityService();
+  const uploadPending = useRef(false);
+  const mounted = useRef(true);
+  const disabled = readOnly || uploading;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; onUploadingChange?.(false); };
+  }, [onUploadingChange]);
   const [instructions, setInstructions] = useState(''), [instructionsError, setInstructionsError] = useState<string>();
   const [questionTab, setQuestionTab] = useState(ALL), [showInstructions, setShowInstructions] = useState(false);
   const instructionsRef = useRef<HTMLTextAreaElement>(null);
@@ -69,7 +98,7 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
     let active = true;
     const generation = generationRef.current;
     questionExtractionService.source(saved.id).then(result => {
-      if (!active) return;
+      if (!active || generationRef.current !== generation) return;
       const byText = new Map((result.categories ?? []).map(entry => [normalizeQuestion(entry.text), entry]));
       const categories = new Map<string, string>(), fromDocument = new Set<string>();
       for (const question of formRef.current.rfp.questions) {
@@ -136,20 +165,24 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
   async function uploadDocument(file: File) {
     const { controller, generation } = restart();
     setUploaded(undefined); setUploading(true);
+    uploadPending.current = true; onUploadingChange?.(true);
     try {
       const { document } = await questionExtractionService.upload(file, saved?.id, controller.signal);
-      if (generationRef.current !== generation) return;
+      if (!mounted.current || generationRef.current !== generation) return;
       setUploaded(document);
       const current = formRef.current;
       setForm({ ...current, rfp: { ...current.rfp, source: document, extraction: null } });
     } catch (failure) {
-      if (!controller.signal.aborted) setError(failureMessage(failure));
+      if (mounted.current && !controller.signal.aborted) setError(failureMessage(failure));
     } finally {
-      if (generationRef.current === generation) setUploading(false);
+      if (generationRef.current === generation) {
+        uploadPending.current = false;
+        if (mounted.current) { setUploading(false); setSelectedFile(undefined); onUploadingChange?.(false); }
+      }
     }
   }
   async function extractQuestions() {
-    if (!uploaded) return;
+    if (!uploaded || disabled || uploadPending.current || extracting) return;
     // Instructions are optional: empty extracts every question. Typed text must still mean something.
     if (instructions.trim() && instructionsTooShort(instructions.trim())) {
       setShowInstructions(true);
@@ -170,7 +203,7 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
       setForm({ ...current, rfp: { ...current.rfp, extraction: { id: accepted.jobId, state: 'PROCESSING', error: null } } });
       await poll(accepted.jobId, generation, controller.signal);
     } catch (failure) {
-      if (!controller.signal.aborted) setError(failureMessage(failure));
+      if (mounted.current && !controller.signal.aborted) setError(failureMessage(failure));
     }
   }
   const { data, loading, error: sectionsError } = useQuery<{ rfpQuestionsList: ({ id: number; question: string; displayOrder: number | null; isActive: boolean } | null)[] }>(GET_PROPOSAL_SECTIONS, { skip: form.rfp.type !== 'GENERIC' });
@@ -180,26 +213,48 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
   function solicitation<K extends keyof Solicitation>(key: K, value: Solicitation[K]) { setForm({ ...form, solicitation: { ...form.solicitation, [key]: value } }); }
   function date<K extends keyof ImportantDates>(key: K, value: ImportantDates[K]) { setForm({ ...form, dates: { ...form.dates, [key]: value } }); }
   function choose(type: RfpDraft['type']) {
-    if (type === rfp.type) return;
-    const hasWork = selectedFile || rfp.source || rfp.questions.length || rfp.sections.length || saved?.responses?.some(r => r.answer.trim());
-    if (hasWork && !window.confirm('Switch RFP type? Incompatible questions, sections, draft responses and affected approvals will be removed when you save. Shared details and dates will be retained.')) return;
-    abortRef.current?.abort(); cancelRunning(); generationRef.current++;
-    setSelectedFile(undefined); setJob(undefined); setStatus(undefined); setError(undefined);
-    setUploaded(undefined); setUploading(false); setInstructionsError(undefined);
-    update({ type, questions: [], sections: [], source: null, extraction: null });
+    const current = formRef.current;
+    if (disabled || uploadPending.current || type === current.rfp.type) return;
+    generationRef.current++;
+    abortRef.current?.abort(); abortRef.current = undefined; cancelRunning();
+    setSelectedFile(undefined); setUploaded(undefined); setJob(undefined); setStatus(undefined); setError(undefined);
+    setInstructions(''); setInstructionsError(undefined); setShowInstructions(false); setQuestionTab(ALL);
+    removedRef.current.clear();
+    setRestored({ categories: new Map<string, string>(), fromDocument: new Set<string>() });
+    setForm(current => ({
+      ...current,
+      solicitation: current.rfp.type === 'QUESTIONNAIRE'
+        ? { ...current.solicitation, contractTerm: '', incumbentVendor: '', preBidMeeting: '' }
+        : current.solicitation,
+      rfp: {
+        ...current.rfp, type, source: null, extraction: null, questions: [], sections: [],
+        ...(current.rfp.type === 'GENERIC' ? { submissionFormat: 'TECHNICAL_COST' as const, evaluation: '' } : {}),
+      },
+    }));
   }
-  function selectFile(file: File | undefined) {
-    if (!file) return;
-    if (!/\.(pdf|docx?|txt|xlsx|csv)$/i.test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) { setError('Choose a non-empty PDF, Word, Excel (.xlsx), CSV or text document up to 25 MB.'); return; }
+  async function selectFile(file: File | undefined) {
+    if (!file || disabled || uploadPending.current || !rfp.type) return;
+    const aiUpload = rfp.type === 'QUESTIONNAIRE' && extractionEnabled;
+    if (!(aiUpload ? /\.(pdf|docx?|txt|xlsx|csv)$/i : /\.(pdf|docx?|txt)$/i).test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) { setError(aiUpload ? 'Choose a non-empty PDF, Word, Excel (.xlsx), CSV or text document up to 25 MB.' : 'Choose a non-empty PDF, Word or text document up to 25 MB.'); return; }
     if (rfp.type === 'QUESTIONNAIRE' && extractionEnabled) {
       if (rfp.questions.some(fromDocument) && !window.confirm('Replace the source document? Previously extracted questions will be removed; manually added questions are kept.')) return;
       setError(undefined); setSelectedFile(file);
       update({ questions: rfp.questions.filter(q => !fromDocument(q)) });
       // Upload only; the user extracts once their instructions are ready.
-      void uploadDocument(file);
+      await uploadDocument(file);
       return;
     }
-    setError(undefined); setSelectedFile(file);
+    setError(undefined); setSelectedFile(file); setUploading(true);
+    uploadPending.current = true; onUploadingChange?.(true);
+    try {
+      const source = await service.upload({ opportunityId: saved?.id ?? '', expectedRevision: saved?.revision ?? 0, idempotencyKey: crypto.randomUUID() }, file);
+      if (mounted.current) setForm(current => ({ ...current, rfp: { ...current.rfp, source, extraction: null } }));
+    } catch (failure) {
+      if (mounted.current) setError(failure instanceof Error ? failure.message : 'Document upload failed. Please try again.');
+    } finally {
+      uploadPending.current = false;
+      if (mounted.current) { setUploading(false); setSelectedFile(undefined); onUploadingChange?.(false); }
+    }
   }
   // Category tabs only for the extraction flow; other views keep the plain list.
   const tabbed = rfp.type === 'QUESTIONNAIRE' && extractionEnabled;
@@ -221,9 +276,9 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
       update({ questions: rfp.questions.filter(q => q.id !== question.id) });
     }}><Trash2 className="size-4" /></Button>
   </div>;
-  return <div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="RFP type" aria-invalid={Boolean(rfpTypeError)}>{([{ type: 'QUESTIONNAIRE', label: 'RFP Questionnaire', hint: 'Extract and review questions from a document' }, { type: 'GENERIC', label: 'Generic RFP', hint: 'Build a response from proposal sections' }] as const).map(choice => <Button key={choice.type} type="button" variant="outline" className={`opp-type ${rfp.type === choice.type ? 'opp-selected' : ''}`} aria-pressed={rfp.type === choice.type} disabled={disabled} onClick={() => choose(choice.type)}><span className="text-left"><strong className="block">{choice.label}</strong><span className="mt-1 block text-xs font-normal text-muted-foreground">{choice.hint}</span></span></Button>)}</div>
+  return <div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="RFP type" aria-invalid={Boolean(rfpTypeError)}>{([{ type: 'QUESTIONNAIRE', label: 'Questionnaire-based', hint: 'Fixed set of questions', icon: MessageCircle }, { type: 'GENERIC', label: 'Generic RFP', hint: 'Full written proposal', icon: FileText }] as const).map(choice => <Button key={choice.type} type="button" variant="outline" className={`opp-type ${rfp.type === choice.type ? 'opp-selected' : ''}`} aria-pressed={rfp.type === choice.type} disabled={disabled} onClick={() => choose(choice.type)}><span className="opp-type-icon" aria-hidden="true"><choice.icon className="size-4" /></span><span className="min-w-0 flex-1 text-left"><strong className="block">{choice.label}</strong><span className="mt-1 block text-xs font-normal text-muted-foreground">{choice.hint}</span></span><span className="opp-type-indicator" aria-hidden="true">{rfp.type === choice.type && <Check className="size-3" />}</span></Button>)}</div>
     {rfpTypeError && <p role="alert" className="text-xs text-destructive">{rfpTypeError}</p>}
-    <p className="text-xs text-muted-foreground">Save queues the opportunity for Sales Head approval. Select an RFP type to continue.</p>
+    <p className="text-xs text-muted-foreground">Save queues the opportunity for Sales Head approval.</p>
     <details className="opp-details" open><summary>Solicitation & procurement details</summary><div className="opp-fields opp-procurement-fields p-3">
       <Field label="Solicitation / reference number" value={form.solicitation.reference} onChange={v => solicitation('reference', v)} disabled={disabled} required />
       <Field label="Issuing agency / department" value={form.solicitation.issuingAgency} onChange={v => solicitation('issuingAgency', v)} disabled={disabled} required />
@@ -239,30 +294,37 @@ export function RfpPreparation({ form, setForm, saved, disabled }: { form: Oppor
     {rfp.type && <>
       <div className="opp-upload">
         <Label htmlFor="opportunity-source">{rfp.type === 'GENERIC' ? 'Source document / brief' : 'Source questionnaire'}</Label>
-        <p className={`my-2 text-sm break-words ${selectedFile || rfp.source ? 'opp-upload-file' : ''}`}>{selectedFile ? `${selectedFile.name} (selected)` : rfp.source?.name || 'Choose a PDF, Word, Excel or text document'}</p>
-        <Input id="opportunity-source" type="file" accept=".pdf,.doc,.docx,.txt,.xlsx,.csv" disabled={disabled} onChange={e => { selectFile(e.target.files?.[0]); e.target.value = ''; }} />
-        <p className="mt-2 text-xs text-muted-foreground">PDF, Word, Excel (.xlsx), CSV or text, up to 25 MB. {rfp.type === 'GENERIC' ? 'Document upload is under development; selected files are not uploaded yet.' : !extractionEnabled ? 'Document upload and AI extraction are under development; selected files are not uploaded yet.' : uploading ? 'Uploading the document...' : uploaded ? 'Document uploaded. Extract the questions, or add instructions to focus on specific topics.' : 'Upload a document to extract its questions.'}</p>
-        {rfp.type === 'QUESTIONNAIRE' && extractionEnabled && <div className="mt-3 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Button type="button" variant="link" className="h-auto p-0 underline" aria-expanded={showInstructions} aria-controls="extraction-instructions-panel" disabled={disabled}
-              onClick={() => setShowInstructions(open => !open)}>
-              {showInstructions ? 'Hide extraction instructions' : instructions.trim() ? 'Edit extraction instructions' : '+ Add extraction instructions'}
-            </Button>
-            <Button type="button" disabled={disabled || !uploaded || uploading || extracting} onClick={() => void extractQuestions()}>{extracting ? 'Extracting...' : 'Extract questions'}</Button>
+        <div className="opp-upload-controls">
+          <div className="opp-file-picker">
+            <input className="sr-only" id="opportunity-source" type="file" accept={rfp.type === 'QUESTIONNAIRE' && extractionEnabled ? '.pdf,.doc,.docx,.txt,.xlsx,.csv' : '.pdf,.doc,.docx,.txt'} disabled={disabled} aria-busy={uploading} aria-describedby="opportunity-source-status" onChange={e => { void selectFile(e.target.files?.[0]); e.target.value = ''; }} />
+            <label htmlFor="opportunity-source" className="opp-file-choose" aria-disabled={disabled}>Choose File</label>
+            <div className="opp-file-name">
+              {uploading ? <span role="status">Uploading {selectedFile?.name ?? 'document'}...</span> : rfp.source ? <DocumentDownload document={rfp.source} opportunityId={saved?.id ?? null} disabled={disabled} /> : <span>No file chosen</span>}
+            </div>
           </div>
+          {rfp.type === 'QUESTIONNAIRE' && <Button type="button" disabled={disabled || !extractionEnabled || !uploaded || extracting} onClick={() => void extractQuestions()}>{extracting ? 'Extracting...' : 'Extract questions'}</Button>}
+        </div>
+        <div id="opportunity-source-status" className="opp-upload-status">
+          <span>PDF, Word or text · Max 25 MB</span>
+        </div>
+        {rfp.type === 'QUESTIONNAIRE' && extractionEnabled && <div className="mt-3 space-y-2">
+          {uploaded && !uploading && <p className="text-xs text-muted-foreground">Document uploaded. Extract the questions, or add instructions to focus on specific topics.</p>}
+          <Button type="button" variant="link" className="h-auto p-0 underline" aria-expanded={showInstructions} aria-controls="extraction-instructions-panel" disabled={disabled} onClick={() => setShowInstructions(open => !open)}>
+            {showInstructions ? 'Hide extraction instructions' : instructions.trim() ? 'Edit extraction instructions' : '+ Add extraction instructions'}
+          </Button>
           {showInstructions && <div id="extraction-instructions-panel" className="space-y-1">
             <Label htmlFor="extraction-instructions" className="sr-only">Extraction instructions</Label>
-            <Textarea id="extraction-instructions" ref={instructionsRef} rows={3} maxLength={MAX_INSTRUCTIONS} className="text-sm placeholder:text-muted-foreground/50" value={instructions} disabled={disabled}
+            <Textarea id="extraction-instructions" ref={instructionsRef} rows={3} maxLength={MAX_INSTRUCTIONS} value={instructions} disabled={disabled}
               placeholder="Optional: focus on specific topics, e.g. technical and pricing questions. Leave empty to extract all questions."
               aria-invalid={Boolean(instructionsError)} aria-describedby={instructionsError ? 'extraction-instructions-error' : undefined}
               onChange={event => { setInstructions(event.target.value); if (!event.target.value.trim() || !instructionsTooShort(event.target.value.trim())) setInstructionsError(undefined); }} />
             <span className="block text-right text-xs text-muted-foreground">{instructions.length}/{MAX_INSTRUCTIONS}</span>
           </div>}
           {instructionsError && <p id="extraction-instructions-error" role="alert" className="text-xs text-destructive">{instructionsError}</p>}
-        </div>}
-        {rfp.type === 'QUESTIONNAIRE' && extractionEnabled && job && <div role="status" aria-label="Extraction progress" className="mt-2 space-y-1">
-          <Progress value={extractionPercent(status)} />
-          <p className="text-xs text-muted-foreground">{extractionPercent(status)}% — {status ? extractionProgress(status) : 'Reading the document...'}</p>
+          {job && <div role="status" aria-label="Extraction progress" className="mt-2 space-y-1">
+            <Progress value={extractionPercent(status)} />
+            <p className="text-xs text-muted-foreground">{extractionPercent(status)}% ? {status ? extractionProgress(status) : 'Reading the document...'}</p>
+          </div>}
         </div>}
       </div>
       {error && <Notice error={error} />}
