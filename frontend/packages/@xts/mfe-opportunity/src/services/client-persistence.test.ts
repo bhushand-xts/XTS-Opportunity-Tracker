@@ -27,7 +27,8 @@ describe('Production client persistence', () => {
     client.query.mockResolvedValueOnce({ data: { opportunity: {
       opportunityId: 10, opportunityName: 'Test opportunity', ownerId: 7, assignedTo: 8,
       clientId: null, stageId: 1, subStageId: 1, priority: 'MEDIUM', rfpType: 2,
-      contacts: [], proposalQuestions: [], proposalQuestionIds: [],
+      contacts: [], proposalQuestions: ['Describe your technical approach.'], proposalQuestionIds: [null],
+      proposalQuestionCategories: ['Technical'],
     } } }).mockResolvedValueOnce({ data: {
       userList: [
         { id: 7, firstName: 'Gayatri', lastName: 'Gunjakar', email: 'owner@example.com', roleId: null, isActive: true },
@@ -39,6 +40,7 @@ describe('Production client persistence', () => {
     expect(saved.form.ownerId).toBe('7');
     expect(saved.responsible).toMatchObject({ id: '8', name: 'Sales Head' });
     expect(saved.approvalAssignees).toEqual([expect.objectContaining({ id: '8', name: 'Sales Head' })]);
+    expect(saved.form.rfp.questions).toMatchObject([{ text: 'Describe your technical approach.', category: 'Technical' }]);
   });
 
   it('sends the client and all contacts, then returns the persisted client ID for selection', async () => {

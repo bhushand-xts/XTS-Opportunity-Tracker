@@ -55,6 +55,7 @@ const OPPORTUNITY_FIELDS = gql`
     contacts { fullName titleRole email phone roleInDecision roleInDecisionOther }
     proposalQuestions
     proposalQuestionIds
+    proposalQuestionCategories
   }
 `;
 

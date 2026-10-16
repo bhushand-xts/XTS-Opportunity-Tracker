@@ -63,6 +63,7 @@ export const opportunityTypeDefs = `#graphql
     contacts: [OpportunityContact!]!
     proposalQuestions: [String!]!
     proposalQuestionIds: [Int]!
+    proposalQuestionCategories: [String]!
   }
 
   type OpportunityContact {
@@ -116,6 +117,7 @@ export const opportunityTypeDefs = `#graphql
   input RfpQuestionSelectionInput {
     questionId: Int!
     question: String!
+    category: String
   }
 
   input CreateRfpIntakeOpportunityInput {
@@ -280,6 +282,7 @@ export const opportunityTypeDefs = `#graphql
   input OpportunityProposalQuestionInput {
     questionId: Int
     question: String!
+    category: String
   }
 
   enum OpportunityWorkflowAction {

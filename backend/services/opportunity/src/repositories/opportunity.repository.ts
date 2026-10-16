@@ -57,10 +57,11 @@ export interface Opportunity {
   contacts?: { fullName: string; titleRole: string; email: string; phone: string; roleInDecision: number | null; roleInDecisionOther?: string | null }[];
   proposalQuestions?: string[];
   proposalQuestionIds?: number[];
+  proposalQuestionCategories?: (string | null)[];
 }
 
 export interface OpportunityInput {
-  proposalQuestionSelections?: { questionId: number | null; question: string }[];
+  proposalQuestionSelections?: { questionId: number | null; question: string; category?: string | null }[];
   opportunityName?: string | null;
   opportunityTypeId?: number | null;
   sourceTypeId?: number | null;
@@ -133,6 +134,7 @@ export interface RfpIntakeOpportunityInput {
 export interface RfpQuestionSelectionInput {
   questionId: number;
   question: string;
+  category?: string | null;
 }
 
 export type RfpIntakeOpportunityUpdateInput = RfpIntakeOpportunityInput;
@@ -226,6 +228,10 @@ const OPPORTUNITY_LIST_COLUMNS = `
     FROM tbl_opportunity_questions_answers
     WHERE opportunity_id = o.opportunity_id AND is_active = TRUE),
     ARRAY[]::INTEGER[]) AS "proposalQuestionIds",
+  COALESCE((SELECT ARRAY_AGG(question_category ORDER BY qa_id)
+    FROM tbl_opportunity_questions_answers
+    WHERE opportunity_id = o.opportunity_id AND is_active = TRUE),
+    ARRAY[]::TEXT[]) AS "proposalQuestionCategories",
   (SELECT comment FROM tbl_opportunity_engage_tracker
    WHERE opportunity_id = o.opportunity_id ORDER BY tracker_id DESC LIMIT 1) AS "workflowComment"
 `;
@@ -296,9 +302,9 @@ async function recordProposalQuestionSnapshot(client: PoolClient, qaId: number):
   );
   await client.query(
     `INSERT INTO tbl_opportunity_questions_answers_tracker
-       (qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, answertext,
+       (qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext,
         answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, is_current)
-     SELECT qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, answertext,
+     SELECT qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext,
             answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, TRUE
      FROM tbl_opportunity_questions_answers WHERE qa_id = $1`,
     [qaId]
@@ -308,6 +314,7 @@ async function recordProposalQuestionSnapshot(client: PoolClient, qaId: number):
 interface PersistedRfpQuestionSelection {
   questionId: number | null;
   question: string;
+  category: string;
 }
 
 function getRfpQuestionSelections(input: RfpIntakeOpportunityInput): PersistedRfpQuestionSelection[] {
@@ -315,9 +322,10 @@ function getRfpQuestionSelections(input: RfpIntakeOpportunityInput): PersistedRf
     return input.questionSelections.map((selection) => ({
       questionId: selection.questionId,
       question: selection.question.trim(),
+      category: selection.category?.trim() || 'Other',
     }));
   }
-  return input.questions.map((question) => ({ questionId: null, question: question.trim() }));
+  return input.questions.map((question) => ({ questionId: null, question: question.trim(), category: 'Other' }));
 }
 
 
@@ -332,9 +340,11 @@ async function saveProposalQuestion(
     qaId: number;
     questionId: number | null;
     question: string;
+    category: string | null;
     opportunityTypeId: number | null;
   }>(
-    `SELECT qa_id AS "qaId", question_id AS "questionId", questiontext AS question,
+        `SELECT qa_id AS "qaId", question_id AS "questionId", questiontext AS question,
+          question_category AS category,
             opportunity_type_id AS "opportunityTypeId"
      FROM tbl_opportunity_questions_answers
      WHERE opportunity_id = $1 AND is_active = TRUE
@@ -348,13 +358,14 @@ async function saveProposalQuestion(
     const current = existing.rows[0];
     if (current.opportunityTypeId !== opportunityTypeId ||
       current.question !== selection.question ||
+      current.category !== selection.category ||
         (selection.questionId !== null && current.questionId !== selection.questionId)) {
       await client.query(
         `UPDATE tbl_opportunity_questions_answers
        SET opportunity_type_id = $2, question_id = COALESCE($3, question_id),
-         questiontext = $4, updated_dt = CURRENT_TIMESTAMP, updated_by = $5
+         questiontext = $4, question_category = $5, updated_dt = CURRENT_TIMESTAMP, updated_by = $6
          WHERE qa_id = $1`,
-      [current.qaId, opportunityTypeId, selection.questionId, selection.question, userId]
+      [current.qaId, opportunityTypeId, selection.questionId, selection.question, selection.category, userId]
       );
       await recordProposalQuestionSnapshot(client, current.qaId);
     }
@@ -363,10 +374,10 @@ async function saveProposalQuestion(
 
   const inserted = await client.query<{ qaId: number }>(
     `INSERT INTO tbl_opportunity_questions_answers
-       (opportunity_id, opportunity_type_id, question_id, questiontext, answertext, created_by, is_active)
-     VALUES ($1, $2, $3, $4, NULL, $5, TRUE)
+       (opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext, created_by, is_active)
+     VALUES ($1, $2, $3, $4, $5, NULL, $6, TRUE)
      RETURNING qa_id AS "qaId"`,
-    [opportunityId, opportunityTypeId, selection.questionId, selection.question, userId]
+    [opportunityId, opportunityTypeId, selection.questionId, selection.question, selection.category, userId]
   );
   await recordProposalQuestionSnapshot(client, inserted.rows[0].qaId);
 }
@@ -604,9 +615,9 @@ async function updateRfpIntakeOpportunity(
       );
       await client.query(
         `INSERT INTO tbl_opportunity_questions_answers_tracker
-            (qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, answertext,
+             (qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext,
             answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, is_current)
-          SELECT qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, answertext,
+           SELECT qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext,
                 answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, TRUE
          FROM tbl_opportunity_questions_answers WHERE qa_id = ANY($1::INTEGER[])`,
         [removedQuestionIds]
@@ -1393,7 +1404,10 @@ async function syncProposalQuestions(client: PoolClient, opportunityId: number, 
     await recordProposalQuestionSnapshot(client, row.qaId);
   }
   for (const selection of selections) {
-    await saveProposalQuestion(client, opportunityId, selection, userId!, input.rfpType ?? input.opportunityTypeId ?? GENERIC_RFP_TYPE_ID);
+    await saveProposalQuestion(client, opportunityId, {
+      ...selection,
+      category: selection.category?.trim() || 'Other',
+    }, userId!, input.rfpType ?? input.opportunityTypeId ?? GENERIC_RFP_TYPE_ID);
   }
 }
 

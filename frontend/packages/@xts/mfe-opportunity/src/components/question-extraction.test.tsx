@@ -212,6 +212,8 @@ describe('prompt-driven question extraction', () => {
     await mount();
     fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
     expect(screen.getByLabelText('Question 2 text')).toHaveValue('');
+    expect(screen.getByLabelText('Question 2 text')).toHaveFocus();
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questions[1].category).toBe('Other');
     await upload();
     expect(screen.getByLabelText('Question 1 text')).toHaveValue('Existing manual question');
     expect(screen.queryByLabelText('Question 2 text')).not.toBeInTheDocument();
@@ -306,7 +308,8 @@ describe('prompt-driven question extraction', () => {
       fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
       expect(tab(/^Pricing/)).toHaveTextContent('Pricing & Commercial (2)');
       expect(screen.getByLabelText('Question 2 text')).toHaveValue('');
-      expect(screen.getByRole('combobox', { name: 'Question 2 section' })).toHaveTextContent('Select Question Category');
+      expect(screen.getByLabelText('Question 2 text')).toHaveFocus();
+      expect(screen.getByRole('combobox', { name: 'Question 2 section' })).toHaveTextContent('Pricing & Commercial');
       expect(screen.getByRole('button', { name: '+ Add question' }).closest('[role="region"]')).toBeNull();
     });
     it('falls back to the first section when the open tab becomes empty', async () => {

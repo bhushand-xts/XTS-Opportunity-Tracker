@@ -106,8 +106,8 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
       const categories = new Map<string, string>(), fromDocument = new Set<string>();
       for (const question of formRef.current.rfp.questions) {
         const match = byText.get(normalizeQuestion(question.text));
-        if (!match || question.category) continue;
-        categories.set(question.id, match.category);
+        if (!match) continue;
+        if (!question.category) categories.set(question.id, match.category);
         if (match.fromDocument) fromDocument.add(question.id);
       }
       setRestored({ categories, fromDocument });
@@ -119,6 +119,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
   }, [saved?.id]);
   // A new manual question stays in the tab it was added from until its section is chosen.
   const draftTabs = useRef(new Map<string, string>());
+  const focusQuestionId = useRef<string>();
   const chosenCategory = (question: PreparedQuestion) => question.category ?? restored.categories.get(question.id);
   const categoryOf = (question: PreparedQuestion) => {
     const category = chosenCategory(question) ?? draftTabs.current.get(question.id);
@@ -275,7 +276,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     <span className="w-6 shrink-0 pt-2 text-sm text-muted-foreground">{String(index + 1).padStart(2, '0')}</span>
     <Label htmlFor={`question-${question.id}`} className="sr-only">{`Question ${index + 1} text`}</Label>
     <div className="opp-question-input">
-      <Textarea id={`question-${question.id}`} rows={2} className={`min-h-[44px] min-w-0 resize-y text-sm${tabbed && !fromDocument(question) ? ' opp-question-with-section' : ''}`} placeholder="Enter question" value={question.text} disabled={locked} onChange={event => update({ questions: rfp.questions.map(q => q.id === question.id ? { ...q, text: event.target.value, validated: false } : q) })} />
+      <Textarea id={`question-${question.id}`} ref={element => { if (element && focusQuestionId.current === question.id) { focusQuestionId.current = undefined; element.focus(); } }} rows={2} className={`min-h-[44px] min-w-0 resize-y text-sm${tabbed && !fromDocument(question) ? ' opp-question-with-section' : ''}`} placeholder="Enter question" value={question.text} disabled={locked} onChange={event => update({ questions: rfp.questions.map(q => q.id === question.id ? { ...q, text: event.target.value, validated: false } : q) })} />
       {/* Manually added questions choose their section inside the box; the tab follows the question. */}
       {tabbed && !fromDocument(question) && <Select value={chosenCategory(question) ?? ''} disabled={locked} onValueChange={category => { update({ questions: rfp.questions.map(q => q.id === question.id ? { ...q, category } : q) }); setQuestionTab(category); }}>
         <SelectTrigger className="opp-question-section" aria-label={`Question ${index + 1} section`}><SelectValue placeholder="Select Question Category" /></SelectTrigger>
@@ -352,7 +353,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
         <Field label="Evaluation basis / criteria" multiline value={rfp.evaluation} onChange={v => update({ evaluation: v })} disabled={locked} />
       </>}
       <div className="w-full space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Questions · {rfp.questions.length}</h3><div className="flex flex-wrap gap-2"><Button type="button" variant="link" disabled={locked} onClick={() => { const id = `draft-${crypto.randomUUID()}`; if (tabbed && activeTab) draftTabs.current.set(id, activeTab); update({ questions: [...rfp.questions, { id, text: '', sourceReference: '', validated: false }] }); }}>+ Add question</Button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Questions · {rfp.questions.length}</h3><div className="flex flex-wrap gap-2"><Button type="button" variant="link" disabled={locked} onClick={() => { const id = `draft-${crypto.randomUUID()}`; const category = tabbed ? activeTab || 'Other' : undefined; focusQuestionId.current = id; if (category) { draftTabs.current.set(id, category); setQuestionTab(category); } update({ questions: [...rfp.questions, { id, text: '', sourceReference: '', validated: false, ...(category ? { category } : {}) }] }); }}>+ Add question</Button></div></div>
         {tabbed && rfp.questions.length > 0 ? <>
           <Tabs value={activeTab} onValueChange={setQuestionTab}>
             <TabsList className="opp-question-tabs" aria-label="Question categories">

@@ -23,7 +23,7 @@ export interface Solicitation {
 export interface ImportantDates { issueDate: LocalDate; questionsDue: LocalDate; proposalDue: LocalDate; submissionDeadline: LocalDate; additionalDeadline: LocalDate; additionalDeadlineLabel: string; }
 export interface RfpContext { instructions: string; submissionRequirements: string; opportunityOverview: string; scopeOfWork: string; requirements: string; notes: string; }
 export interface SourceDocument { id: string; name: string; storagePath?: string; downloadUrl: string | null; }
-// category and sourceOrder come from AI extraction and live for the editing session only; they are not saved.
+// category is persisted with opportunity questions; sourceOrder is only used to order extracted questions.
 export interface PreparedQuestion { id: string; text: string; sourceReference: string; validated: boolean; masterQuestionId?: number | null; category?: string | null; sourceOrder?: number; }
 export interface ProposalSection { key: string; instructions: string; }
 export interface RfpDraft {

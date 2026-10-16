@@ -49,7 +49,7 @@ interface BackendOpportunity {
   proposalDueDate: string | null; estimatedValue: number | null; estimatedValueUsd?: number | null; currencyId: number | null; rfpType: number | null;
   workflowComment: string | null; clientName: string | null; accountType: string | null; sector: string | null;
   website: string | null; city: string | null; state: string | null; country: string | null; streetAddress: string | null;
-  contacts: BackendContact[]; proposalQuestions: string[]; proposalQuestionIds: (number | null)[];
+  contacts: BackendContact[]; proposalQuestions: string[]; proposalQuestionIds: (number | null)[]; proposalQuestionCategories: (string | null)[];
 }
 interface BackendClient {
   clientId: number; clientName: string; accountType: string | null; sector: string | null; website: string | null;
@@ -117,7 +117,7 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
   const questions = (o.proposalQuestions ?? []).map((text, index) => ({
     id: `question-${o.proposalQuestionIds?.[index] ?? index + 1}`,
     masterQuestionId: o.proposalQuestionIds?.[index] ?? null,
-    text, sourceReference: '', validated: true,
+    text, sourceReference: '', validated: true, category: o.proposalQuestionCategories?.[index] ?? 'Other',
   })).filter(q => q.text.trim()); // Empty question boxes are never shown again.
   return {
     id: String(o.opportunityId), number: o.opportunityNumber ?? String(o.opportunityId), title: o.opportunityName ?? '',
@@ -147,7 +147,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 function saveInput(command: SaveCommand) {
   const form = command.form;
   return {
-    proposalQuestionSelections: [...form.rfp.sections.map(s => ({ questionId: Number(s.key), question: s.instructions })), ...form.rfp.questions.filter(q => q.text.trim()).map(q => ({ questionId: q.masterQuestionId ?? null, question: q.text }))],
+    proposalQuestionSelections: [...form.rfp.sections.map(s => ({ questionId: Number(s.key), question: s.instructions, category: 'Other' })), ...form.rfp.questions.filter(q => q.text.trim()).map(q => ({ questionId: q.masterQuestionId ?? null, question: q.text, category: q.category ?? 'Other' }))],
     clientId: form.clientId ? Number(form.clientId) : null,
     opportunityDescription: form.description || null,
     contractTerm: form.rfp.type === 'QUESTIONNAIRE' ? form.solicitation.contractTerm || null : null,
