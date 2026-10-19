@@ -48,4 +48,23 @@ describe('opportunity custom choices and USD estimate', () => {
     expect(DECISION_ROLE_IDS['Procurement / Buyer']).toBe(1);
     expect(DECISION_ROLE_IDS['Decision Maker']).toBe(2);
   });
+  it('maps the selected currency and separate USD value for pipeline cards', async () => {
+    api.query.mockResolvedValueOnce({ data: {
+      opportunities: [
+        { opportunityId: 1, currencyId: 7, estimatedValue: 43540, estimatedValueUsd: 1200.50 },
+        { opportunityId: 2, currencyId: 9, estimatedValue: 500, estimatedValueUsd: 0 },
+      ],
+      currencies: [{ currencyId: 7, currencyCode: 'EUR' }, { currencyId: 9, currencyCode: 'GBP' }],
+    } }).mockResolvedValueOnce({ data: { userList: [], rolesList: [] } });
+    const result = await productionOpportunityService.list({ queue: 'PIPELINE', search: '', after: null, first: 50 });
+    expect(result.nodes[0]).toMatchObject({ currencyCode: 'EUR', estimatedValue: '43540', estimatedValueUsd: '1200.5' });
+    expect(result.nodes[1]).toMatchObject({ currencyCode: 'GBP', estimatedValue: '500', estimatedValueUsd: '0' });
+  });
+  it('resolves a saved opportunity currency without defaulting to INR', async () => {
+    api.query.mockResolvedValueOnce({ data: {
+      opportunity: { opportunityId: 1, currencyId: 7, estimatedValue: 43540, estimatedValueUsd: 1200.50 },
+      currencies: [{ currencyId: 7, currencyCode: 'EUR' }],
+    } }).mockResolvedValueOnce({ data: { userList: [], rolesList: [] } });
+    expect(await productionOpportunityService.detail('1')).toMatchObject({ currencyCode: 'EUR', estimatedValueUsd: '1200.5' });
+  });
 });

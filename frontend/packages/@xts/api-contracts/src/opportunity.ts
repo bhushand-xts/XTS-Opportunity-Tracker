@@ -22,9 +22,9 @@ export interface Solicitation {
 }
 export interface ImportantDates { issueDate: LocalDate; questionsDue: LocalDate; proposalDue: LocalDate; submissionDeadline: LocalDate; additionalDeadline: LocalDate; additionalDeadlineLabel: string; }
 export interface RfpContext { instructions: string; submissionRequirements: string; opportunityOverview: string; scopeOfWork: string; requirements: string; notes: string; }
-export interface SourceDocument { id: string; name: string;downloadUrl: string | null;storagePath?: string;
-}
-export interface PreparedQuestion { id: string; text: string; sourceReference: string; validated: boolean; masterQuestionId?: number | null; }
+export interface SourceDocument { id: string; name: string; storagePath?: string; downloadUrl: string | null; }
+// category is persisted with opportunity questions; sourceOrder is only used to order extracted questions.
+export interface PreparedQuestion { id: string; text: string; sourceReference: string; validated: boolean; masterQuestionId?: number | null; category?: string | null; sourceOrder?: number; }
 export interface ProposalSection { key: string; instructions: string; }
 export interface RfpDraft {
   type: 'QUESTIONNAIRE' | 'GENERIC' | null; source: SourceDocument | null;
@@ -39,7 +39,7 @@ export interface OpportunityDraft {
   solicitation: Solicitation; dates: ImportantDates; context: RfpContext; rfp: RfpDraft;
 }
 export interface OpportunitySummary {
-  id: string; number: string; title: string; estimatedValue: Decimal; currencyCode: string;
+  id: string; number: string; title: string; estimatedValue: Decimal; estimatedValueUsd?: Decimal; currencyCode: string; currencySymbol?: string;
   clientName: string | null; owner: DirectoryUser | null; priority: OpportunityDraft['priority'];
   state: OpportunityState; rfpType: RfpDraft['type']; submissionDeadline: LocalDate | null;
   revision: number; packageRevision: number | null; allowedActions: Action[];

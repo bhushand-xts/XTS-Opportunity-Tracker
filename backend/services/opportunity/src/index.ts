@@ -10,9 +10,10 @@ import env from './config/env';
 import { buildContext } from './graphql/context';
 import opportunityTypes from './graphql/typeDefs/opportunity.typeDefs';
 import opportunityResolvers from './graphql/resolvers/opportunity.resolver';
+import { extractionRouter } from './extraction/routes';
 import cors from 'cors';
 import documentRoutes from './routes/document.routes';
-import { canCreateClient } from './services/opportunity.service';
+import { canUploadDocument } from './services/opportunity.service';
 
 // Opportunity & Pipeline
 
@@ -83,7 +84,7 @@ async function start() {
         return;
       }
 
-      if (req.method === 'POST' && !await canCreateClient({ user: { id } })) {
+      if (req.method === 'POST' && !await canUploadDocument({ user: { id } })) {
         res.status(403).json({ message: 'You cannot upload documents.' });
         return;
       }
@@ -102,6 +103,7 @@ async function start() {
   app.use('/graphql', expressMiddleware(server, { context: async ({ req }) => buildContext({ req }) }));
 
   app.get('/health', (req, res) => res.json({ status: 'ok', service: 'opportunity' }));
+  app.use('/api/question-extractions', extractionRouter);
 
   app.listen(env.port, () =>
     console.log('opportunity service ready on http://localhost:' + env.port + '/graphql')

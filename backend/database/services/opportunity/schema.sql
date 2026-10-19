@@ -92,6 +92,7 @@ CREATE TABLE tbl_opportunity_questions_answers (
   opportunity_id INTEGER,
   opportunity_type_id INTEGER,
   question TEXT,
+  question_category VARCHAR(255),
   answer TEXT,
   answered_by INTEGER,        -- was FK -> mst_user(user_id) in user's DB
   answered_dt TIMESTAMP,

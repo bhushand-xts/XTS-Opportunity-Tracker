@@ -295,7 +295,7 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
     upload: (command, file) => mutate('upload', { ...command, filename: file.name, size: file.size, modified: file.lastModified }, state => {
       if (directory) throw new Error('Document upload requires the backend integration.');
       const record = checked(state, command); editable(record);
-      if (!/\.(pdf|docx?|txt)$/i.test(file.name) || file.size > 25 * 1024 * 1024) throw new Error('Choose PDF, Word or text up to 25 MB.');
+      if (!/\.(pdf|docx?|txt|xlsx|csv)$/i.test(file.name) || file.size > 25 * 1024 * 1024) throw new Error('Choose PDF, Word, Excel, CSV or text up to 25 MB.');
       const document: SourceDocument = { id: `mock-document-${crypto.randomUUID()}`, name: `Mock upload · ${file.name}`, downloadUrl: null };
       state.documents[document.id] = { ...document, opportunityId: record.detail.id }; log(record, 'Simulated upload', 'Only mock filename stored; contents are not uploaded or parsed.'); return document;
     }),

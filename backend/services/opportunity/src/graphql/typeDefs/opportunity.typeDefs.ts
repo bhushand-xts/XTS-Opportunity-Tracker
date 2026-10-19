@@ -1,6 +1,7 @@
 export const opportunityTypeDefs = `#graphql
 
   type Opportunity {
+    allowedActions: [String!]!
     opportunityId: Int!
     opportunityNumber: String
     opportunityName: String
@@ -62,6 +63,7 @@ export const opportunityTypeDefs = `#graphql
     contacts: [OpportunityContact!]!
     proposalQuestions: [String!]!
     proposalQuestionIds: [Int]!
+    proposalQuestionCategories: [String]!
   }
 
   type OpportunityContact {
@@ -115,6 +117,7 @@ export const opportunityTypeDefs = `#graphql
   input RfpQuestionSelectionInput {
     questionId: Int!
     question: String!
+    category: String
   }
 
   input CreateRfpIntakeOpportunityInput {
@@ -208,6 +211,9 @@ export const opportunityTypeDefs = `#graphql
     uploadedDt: String
     docSubmissionFormat: String
     evaluationBasis: String
+    # Links the question-extraction upload (question_documents.id) to this opportunity.
+    # Independent of fileName/filePath, which are display metadata only.
+    sourceDocumentId: String
 
     opportunityDescription: String
 
@@ -254,6 +260,9 @@ export const opportunityTypeDefs = `#graphql
     uploadedDt: String
     docSubmissionFormat: String
     evaluationBasis: String
+    # Links the question-extraction upload (question_documents.id) to this opportunity.
+    # Independent of fileName/filePath, which are display metadata only.
+    sourceDocumentId: String
 
     opportunityDescription: String
 
@@ -273,6 +282,7 @@ export const opportunityTypeDefs = `#graphql
   input OpportunityProposalQuestionInput {
     questionId: Int
     question: String!
+    category: String
   }
 
   enum OpportunityWorkflowAction {
@@ -285,7 +295,8 @@ export const opportunityTypeDefs = `#graphql
 
   extend type Query {
     opportunityClientCreateAllowed: Boolean!
-    opportunities: [Opportunity!]!
+    opportunityClientUpdateAllowed: Boolean!
+    opportunities(queue: String = "PIPELINE"): [Opportunity!]!
     opportunityClients: [OpportunityDirectoryClient!]!
 
     opportunity(

@@ -36,7 +36,9 @@ async function unavailable(capability: string): Promise<never> { throw new Integ
 import { DECISION_ROLE_IDS, SERVICE_LINES } from '../lib/opportunityOptions';
 
 interface BackendContact { fullName: string; titleRole: string; email: string; phone: string; roleInDecision: number | null; roleInDecisionOther?: string | null; }
+interface BackendCurrency { currencyId: number; currencyCode: string; currencySymbol?: string; }
 interface BackendOpportunity {
+  allowedActions?: Action[];
   opportunityId: number; opportunityNumber: string | null; opportunityName: string | null;
   sourceTypeId: number | null; clientId: number | null; stageId: number | null; subStageId: number | null;
   ownerId: number | null; assignedTo: number | null; priority: string | null; serviceLine: string | null;
@@ -47,7 +49,7 @@ interface BackendOpportunity {
   proposalDueDate: string | null; estimatedValue: number | null; estimatedValueUsd?: number | null; currencyId: number | null; rfpType: number | null;
   workflowComment: string | null; clientName: string | null; accountType: string | null; sector: string | null;
   website: string | null; city: string | null; state: string | null; country: string | null; streetAddress: string | null;
-  contacts: BackendContact[]; proposalQuestions: string[]; proposalQuestionIds: (number | null)[];
+  contacts: BackendContact[]; proposalQuestions: string[]; proposalQuestionIds: (number | null)[]; proposalQuestionCategories: (string | null)[];
 }
 interface BackendClient {
   clientId: number; clientName: string; accountType: string | null; sector: string | null; website: string | null;
@@ -88,8 +90,7 @@ function state(o: BackendOpportunity): OpportunitySummary['state'] {
   return 'SALES_REVIEW';
 }
 function actions(o: BackendOpportunity): Action[] {
-  const s = state(o);
-  return s === 'PREPARATION_PENDING' || s === 'SALES_REVIEW' ? ['EDIT'] : [];
+  return o.allowedActions ?? [];
 }
 function mapContact(contact: BackendContact, id?: string) {
   const roles = Object.fromEntries(Object.entries(DECISION_ROLE_IDS).map(([label, id]) => [id, label]));
@@ -106,7 +107,7 @@ function mapClient(c: BackendClient): OpportunityClient {
     accountTypeName: c.accountType ?? '', industryName: c.sector ?? '', allowedActions: [],
   };
 }
-function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], currencyCode = 'INR'): OpportunityDetail {
+function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], currencyCode: string, currencySymbol?: string): OpportunityDetail {
   const currentState = state(o);
   const owner = user(o.ownerId, directory);
   const client = o.clientId ? mapClient({
@@ -116,11 +117,11 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
   const questions = (o.proposalQuestions ?? []).map((text, index) => ({
     id: `question-${o.proposalQuestionIds?.[index] ?? index + 1}`,
     masterQuestionId: o.proposalQuestionIds?.[index] ?? null,
-    text, sourceReference: '', validated: true,
-  }));
+    text, sourceReference: '', validated: true, category: o.proposalQuestionCategories?.[index] ?? 'Other',
+  })).filter(q => q.text.trim()); // Empty question boxes are never shown again.
   return {
     id: String(o.opportunityId), number: o.opportunityNumber ?? String(o.opportunityId), title: o.opportunityName ?? '',
-    estimatedValue: String(o.estimatedValue ?? ''), currencyCode, clientName: o.clientName, owner, priority: priority(o.priority),
+    estimatedValue: String(o.estimatedValue ?? ''), estimatedValueUsd: String(o.estimatedValueUsd ?? ''), currencyCode, currencySymbol, clientName: o.clientName, owner, priority: priority(o.priority),
     state: currentState, rfpType: rfpType(o.rfpType), submissionDeadline: o.proposalDueDate, revision: 1,
     packageRevision: null, allowedActions: actions(o),
     form: {
@@ -142,10 +143,11 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
     readiness: { ready: true, issues: [] }, salesRecommendation: null,
   };
 }
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function saveInput(command: SaveCommand) {
   const form = command.form;
   return {
-    proposalQuestionSelections: [...form.rfp.sections.map(s => ({ questionId: Number(s.key), question: s.instructions })), ...form.rfp.questions.map(q => ({ questionId: q.masterQuestionId ?? null, question: q.text }))],
+    proposalQuestionSelections: [...form.rfp.sections.map(s => ({ questionId: Number(s.key), question: s.instructions, category: 'Other' })), ...form.rfp.questions.filter(q => q.text.trim()).map(q => ({ questionId: q.masterQuestionId ?? null, question: q.text, category: q.category ?? 'Other' }))],
     clientId: form.clientId ? Number(form.clientId) : null,
     opportunityDescription: form.description || null,
     contractTerm: form.rfp.type === 'QUESTIONNAIRE' ? form.solicitation.contractTerm || null : null,
@@ -171,6 +173,9 @@ function saveInput(command: SaveCommand) {
     fileName: form.rfp.source?.name ?? null,
     filePath: form.rfp.source?.storagePath ?? null,
     documentType: form.rfp.source?.name ? 'SOURCE' : null,
+    // Only an uploaded document has a UUID; a reloaded record's source id is its file
+    // name, so leave the field out (no change) rather than detaching the existing link.
+    sourceDocumentId: !form.rfp.source ? null : UUID.test(form.rfp.source.id) ? form.rfp.source.id : undefined,
     docSubmissionFormat: form.rfp.outputFormat,
     evaluationBasis: form.rfp.evaluation || null,
   };
@@ -183,19 +188,26 @@ function saveInput(command: SaveCommand) {
  */
 export const productionOpportunityService: OpportunityService = {
   async globalActions() {
-    const { data } = await getApolloClient().query<{ opportunityClientCreateAllowed: boolean }>({ query: GET_CLIENT_CREATE_ACCESS, fetchPolicy: 'network-only', errorPolicy: 'none' });
-    return data.opportunityClientCreateAllowed ? ['CLIENT_CREATE'] : [];
+    const { data } = await getApolloClient().query<{ opportunityClientCreateAllowed: boolean; opportunityClientUpdateAllowed: boolean }>({ query: GET_CLIENT_CREATE_ACCESS, fetchPolicy: 'network-only', errorPolicy: 'none' });
+    const actions: Action[] = [];
+    if (data.opportunityClientCreateAllowed) actions.push('CLIENT_CREATE');
+    if (data.opportunityClientUpdateAllowed) actions.push('CLIENT_UPDATE');
+    return actions;
   },
   async list(filter) {
-    const { data } = await getApolloClient().query<{ opportunities: BackendOpportunity[] }>({ query: LIST_OPPORTUNITIES, fetchPolicy: 'network-only' });
+    const { data } = await getApolloClient().query<{ opportunities: BackendOpportunity[]; currencies?: BackendCurrency[] }>({ query: LIST_OPPORTUNITIES, variables: { queue: filter.queue }, fetchPolicy: 'network-only' });
     const q = filter.search.trim().toLowerCase();
     const directory = await opportunityUsers();
-    return page(data.opportunities.map(o => mapOpportunity(o, directory)).filter(o => !q || `${o.title} ${o.clientName ?? ''} ${o.number}`.toLowerCase().includes(q)));
+    return page(data.opportunities.map(o => {
+      const currency = data.currencies?.find(currency => currency.currencyId === o.currencyId);
+      return mapOpportunity(o, directory, currency?.currencyCode ?? '', currency?.currencySymbol);
+    }).filter(o => !q || `${o.title} ${o.clientName ?? ''} ${o.number}`.toLowerCase().includes(q)));
   },
   async detail(id) {
-    const { data } = await getApolloClient().query<{ opportunity: BackendOpportunity | null }>({ query: GET_OPPORTUNITY, variables: { opportunityId: Number(id) }, fetchPolicy: 'network-only' });
+    const { data } = await getApolloClient().query<{ opportunity: BackendOpportunity | null; currencies?: BackendCurrency[] }>({ query: GET_OPPORTUNITY, variables: { opportunityId: Number(id) }, fetchPolicy: 'network-only' });
     if (!data.opportunity) throw new Error('Opportunity not found.');
-    return mapOpportunity(data.opportunity, await opportunityUsers());
+    const currency = data.currencies?.find(currency => currency.currencyId === data.opportunity!.currencyId);
+    return mapOpportunity(data.opportunity, await opportunityUsers(), currency?.currencyCode ?? '', currency?.currencySymbol);
   },
   async save(command) {
     const client = getApolloClient();
@@ -294,12 +306,12 @@ export const productionOpportunityService: OpportunityService = {
   decide: () => unavailable('Approval decisions'),
   async lookups() {
     const { data } = await getApolloClient().query<{
-      currencies: { currencyId: number; currencyName: string; currencyCode: string; isActive: boolean }[];
+      currencies: { currencyId: number; currencyName: string; currencyCode: string; currencySymbol: string; isActive: boolean }[];
       industries: { industryId: number; industryName: string; isActive: boolean }[];
       accountTypes: { accountTypeId: number; accountName: string; isActive: boolean }[];
     }>({ query: GET_OPPORTUNITY_LOOKUPS, fetchPolicy: 'network-only' });
     return {
-      currencies: data.currencies.filter(x => x.isActive).map(x => ({ id: String(x.currencyId), label: `${x.currencyCode} · ${x.currencyName}`, code: x.currencyCode })),
+      currencies: data.currencies.filter(x => x.isActive).map(x => ({ id: String(x.currencyId), label: `${x.currencySymbol} · ${x.currencyName}`, code: x.currencyCode })),
       industries: data.industries.filter(x => x.isActive).map(x => ({ id: String(x.industryId), label: x.industryName })),
       accountTypes: data.accountTypes.filter(x => x.isActive).map(x => ({ id: String(x.accountTypeId), label: x.accountName })),
     };

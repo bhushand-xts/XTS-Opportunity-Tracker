@@ -8,12 +8,15 @@ import { expressMiddleware } from '@apollo/server/express4';
 import env from './config/env';
 import gateway from './graphql/gateway';
 import auth from './middleware/auth.middleware';
+import { extractionProxy } from './routes/extraction';
 
 async function start() {
   const app = express();
   app.use(cors({ origin: env.corsOrigin }));
-  app.use(express.json());
   app.use(auth);
+  // Mounted before express.json() so uploads stream through untouched.
+  app.use('/api/question-extractions', extractionProxy);
+  app.use(express.json());
 
   const server = new ApolloServer({ gateway });
   await server.start();

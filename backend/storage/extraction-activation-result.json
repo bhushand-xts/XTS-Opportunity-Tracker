@@ -1,0 +1,16 @@
+{
+  "state": "SUCCEEDED",
+  "synthetic": true,
+  "questionCount": 2,
+  "questions": [
+    {
+      "text": "1. Describe your security controls.",
+      "sourceReference": "Page 1 (b1)"
+    },
+    {
+      "text": "2. Explain your delivery approach.",
+      "sourceReference": "Page 1 (b1)"
+    }
+  ],
+  "verifiedAt": "2026-10-14T12:00:25.775Z"
+}

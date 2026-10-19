@@ -181,13 +181,12 @@ if (typeof window !== "undefined") {
     setState(event.newValue ? normalizeState(JSON.parse(event.newValue)) : EMPTY_STATE);
   });
 
-  // On a fresh page load the stored session may still be missing its role
-  // name or access (e.g. the previous resolve*() call never finished), so
-  // retry once here.
+  // Resolve a missing role name and refresh grants on every page load so
+  // cached permissions do not survive a reload after assignment changes.
   if (state.session && state.roleId !== null && state.roleName === null) {
     void resolveRoleName(state.session.userId, state.roleId);
   }
-  if (state.session && state.roleId !== null && Object.keys(state.access).length === 0) {
+  if (state.session && state.roleId !== null) {
     void resolveAccess(state.session.userId, state.roleId);
   }
 
@@ -198,6 +197,9 @@ if (typeof window !== "undefined") {
   // synchronously until this resolves, so there's no flicker — just fresher
   // data a moment after each refresh. No-ops while signed out.
   const ACCESS_REFRESH_INTERVAL_MS = 30_000;
+  window.addEventListener('focus', () => {
+    if (state.session && state.roleId !== null) void resolveAccess(state.session.userId, state.roleId);
+  });
   setInterval(() => {
     if (state.session && state.roleId !== null) {
       void resolveAccess(state.session.userId, state.roleId);

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClientDraft } from '@xts/api-contracts';
-import { CREATE_OPPORTUNITY_CLIENT, UPDATE_OPPORTUNITY_CLIENT, GET_CLIENT_CREATE_ACCESS, GET_OPPORTUNITY_LOOKUPS } from './opportunity.queries';
+import { CREATE_OPPORTUNITY_CLIENT, UPDATE_OPPORTUNITY_CLIENT, GET_CLIENT_CREATE_ACCESS, GET_OPPORTUNITY_LOOKUPS, LIST_OPPORTUNITIES } from './opportunity.queries';
 import { productionOpportunityService } from './OpportunityService';
 
 const client = vi.hoisted(() => ({ query: vi.fn(), mutate: vi.fn() }));
@@ -27,7 +27,8 @@ describe('Production client persistence', () => {
     client.query.mockResolvedValueOnce({ data: { opportunity: {
       opportunityId: 10, opportunityName: 'Test opportunity', ownerId: 7, assignedTo: 8,
       clientId: null, stageId: 1, subStageId: 1, priority: 'MEDIUM', rfpType: 2,
-      contacts: [], proposalQuestions: [], proposalQuestionIds: [],
+      contacts: [], proposalQuestions: ['Describe your technical approach.'], proposalQuestionIds: [null],
+      proposalQuestionCategories: ['Technical'],
     } } }).mockResolvedValueOnce({ data: {
       userList: [
         { id: 7, firstName: 'Gayatri', lastName: 'Gunjakar', email: 'owner@example.com', roleId: null, isActive: true },
@@ -39,6 +40,7 @@ describe('Production client persistence', () => {
     expect(saved.form.ownerId).toBe('7');
     expect(saved.responsible).toMatchObject({ id: '8', name: 'Sales Head' });
     expect(saved.approvalAssignees).toEqual([expect.objectContaining({ id: '8', name: 'Sales Head' })]);
+    expect(saved.form.rfp.questions).toMatchObject([{ text: 'Describe your technical approach.', category: 'Technical' }]);
   });
 
   it('sends the client and all contacts, then returns the persisted client ID for selection', async () => {
@@ -77,5 +79,25 @@ describe('Production client persistence', () => {
     expect(await productionOpportunityService.globalActions()).toEqual(['CLIENT_CREATE']);
     expect(await productionOpportunityService.globalActions()).toEqual([]);
     expect(client.query).toHaveBeenCalledWith(expect.objectContaining({ query: GET_CLIENT_CREATE_ACCESS }));
+  });
+  it('keeps client editing separate from creation permission', async () => {
+    client.query.mockResolvedValueOnce({ data: { opportunityClientCreateAllowed: false, opportunityClientUpdateAllowed: true } });
+    expect(await productionOpportunityService.globalActions()).toEqual(['CLIENT_UPDATE']);
+  });
+  it('uses server edit actions instead of inferring rights from the workflow stage', async () => {
+    for (const allowedActions of [[], ['EDIT']]) {
+      client.query.mockResolvedValueOnce({ data: { opportunity: {
+        opportunityId: 10, opportunityName: 'Permission test', ownerId: null, assignedTo: null,
+        clientId: null, stageId: 1, subStageId: 1, contacts: [], proposalQuestions: [], proposalQuestionIds: [], allowedActions,
+      } } }).mockResolvedValueOnce({ data: { userList: [], rolesList: [] } });
+      expect((await productionOpportunityService.detail('10')).allowedActions).toEqual(allowedActions);
+    }
+  });
+  it('sends the selected queue so the backend can enforce its exact menu permission', async () => {
+    for (const queue of ['PIPELINE', 'MY_WORK', 'MY_APPROVALS'] as const) {
+      client.query.mockResolvedValueOnce({ data: { opportunities: [] } }).mockResolvedValueOnce({ data: { userList: [], rolesList: [] } });
+      await productionOpportunityService.list({ queue, search: '', after: null, first: 50 });
+      expect(client.query).toHaveBeenCalledWith(expect.objectContaining({ query: LIST_OPPORTUNITIES, variables: { queue } }));
+    }
   });
 });
