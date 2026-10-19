@@ -8,6 +8,7 @@ function formDate(value: Date | string | null | undefined): string | null {
 
 export const opportunityResolvers = {
   Opportunity: {
+    estimation: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getEstimation(opportunity.opportunityId, ctx),
     allowedActions: (opportunity: Parameters<typeof service.allowedActions>[0], _: unknown, ctx: any) => service.allowedActions(opportunity, ctx),
     leadReceivedDate: (opportunity: { leadReceivedDate: Date | string | null }) => formDate(opportunity.leadReceivedDate),
     queDueDate: (opportunity: { queDueDate: Date | string | null }) => formDate(opportunity.queDueDate),
@@ -28,6 +29,7 @@ export const opportunityResolvers = {
   },
 
   Mutation: {
+    saveOpportunityEstimation: async (_: unknown, args: { opportunityId: number; estimation: Parameters<typeof service.saveEstimation>[1] }, ctx: any) => service.saveEstimation(args.opportunityId, args.estimation, ctx),
     updateOpportunityClient: async (_: unknown, args: { clientId: number; client: any; contacts: any[] }, ctx: any) =>
       service.updateClient(args.clientId, args.client, args.contacts, ctx),
     createOpportunityClient: async (_: unknown, args: { client: any; contacts: any[] }, ctx: any) =>
@@ -40,11 +42,12 @@ export const opportunityResolvers = {
 
     transitionOpportunity: async (_: unknown, args: {
       opportunityId: number;
-      action: "REQUEST_CHANGES" | "HOLD" | "APPROVE" | "RESUBMIT";
+      action: Parameters<typeof service.transitionWorkflow>[1];
       comment?: string | null;
       opportunityDescription?: string | null;
+      reasonCodeId?: number | null;
     }, ctx: any) => service.transitionWorkflow(
-      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx
+      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx, args.reasonCodeId
     ),
 
     createOpportunity: async (

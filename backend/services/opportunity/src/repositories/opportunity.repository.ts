@@ -46,6 +46,7 @@ export interface Opportunity {
   currencyId: number | null;
   rfpType: number | null;
   workflowComment?: string | null;
+  workflowReasonCodeId?: number | null;
   clientName?: string | null;
   accountType?: string | null;
   sector?: string | null;
@@ -233,7 +234,9 @@ const OPPORTUNITY_LIST_COLUMNS = `
     WHERE opportunity_id = o.opportunity_id AND is_active = TRUE),
     ARRAY[]::TEXT[]) AS "proposalQuestionCategories",
   (SELECT comment FROM tbl_opportunity_engage_tracker
-   WHERE opportunity_id = o.opportunity_id ORDER BY tracker_id DESC LIMIT 1) AS "workflowComment"
+   WHERE opportunity_id = o.opportunity_id ORDER BY tracker_id DESC LIMIT 1) AS "workflowComment",
+  (SELECT reason_code_id FROM tbl_opportunity_engage_tracker
+   WHERE opportunity_id = o.opportunity_id ORDER BY tracker_id DESC LIMIT 1) AS "workflowReasonCodeId"
 `;
 
 async function saveClientContact(
@@ -828,7 +831,44 @@ async function finalizeRfpIntakeOpportunity(
   });
 }
 
-export type OpportunityWorkflowAction = 'REQUEST_CHANGES' | 'HOLD' | 'APPROVE' | 'RESUBMIT' | 'SUBMIT_ESTIMATE';
+export type OpportunityWorkflowAction = 'REQUEST_CHANGES' | 'HOLD' | 'APPROVE' | 'REJECT' | 'RESUBMIT' | 'SUBMIT_ESTIMATE' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'CLOSE_OPPORTUNITY';
+
+export interface WorkflowAudit {
+  reasonCodeId?: number | null;
+  roleId?: number | null;
+  roleName?: string | null;
+}
+
+export interface OpportunityEstimation {
+  revision: number;
+  rows: { id: string; workItem: string; hours: string; people: number; hourlyRate: string }[];
+  assumptions: string;
+  total: string;
+}
+
+export async function findEstimation(opportunityId: number): Promise<OpportunityEstimation | null> {
+  const rows = await query<OpportunityEstimation>(
+    'SELECT revision, rows, assumptions, total::TEXT AS total FROM tbl_opportunity_estimation_matrix WHERE opportunity_id = $1', [opportunityId]);
+  return rows[0] ?? null;
+}
+
+export async function saveEstimation(opportunityId: number, estimation: OpportunityEstimation, userId: number) {
+  return transaction(async client => {
+    const opportunity = await client.query<{ stage_id: number; sub_stage_id: number }>(
+      'SELECT stage_id, sub_stage_id FROM tbl_opportunity WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE', [opportunityId]);
+    if (opportunity.rows[0]?.stage_id !== 3 || opportunity.rows[0]?.sub_stage_id !== 7) throw new Error('The opportunity is no longer in estimation. Refresh before saving.');
+    const result = await client.query(
+      `INSERT INTO tbl_opportunity_estimation_matrix (opportunity_id, revision, rows, assumptions, total, updated_by)
+       SELECT $1, 1, $2::JSONB, $3, $4, $5 WHERE $6 = 0 OR EXISTS
+         (SELECT 1 FROM tbl_opportunity_estimation_matrix WHERE opportunity_id = $1)
+       ON CONFLICT (opportunity_id) DO UPDATE SET revision = tbl_opportunity_estimation_matrix.revision + 1,
+         rows = EXCLUDED.rows, assumptions = EXCLUDED.assumptions, total = EXCLUDED.total,
+         updated_by = EXCLUDED.updated_by, updated_dt = CURRENT_TIMESTAMP
+       WHERE tbl_opportunity_estimation_matrix.revision = $6 RETURNING revision`,
+      [opportunityId, JSON.stringify(estimation.rows), estimation.assumptions, estimation.total, userId, estimation.revision]);
+    if (!result.rows.length) throw new Error('The estimation changed. Refresh before saving.');
+  });
+}
 
 async function transitionWorkflow(
   opportunityId: number,
@@ -837,9 +877,16 @@ async function transitionWorkflow(
   assignedTo: number | null,
   userId: number,
   comment: string | null,
-  opportunityDescription?: string | null
+  opportunityDescription?: string | null,
+  audit: WorkflowAudit = {},
+  expected?: { stageId: number | null; subStageId: number | null }
 ): Promise<Opportunity | null> {
   return transaction(async (client) => {
+    if (expected) {
+      const current = await client.query<{ stageId: number; subStageId: number }>(
+        'SELECT stage_id AS "stageId", sub_stage_id AS "subStageId" FROM tbl_opportunity WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE', [opportunityId]);
+      if (!current.rows[0] || current.rows[0].stageId !== expected.stageId || current.rows[0].subStageId !== expected.subStageId) throw new Error('This opportunity changed while you were reviewing it. Refresh before making a decision.');
+    }
     const updated = await client.query<{ opportunityId: number }>(
       `UPDATE tbl_opportunity
        SET stage_id = $1, sub_stage_id = $2, assigned_to = $3,
@@ -882,9 +929,10 @@ async function transitionWorkflow(
     );
     await client.query(
       `INSERT INTO tbl_opportunity_engage_tracker
-         (opportunity_id, stage_id, substage_id, updated_by, updated_dt, is_current, comment)
-       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, TRUE, $5)`,
-      [opportunityId, stageId, subStageId, userId, comment]
+         (opportunity_id, stage_id, substage_id, updated_by, updated_dt, is_current, comment,
+          reason_code_id, role_id, role_name)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, TRUE, $5, $6, $7, $8)`,
+      [opportunityId, stageId, subStageId, userId, comment, audit.reasonCodeId ?? null, audit.roleId ?? null, audit.roleName ?? null]
     );
 
     const rows = await client.query<Opportunity>(

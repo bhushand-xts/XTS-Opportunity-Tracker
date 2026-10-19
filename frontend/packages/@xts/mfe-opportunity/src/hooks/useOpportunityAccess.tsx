@@ -13,7 +13,7 @@ export function OpportunityAccessProvider({ children }: { children: ReactNode })
   const service = useOpportunityService();
   const { data, loading, error, refetch } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, { fetchPolicy: 'cache-and-network' });
   const menus = resolveOpportunityMenus(data?.menus ?? []);
-  const permissions = opportunityMenuPermissions(menus, auth.hasPermission);
+  const permissions = opportunityMenuPermissions(menus, auth.hasPermission, auth.roleName);
   const loadActions = useCallback(() => service.globalActions(), [service, permissions.add, permissions.edit]);
   const actions = useResource(loadActions, Boolean(auth.session));
   const entry = permissions.view || permissions.add || permissions.edit || permissions.pipeline || permissions.work || permissions.approvals;

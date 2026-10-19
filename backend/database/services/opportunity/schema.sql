@@ -135,3 +135,13 @@ CREATE UNIQUE INDEX uq_engage_tracker_one_current ON tbl_opportunity_engage_trac
 ALTER TABLE tbl_opportunity_tracker ADD CONSTRAINT fk_tbl_opportunity_tracker_opportunity_id FOREIGN KEY (opportunity_id) REFERENCES tbl_opportunity(opportunity_id);
 ALTER TABLE tbl_opportunity_questions_answers ADD CONSTRAINT fk_tbl_opportunity_questions_answers_opportunity_id FOREIGN KEY (opportunity_id) REFERENCES tbl_opportunity(opportunity_id);
 ALTER TABLE tbl_opportunity_engage_tracker ADD CONSTRAINT fk_engage_tracker_opportunity FOREIGN KEY (opportunity_id) REFERENCES tbl_opportunity(opportunity_id);
+
+CREATE TABLE tbl_opportunity_estimation_matrix (
+  opportunity_id INTEGER PRIMARY KEY REFERENCES tbl_opportunity(opportunity_id),
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  rows JSONB NOT NULL CHECK (jsonb_typeof(rows) = 'array'),
+  assumptions TEXT NOT NULL DEFAULT '',
+  total NUMERIC(18,2) NOT NULL CHECK (total >= 0),
+  updated_by INTEGER NOT NULL,
+  updated_dt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

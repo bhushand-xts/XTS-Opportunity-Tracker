@@ -1,6 +1,7 @@
 export const opportunityTypeDefs = `#graphql
 
   type Opportunity {
+    estimation: OpportunityEstimation
     allowedActions: [String!]!
     opportunityId: Int!
     opportunityNumber: String
@@ -52,6 +53,7 @@ export const opportunityTypeDefs = `#graphql
     currencyId: Int
     rfpType: Int
     workflowComment: String
+    workflowReasonCodeId: Int
     clientName: String
     accountType: String
     sector: String
@@ -74,6 +76,11 @@ export const opportunityTypeDefs = `#graphql
     roleInDecision: Int
     roleInDecisionOther: String
   }
+
+  type OpportunityEstimationRow { id: String!, workItem: String!, hours: String!, people: Int!, hourlyRate: String! }
+  type OpportunityEstimation { revision: Int!, rows: [OpportunityEstimationRow!]!, assumptions: String!, total: String! }
+  input OpportunityEstimationRowInput { id: String!, workItem: String!, hours: String!, people: Int!, hourlyRate: String! }
+  input OpportunityEstimationInput { revision: Int!, rows: [OpportunityEstimationRowInput!]!, assumptions: String!, total: String }
 
   type RfpIntakeOpportunity {
     opportunityId: Int!
@@ -291,6 +298,12 @@ export const opportunityTypeDefs = `#graphql
     APPROVE
     RESUBMIT
       SUBMIT_ESTIMATE
+    REJECT
+    BID_SUBMITTED
+    START_NEGOTIATION
+    MARK_WON
+    MARK_LOST
+    CLOSE_OPPORTUNITY
   }
 
   extend type Query {
@@ -306,6 +319,7 @@ export const opportunityTypeDefs = `#graphql
   }
 
   extend type Mutation {
+    saveOpportunityEstimation(opportunityId: Int!, estimation: OpportunityEstimationInput!): Opportunity!
     updateOpportunityClient(clientId: Int!, client: RfpIntakeClientInput!, contacts: [RfpIntakeContactInput!]!): OpportunityDirectoryClient!
     createOpportunityClient(client: RfpIntakeClientInput!, contacts: [RfpIntakeContactInput!]!): OpportunityDirectoryClient!
     createOpportunity(
@@ -324,6 +338,7 @@ export const opportunityTypeDefs = `#graphql
       action: OpportunityWorkflowAction!
       comment: String
       opportunityDescription: String
+      reasonCodeId: Int
     ): Opportunity!
   }
 `;

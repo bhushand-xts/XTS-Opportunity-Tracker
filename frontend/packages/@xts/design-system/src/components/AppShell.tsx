@@ -491,7 +491,7 @@ function OpportunityMenuLink({
   pathname: string;
   hasMenuAccess: (menuKey: string) => boolean;
 }) {
-  const { hasPermission } = useAuth();
+  const { hasPermission, roleName } = useAuth();
   const onOpportunity = pathname === "/opportunity" || pathname.startsWith("/opportunity/");
   const [opportunityOpen, setOpportunityOpen] = useState(onOpportunity);
   useEffect(() => {
@@ -501,7 +501,8 @@ function OpportunityMenuLink({
     fetchPolicy: "cache-and-network",
   });
   const menus = resolveOpportunityMenus(data?.menus ?? []);
-  const menu = menus.find(record => hasMenuAccess(record.menuKey));
+  const permissions = opportunityMenuPermissions(menus, hasPermission, roleName);
+  const menu = menus.find(record => hasMenuAccess(record.menuKey)) ?? (permissions.approvals || permissions.work ? menus[0] : undefined);
   if (error && !menu) return (
     <SidebarMenuItem>
       <SidebarMenuButton onClick={() => void refetch().catch(() => undefined)} disabled={loading} tooltip="Retry loading Opportunities menu">
@@ -510,7 +511,6 @@ function OpportunityMenuLink({
     </SidebarMenuItem>
   );
   if (!menu) return null;
-  const permissions = opportunityMenuPermissions(menus, hasPermission);
   const Icon = menu.icon ? resolveDynamicNavIcon(menu.icon) : Briefcase;
 
   return (

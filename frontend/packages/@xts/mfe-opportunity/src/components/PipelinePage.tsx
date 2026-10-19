@@ -9,6 +9,7 @@ import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
 import { Loading, Notice, Status } from './ui';
 import { money, STATE_LABELS, userLabel } from '../lib/workflow';
 import { AccessUnavailable } from './AccessUnavailable';
+import { STAGE_LABELS } from '../lib/opportunityStatus';
 
 const STAGES: OpportunityState[] = ['PREPARATION_PENDING', 'IN_PROGRESS', 'SALES_REVIEW', 'GATE1_PENDING', 'GATE1_GO', 'SALES_REJECTED', 'GATE1_NO_GO'];
 // Workflow progress, coloured with the design system's --progress-* ramp (later steps read greener).
@@ -70,7 +71,7 @@ function OpportunityRow({ opportunity: o, highlight }: { opportunity: Opportunit
     <TableCell className="hidden lg:table-cell"><OwnerBadge opportunity={o} /></TableCell>
     <TableCell className="hidden whitespace-nowrap text-[12.5px] lg:table-cell">{o.submissionDeadline || <span className="text-muted-foreground">Not set</span>}</TableCell>
     <TableCell className="whitespace-nowrap text-right"><strong className="block text-[12.5px]">{localEstimate(o)}</strong><span className="block text-[11px] text-muted-foreground">{o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'USD not provided'}</span></TableCell>
-    <TableCell className="w-[140px]"><Status state={o.state} size="sm" /><StageProgress state={o.state} className="mt-1.5 max-w-[120px]" /></TableCell>
+    <TableCell className="w-[140px]"><Status {...o} size="sm" /><StageProgress state={o.state} className="mt-1.5 max-w-[120px]" /></TableCell>
   </TableRow>;
 }
 function OpportunityCard({ opportunity: o, highlight }: { opportunity: OpportunitySummary; highlight: boolean }) {
@@ -83,9 +84,30 @@ function OpportunityCard({ opportunity: o, highlight }: { opportunity: Opportuni
         <span>Due {o.submissionDeadline || 'Not set'}</span>
         <OwnerBadge opportunity={o} />
       </div>
-      <StageProgress state={o.state} className="mt-1.5" />
+      <StageProgress state={o.state} className="mt-1.5" /><div className="mt-1.5"><Status {...o} size="sm" /></div>
     </Link>
   </Card>;
+}
+function OpportunityBoard({ opportunities, savedId }: { opportunities: OpportunitySummary[]; savedId: string | null }) {
+  type Lane = { key: string; label: string; state: OpportunityState; order: number; items: OpportunitySummary[] };
+  const lanes = new Map<string, Lane>();
+  if (opportunities.some(o => o.stageId != null)) {
+    lanes.set('stage-1', { key: 'stage-1', label: STAGE_LABELS[1], state: 'SALES_REVIEW', order: 1, items: [] });
+    lanes.set('stage-2', { key: 'stage-2', label: STAGE_LABELS[2], state: 'GATE1_PENDING', order: 2, items: [] });
+  } else {
+    for (const state of ['SALES_REVIEW', 'GATE1_PENDING'] as const) lanes.set(state, { key: state, label: STATE_LABELS[state], state, order: STAGES.indexOf(state), items: [] });
+  }
+  for (const opportunity of opportunities) {
+    const { stageId, state } = opportunity;
+    const key = stageId == null ? state : `stage-${stageId}`;
+    if (!lanes.has(key)) lanes.set(key, { key, label: stageId == null ? STATE_LABELS[state] : STAGE_LABELS[stageId] ?? `Stage ${stageId}`, state, order: stageId ?? STAGES.indexOf(state), items: [] });
+    lanes.get(key)!.items.push(opportunity);
+  }
+  return <div className="opp-board">{Array.from(lanes.values()).sort((a, b) => a.order - b.order).map(lane => <section key={lane.key} className={`opp-lane opp-state-${lane.state}`}>
+    <h3 className="mb-2 flex items-center justify-between gap-2 text-sm font-semibold">{lane.label}<Badge variant="outline">{lane.items.length}</Badge></h3>
+    {lane.items.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={savedId === o.id} />)}
+    {!lane.items.length && <p className="opp-empty text-xs">No opportunities in this stage.</p>}
+  </section>)}</div>;
 }
 export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue'] }) {
   const service = useOpportunityService(), access = useOpportunityAccess();
@@ -106,18 +128,18 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
     queue !== 'MY_APPROVALS' && access.approvals ? { path: '/opportunity/approvals', label: 'Go to My approvals' } : undefined
   } />;
   return <div className="opp-page">
-    <div className="opp-heading"><div><p className="opp-eyebrow">{queue === 'MY_APPROVALS' ? 'REVIEW & GATE 1' : 'OPPORTUNITY MANAGEMENT'}</p><h2>{title}</h2><p className="text-sm text-muted-foreground">{queue === 'MY_APPROVALS' ? 'Open Overview to approve opportunities automatically assigned to you.' : queue === 'MY_WORK' ? 'Your preparation, response and review tasks, in one place.' : 'A clear view of every opportunity, from first contact to Gate 1.'}</p></div>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new"><Plus className="size-4" />Add Opportunity</Link></Button>}</div>
+    <div className="opp-heading"><div><p className="opp-eyebrow">{queue === 'MY_APPROVALS' ? 'REVIEW & GATE 1' : 'OPPORTUNITY MANAGEMENT'}</p><h2>{title}</h2><p className="text-sm text-muted-foreground">{queue === 'MY_APPROVALS' ? 'Track opportunities across all stages. Open Overview to take the action available to your role.' : queue === 'MY_WORK' ? 'Your preparation, response and review tasks, in one place.' : 'A clear view of every opportunity, from first contact to Gate 1.'}</p></div>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new"><Plus className="size-4" />Add Opportunity</Link></Button>}</div>
     {resource.loading ? <Loading label="Loading permitted opportunities…" /> : resource.error ? <Notice error={resource.error} retry={resource.reload} title="Pipeline unavailable" /> : resource.data && <>
       <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">{[
         // "Pending approval" and "Gate 1 approved" reuse their stage colours; the totals use brand and gold.
         { title: 'All opportunities', value: resource.data.totalCount, hint: 'Permitted opportunities', icon: Briefcase, tone: 'border-t-primary', iconTone: 'text-primary', wash: 'to-primary/5' },
         { title: 'Pipeline value', value: totalLabel, hint: 'Total estimated value (USD)', icon: Briefcase, tone: 'border-t-amber-600', iconTone: 'text-amber-600', wash: 'to-amber-500/5' },
-        { title: 'Pending approval', value: list.filter(o => o.state === 'SALES_REVIEW').length, hint: 'Awaiting Sales Head approval', icon: Clock, tone: 'border-t-progress-3', iconTone: 'text-progress-3', wash: 'to-progress-3/5' },
-        { title: 'Gate 1 approved', value: list.filter(o => o.state === 'GATE1_GO').length, hint: 'Approved opportunities retained', icon: CheckCircle2, tone: 'border-t-progress-5', iconTone: 'text-progress-5', wash: 'to-progress-5/5' },
+        { title: 'Pending approval', value: list.filter(o => o.stageId == null ? o.state === 'SALES_REVIEW' : o.stageId === 1 && o.subStageId === 1 || o.stageId === 2 && o.subStageId === 4 || o.stageId === 4 && o.subStageId === 8).length, hint: 'Awaiting a reviewer decision', icon: Clock, tone: 'border-t-progress-3', iconTone: 'text-progress-3', wash: 'to-progress-3/5' },
+        { title: 'Won opportunities', value: list.filter(o => o.stageId === 7 && o.subStageId === 13).length, hint: 'Closed ? Won', icon: CheckCircle2, tone: 'border-t-progress-5', iconTone: 'text-progress-5', wash: 'to-progress-5/5' },
       ].map(stat => <Card key={stat.title} className={cn('min-w-0 border-t-[3px] bg-gradient-to-br from-card from-50% shadow-sm', stat.tone, stat.wash)}><section className="px-3 py-2.5"><div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">{stat.title}<stat.icon className={cn('size-4 shrink-0', stat.iconTone)} /></div><strong className="my-0.5 block break-words text-xl font-semibold">{stat.value}</strong><p className="text-xs text-muted-foreground">{stat.hint}</p></section></Card>)}</div>
     </>}
     <div className="my-3 flex flex-wrap items-center justify-between gap-3"><div className="relative w-full sm:max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input className="pl-9" aria-label="Search opportunities" placeholder="Search opportunity, client or reference…" value={search} onChange={e => { setSearch(e.target.value); setAfter(null); }} /></div><div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Pipeline view">{(['board', 'list'] as const).map(v => <Button key={v} size="sm" variant={view === v ? 'secondary' : 'ghost'} aria-pressed={view === v} onClick={() => setView(v)}>{v === 'board' ? 'Board' : 'List'}</Button>)}</div></div>
-    {resource.data && !resource.loading && !resource.error && (list.length === 0 ? <section className="opp-empty"><Briefcase className="mx-auto mb-4 size-8 text-primary" /><h3 className="text-xl font-semibold">{query ? 'No matching opportunities' : 'Your pipeline starts here'}</h3><p className="my-3 text-sm text-muted-foreground">{query ? 'Try a different search.' : 'No opportunities were returned for your permitted scope.'}</p>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new">Add Opportunity</Link></Button>}</section> : view === 'board' ? <TooltipProvider delayDuration={150}><div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">{STAGES.filter(stage => list.some(o => o.state === stage) || ['SALES_REVIEW', 'GATE1_PENDING'].includes(stage)).map(stage => <section key={stage} className="min-w-0 space-y-2 rounded-xl border bg-muted/60 p-2"><h3 className="flex items-center gap-2 px-0.5 text-sm font-semibold"><span className={cn('size-2 shrink-0 rounded-full', STAGE_TONE[stage].fill)} aria-hidden="true" /><span className="flex-1">{STATE_LABELS[stage]}</span><Badge variant="outline" size="sm" className="bg-card">{list.filter(o => o.state === stage).length}</Badge></h3>{list.filter(o => o.state === stage).map(o => <OpportunityCard key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}{!list.some(o => o.state === stage) && <p className="rounded-lg border border-dashed bg-card px-3 py-3.5 text-center text-xs text-muted-foreground">No opportunities in this stage.</p>}</section>)}</div></TooltipProvider> : <div className="space-y-3">{/* Stacked list remains usable on mobile without page overflow. */}<TooltipProvider delayDuration={150}><div className="hidden overflow-hidden rounded-xl border bg-card md:block"><Table><TableHeader className="bg-muted/50"><TableRow className="hover:bg-transparent"><TableHead className="h-9 text-[11px] uppercase tracking-wide">Opportunity</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Client</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Owner</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Due</TableHead><TableHead className="h-9 text-right text-[11px] uppercase tracking-wide">Value · USD</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Stage</TableHead></TableRow></TableHeader><TableBody>{list.map(o => <OpportunityRow key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</TableBody></Table></div><div className="grid gap-2 md:hidden">{list.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</div></TooltipProvider></div>)}
+    {resource.data && !resource.loading && !resource.error && (list.length === 0 ? <section className="opp-empty"><Briefcase className="mx-auto mb-4 size-8 text-primary" /><h3 className="text-xl font-semibold">{query ? 'No matching opportunities' : 'Your pipeline starts here'}</h3><p className="my-3 text-sm text-muted-foreground">{query ? 'Try a different search.' : 'No opportunities were returned for your permitted scope.'}</p>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new">Add Opportunity</Link></Button>}</section> : view === 'board' ? <TooltipProvider delayDuration={150}><OpportunityBoard opportunities={list} savedId={params.get('saved')} /></TooltipProvider> : <div className="space-y-3">{/* Stacked list remains usable on mobile without page overflow. */}<TooltipProvider delayDuration={150}><div className="hidden overflow-hidden rounded-xl border bg-card md:block"><Table><TableHeader className="bg-muted/50"><TableRow className="hover:bg-transparent"><TableHead className="h-9 text-[11px] uppercase tracking-wide">Opportunity</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Client</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Owner</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Due</TableHead><TableHead className="h-9 text-right text-[11px] uppercase tracking-wide">Value · USD</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Stage</TableHead></TableRow></TableHeader><TableBody>{list.map(o => <OpportunityRow key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</TableBody></Table></div><div className="grid gap-2 md:hidden">{list.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</div></TooltipProvider></div>)}
     {resource.data?.hasNextPage && <Button variant="outline" className="mt-5" onClick={() => setAfter(resource.data?.endCursor ?? null)}>Next page</Button>}
     {after && <Button variant="ghost" className="ml-3 mt-5" onClick={() => setAfter(null)}>First page</Button>}
   </div>;

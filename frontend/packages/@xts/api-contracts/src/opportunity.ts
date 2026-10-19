@@ -4,7 +4,7 @@ export type LocalDate = string;
 export type OpportunityState = 'PREPARATION_PENDING' | 'IN_PROGRESS' | 'SALES_REVIEW' | 'GATE1_PENDING' | 'GATE1_GO' | 'SALES_REJECTED' | 'GATE1_NO_GO';
 export type ResponseState = 'UNASSIGNED' | 'ASSIGNED' | 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'CHANGES_REQUESTED';
 export type Module = 'overview' | 'responses' | 'estimation' | 'scope' | 'assignment' | 'activity';
-export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
+export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
 export interface DirectoryUser { id: string; name: string; email: string; roles: string[]; active: boolean; }
 export interface Contact { id?: string; name: string; title: string; email: string; phone: string; decisionRole: string; decisionRoleOther?: string; }
 export type AdditionalContact = Contact;
@@ -41,7 +41,7 @@ export interface OpportunityDraft {
 export interface OpportunitySummary {
   id: string; number: string; title: string; estimatedValue: Decimal; estimatedValueUsd?: Decimal; currencyCode: string; currencySymbol?: string;
   clientName: string | null; owner: DirectoryUser | null; priority: OpportunityDraft['priority'];
-  state: OpportunityState; rfpType: RfpDraft['type']; submissionDeadline: LocalDate | null;
+  state: OpportunityState; stageId?: number | null; subStageId?: number | null; holdReasonCodeId?: number | null; rfpType: RfpDraft['type']; submissionDeadline: LocalDate | null;
   revision: number; packageRevision: number | null; allowedActions: Action[];
 }
 export interface EstimateRow { id: string; workItem: string; hours: Decimal; people: number; hourlyRate: Decimal; }
@@ -70,6 +70,12 @@ export interface ListFilter { search: string; queue: 'PIPELINE' | 'MY_WORK' | 'M
 export interface SaveCommand { id: string | null; expectedRevision: number | null; idempotencyKey: string; form: OpportunityDraft; }
 export interface VersionCommand { opportunityId: string; expectedRevision: number; idempotencyKey: string; }
 export interface ResponseCommand extends VersionCommand { responseId: string; responseRevision: number; }
-export interface DecisionCommand extends VersionCommand { packageRevision: number; decision: 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO'; reason: string; confirmed: boolean; }
+export interface DecisionCommand extends VersionCommand {
+  packageRevision: number | null;
+  expectedStageId?: number | null; expectedSubStageId?: number | null;
+  reasonCodeId?: number | null;
+  decision: 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT';
+  reason: string; confirmed: boolean;
+}
 export interface LookupOption { id: string; label: string; code?: string; }
 export interface OpportunityLookups { currencies: LookupOption[]; industries: LookupOption[]; accountTypes: LookupOption[]; }
