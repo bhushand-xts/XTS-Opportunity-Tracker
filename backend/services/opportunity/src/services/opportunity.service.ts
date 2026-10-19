@@ -52,10 +52,10 @@ async function notifyOpportunityCreated(opportunityId: number, userId: number) {
       repository.findStageName(opportunity.stageId),
       repository.findCurrencyCode(opportunity.currencyId),
     ]);
-    const candidates = [
-      owner ? { email: owner.email, name: userName(owner) } : null,
-      ...salesHeads.map(user => ({ email: user.email, name: userName(user) })),
-    ].filter((recipient): recipient is { email: string; name: string } => !!recipient?.email);
+    // Notifies Sales Head only — not the owner, since the owner is often the
+    // person who just created the opportunity and already knows about it.
+    const candidates = salesHeads.map(user => ({ email: user.email, name: userName(user) }))
+      .filter((recipient): recipient is { email: string; name: string } => !!recipient.email);
     const seen = new Set<string>();
     const recipients = candidates.filter(recipient => !seen.has(recipient.email) && seen.add(recipient.email));
     await sendOpportunityCreatedEmail(recipients, {
