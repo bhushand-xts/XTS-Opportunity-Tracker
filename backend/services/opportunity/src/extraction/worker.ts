@@ -100,7 +100,7 @@ async function main() {
     try {
       if (Date.now() > nextCleanup) { await cleanup(); nextCleanup = Date.now() + 3600000; }
       const job = await repo.claim(canProcess);
-      if (job) await processJob(job); else await delay(2000);
+      if (job) await processJob(job); else await delay(400);
     } catch { console.error('Extraction worker iteration failed; retrying without logging document data.'); await delay(5000); }
   }
 }

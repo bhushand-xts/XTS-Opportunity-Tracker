@@ -201,11 +201,13 @@ function assertCanEdit(opportunity: repository.Opportunity, access: OpportunityA
 }
 
 // Used by question extraction to confirm the caller may attach/upload a source document to
-// this opportunity. Same edit policy as every other opportunity edit.
-async function assertExtractionEdit(opportunityId: number, userId: number, _roleId?: number | null) {
+// this opportunity. Same edit policy as every other opportunity edit. Accepts the caller's own
+// ctx (if it already resolved access this request) so this doesn't re-fetch role/menu access
+// and re-look-up the user from scratch when it was just done a moment ago.
+async function assertExtractionEdit(opportunityId: number, userId: number, ctx?: any) {
   const current = await repository.findById(opportunityId);
   if (!current) throw notFound("Opportunity not found.");
-  assertCanEdit(current, await accessFor({ user: { id: userId } }));
+  assertCanEdit(current, await accessFor(ctx ?? { user: { id: userId } }));
 }
 
 async function resubmitBySalesRepresentative(

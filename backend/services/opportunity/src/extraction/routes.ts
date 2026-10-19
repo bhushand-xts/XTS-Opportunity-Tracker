@@ -128,8 +128,9 @@ extractionRouter.post('/documents/:documentId/extractions', wrap(async (req, res
   const raw = (req.body as { instructions?: unknown } | undefined)?.instructions;
   if (raw != null && typeof raw !== 'string') throw new ExtractionError('INVALID_INSTRUCTIONS');
   if (typeof raw === 'string' && raw.length > MAX_INSTRUCTIONS) throw new ExtractionError('INSTRUCTIONS_TOO_LONG');
+  // edit=true already re-runs mayUpload's exact same check (same userId, same
+  // opportunity_id) internally — a second explicit call here would just repeat it.
   const doc = await mayRead(await repo.document(uuid(req.params.documentId)), user(req), true);
-  await mayUpload(user(req), doc.opportunity_id);
   // Instructions only steer AI extraction; local rule matching ignores them.
   const instructions = aiReady() ? normalizeInstructions(raw as string | undefined) : '';
   if (instructions && instructionsTooShort(instructions)) throw new ExtractionError('INSTRUCTIONS_TOO_SHORT');

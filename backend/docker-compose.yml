@@ -111,6 +111,7 @@ services:
       - services/opportunity/.env
     environment:
       USER_SERVICE_URL: http://user:4001/graphql
+      ADMIN_SERVICE_URL: http://admin:4010/graphql
     volumes:
       - .:/app
       - /app/node_modules

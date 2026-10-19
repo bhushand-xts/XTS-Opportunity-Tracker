@@ -157,7 +157,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
         if (runningRef.current?.id === jobId) runningRef.current = undefined;
         return;
       }
-      await pollDelay(1500, signal);
+      await pollDelay(400, signal);
     }
   }
   // Cancels any upload/extraction in flight and returns a fresh signal and generation for the next one.
