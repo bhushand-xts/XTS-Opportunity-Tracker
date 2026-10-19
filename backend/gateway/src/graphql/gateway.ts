@@ -16,7 +16,7 @@ class UserAwareDataSource extends RemoteGraphQLDataSource {
 }
 
 const gateway = new ApolloGateway({
-  supergraphSdl: new IntrospectAndCompose({ subgraphs: serviceList }),
+  supergraphSdl: new IntrospectAndCompose({ subgraphs: serviceList, pollIntervalInMs: 10000 }),
   buildService: ({ url }) => new UserAwareDataSource({ url }),
 });
 

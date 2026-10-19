@@ -2,6 +2,7 @@ import { useQuery } from "@apollo/client";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
+  Briefcase,
   Building2,
   ChevronDown,
   ChevronLeft,
@@ -63,6 +64,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth, type AppPermission } from "@/lib/auth";
 import { GET_NAV_MENUS } from "@/lib/nav.queries";
+import { GET_OPPORTUNITY_MENUS, opportunityMenuPermissions, resolveOpportunityMenus, type OpportunityMenuRecord } from "@/lib/opportunityMenu";
 import { usePageTitle } from "@/lib/pageTitle";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -158,6 +160,7 @@ interface NavMenuNode {
  * static sidebar's icons exactly. */
 const DYNAMIC_NAV_ICONS: Record<string, LucideIcon> = {
   LayoutDashboard,
+  Briefcase,
   Settings,
   ShieldCheck: Shield,
   Shield,
@@ -479,6 +482,73 @@ function AdminNavGroup({
   );
 }
 
+// All real active Opportunity menu records can grant access to this MFE.
+// Keep one navigation surface and use the first accessible record's label/icon.
+function OpportunityMenuLink({
+  pathname,
+  hasMenuAccess,
+}: {
+  pathname: string;
+  hasMenuAccess: (menuKey: string) => boolean;
+}) {
+  const { hasPermission } = useAuth();
+  const onOpportunity = pathname === "/opportunity" || pathname.startsWith("/opportunity/");
+  const [opportunityOpen, setOpportunityOpen] = useState(onOpportunity);
+  useEffect(() => {
+    if (onOpportunity) setOpportunityOpen(true);
+  }, [pathname, onOpportunity]);
+  const { data, error, loading, refetch } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, {
+    fetchPolicy: "cache-and-network",
+  });
+  const menus = resolveOpportunityMenus(data?.menus ?? []);
+  const menu = menus.find(record => hasMenuAccess(record.menuKey));
+  if (error && !menu) return (
+    <SidebarMenuItem>
+      <SidebarMenuButton onClick={() => void refetch().catch(() => undefined)} disabled={loading} tooltip="Retry loading Opportunities menu">
+        <Briefcase /><span>{loading ? "Loading Opportunities…" : "Opportunities unavailable · Retry"}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+  if (!menu) return null;
+  const permissions = opportunityMenuPermissions(menus, hasPermission);
+  const Icon = menu.icon ? resolveDynamicNavIcon(menu.icon) : Briefcase;
+
+  return (
+    <Collapsible open={opportunityOpen} onOpenChange={setOpportunityOpen} className="group/opportunities">
+    <SidebarMenuItem>
+      <CollapsibleTrigger asChild>
+      <SidebarMenuButton
+        isActive={onOpportunity}
+        tooltip={menu.menuName}
+        className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
+      >
+          <Icon />
+          <span>{menu.menuName}</span>
+          <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/opportunities:rotate-180" />
+      </SidebarMenuButton>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+      <SidebarMenuSub>
+        {permissions.pipeline && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity"}><Link to="/opportunity">Pipeline</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+        {permissions.work && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/work"}><Link to="/opportunity/work">My Work</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+        {permissions.approvals && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/approvals"}><Link to="/opportunity/approvals">My Approvals</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+      </SidebarMenuSub>
+      </CollapsibleContent>
+    </SidebarMenuItem>
+    </Collapsible>
+  );
+}
+
+function OpportunityCreateShortcut() {
+  const { hasPermission } = useAuth();
+  const { data, error } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, { fetchPolicy: 'cache-and-network' });
+  const permissions = opportunityMenuPermissions(resolveOpportunityMenus(data?.menus ?? []), hasPermission);
+  if (error || !permissions.add) return null;
+  return <Button asChild size="icon" className="size-9 rounded-full" aria-label="New opportunity">
+    <Link to="/opportunity/new"><Plus className="size-[18px]" /></Link>
+  </Button>;
+}
+
 function AppSidebar({
   can,
   hasMenuAccess,
@@ -542,6 +612,8 @@ function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
 
+          <OpportunityMenuLink pathname={pathname} hasMenuAccess={hasMenuAccess} />
+
           {can("admin") && (
             <Collapsible open={adminOpen} onOpenChange={setAdminOpen} className="group/admin">
               <SidebarMenuItem>
@@ -604,12 +676,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
             <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight">{pageTitle}</h1>
             <div className="flex shrink-0 items-center gap-1 ml-auto">
               {actions}
-              {/* Points at the dashboard until the Opportunity MFE has a real route to land on */}
-              <Button asChild size="icon" className="size-9 rounded-full" aria-label="New opportunity">
-                <Link to="/dashboard">
-                  <Plus className="size-[18px]" />
-                </Link>
-              </Button>
+              <OpportunityCreateShortcut />
               <NotificationsPanel />
               <Button variant="ghost" size="icon" aria-label="Help" onClick={() => setHelpOpen((v) => !v)}>
                 <CircleHelp className="size-[18px]" />

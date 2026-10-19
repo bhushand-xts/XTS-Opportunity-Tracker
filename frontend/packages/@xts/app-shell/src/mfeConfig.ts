@@ -13,8 +13,8 @@ export const MFE_CONFIG: Record<string, MFEConfig> = {
     port: 3001,
   },
   opportunity: {
-    enabled: false,
-    name: "Opportunities",
+    enabled: true,
+    name: "Opportunity",
     icon: "💼",
     port: 3002,
   },

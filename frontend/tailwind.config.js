@@ -11,6 +11,7 @@ module.exports = {
     path.join(__dirname, "packages/@xts/design-system/src/**/*.{ts,tsx}"),
     path.join(__dirname, "packages/@xts/app-shell/src/**/*.{ts,tsx}"),
     path.join(__dirname, "packages/@xts/mfe-admin/src/**/*.{ts,tsx}"),
+    path.join(__dirname, "packages/@xts/mfe-opportunity/src/**/*.{ts,tsx}"),
   ],
   theme: {
   	container: {

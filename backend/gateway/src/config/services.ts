@@ -17,7 +17,7 @@ const userServiceUrl = availableServices.find((service) => service.name === 'use
 
 // Local development can run a subset while other domain databases are not configured.
 const enabledServiceNames = new Set(
-  (process.env.ENABLED_SUBGRAPHS || 'user,admin')
+  (process.env.ENABLED_SUBGRAPHS || 'user,opportunity,admin')
     .split(',')
     .map((name) => name.trim())
     .filter(Boolean)

@@ -1,0 +1,95 @@
+# Opt-in: docker compose -f docker-compose.yml -f docker-compose.extraction.yml up --build
+# Requires services/opportunity/.env and a private EXTRACTION_SERVICE_SECRET in backend/.env.
+services:
+  gateway:
+    environment:
+      QUESTION_EXTRACTION_ENABLED: "true"
+      EXTRACTION_SERVICE_SECRET: ${EXTRACTION_SERVICE_SECRET:?Set a random service secret of at least 32 characters}
+      OPPORTUNITY_URL: http://opportunity:4003/graphql
+      ENABLED_SUBGRAPHS: user,opportunity,admin
+    depends_on:
+      opportunity:
+        condition: service_healthy
+  opportunity:
+    user: "1000:1000"
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        SERVICE_PATH: services/opportunity
+    env_file:
+      - services/opportunity/.env
+    environment:
+      QUESTION_EXTRACTION_ENABLED: "true"
+      EXTRACTION_SERVICE_SECRET: ${EXTRACTION_SERVICE_SECRET}
+      DOCUMENT_STORAGE_ROOT: /app/storage/opportunity-documents
+      USER_SERVICE_URL: http://user:4001/graphql
+    volumes:
+      - ./storage/opportunity-documents:/app/storage/opportunity-documents
+    expose:
+      - "4003"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4003/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      user:
+        condition: service_healthy
+  extraction-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.extraction
+    env_file:
+      - services/opportunity/.env
+    environment:
+      QUESTION_EXTRACTION_ENABLED: "true"
+      EXTRACTION_SERVICE_SECRET: ${EXTRACTION_SERVICE_SECRET}
+      DOCUMENT_STORAGE_ROOT: /app/storage/opportunity-documents
+      USER_SERVICE_URL: http://user:4001/graphql
+      EXTRACTION_PARSER_QUEUE: "true"
+    volumes:
+      - ./storage/opportunity-documents:/app/storage/opportunity-documents
+    init: true
+    mem_limit: 1g
+    pids_limit: 128
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      opportunity:
+        condition: service_healthy
+    restart: unless-stopped
+  extraction-parser:
+    build:
+      context: .
+      dockerfile: Dockerfile.extraction
+    command: ["/app/node_modules/.bin/tsx", "src/extraction/parser.runner.ts"]
+    # Parser sees originals read-only and can write only queue results and /tmp.
+    network_mode: none
+    environment:
+      DOCUMENT_STORAGE_ROOT: /app/storage/opportunity-documents
+      DB_HOST: unused
+      DB_NAME: unused
+      DB_USER: unused
+      DB_PASSWORD: unused
+      HOME: /tmp
+    volumes:
+      - ./storage/opportunity-documents:/app/storage/opportunity-documents:ro
+      - ./storage/opportunity-documents/.parser:/app/storage/opportunity-documents/.parser
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m,mode=1777
+    init: true
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      opportunity:
+        condition: service_healthy
