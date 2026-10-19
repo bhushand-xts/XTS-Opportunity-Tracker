@@ -7,6 +7,7 @@ import { documentUploadAudit } from '../lib/documentStorage';
 import { transaction } from "../config/db";
 import { attachSource } from "../extraction/repository";
 import { uuidPattern } from "../extraction/types";
+import { sendOpportunityCreatedEmail } from "../integrations/mailer";
 
 import {
   notFound,
@@ -28,6 +29,50 @@ async function attachSourceDocument(opportunityId: number, userId: number, sourc
     await transaction(client => attachSource(client, opportunityId, userId, sourceDocumentId));
   } catch (error) {
     console.error("Could not link the source document to the opportunity", error);
+  }
+}
+
+const userName = (user: { firstName?: string | null; lastName?: string | null; email?: string } | null) =>
+  user ? [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email || 'Unknown' : 'Unknown';
+const rfpTypeLabel = (opportunityTypeId: number | null) => opportunityTypeId === 1 ? 'Questionnaire-based' : 'Generic RFP';
+
+// Best-effort: the opportunity is already saved by the time this runs, so a
+// notification failure (bad SMTP config, provider down) never undoes the save.
+async function notifyOpportunityCreated(opportunityId: number, userId: number) {
+  try {
+    const [opportunity, creator, salesHeadRoleId] = await Promise.all([
+      repository.findById(opportunityId),
+      userService.findUser(userId),
+      repository.findSalesHeadRoleId(),
+    ]);
+    if (!opportunity) return;
+    const [owner, salesHeads, stageName, currencyCode] = await Promise.all([
+      opportunity.ownerId ? userService.findUser(opportunity.ownerId) : Promise.resolve(null),
+      salesHeadRoleId ? userService.findActiveUsersByRole(salesHeadRoleId) : Promise.resolve([]),
+      repository.findStageName(opportunity.stageId),
+      repository.findCurrencyCode(opportunity.currencyId),
+    ]);
+    const candidates = [
+      owner ? { email: owner.email, name: userName(owner) } : null,
+      ...salesHeads.map(user => ({ email: user.email, name: userName(user) })),
+    ].filter((recipient): recipient is { email: string; name: string } => !!recipient?.email);
+    const seen = new Set<string>();
+    const recipients = candidates.filter(recipient => !seen.has(recipient.email) && seen.add(recipient.email));
+    await sendOpportunityCreatedEmail(recipients, {
+      opportunityNumber: opportunity.opportunityNumber ?? 'Not assigned',
+      opportunityName: opportunity.opportunityName ?? 'Untitled',
+      accountName: opportunity.clientName ?? null,
+      rfpType: rfpTypeLabel(opportunity.opportunityTypeId),
+      ownerName: userName(owner),
+      estimatedValue: opportunity.estimatedValue,
+      currency: currencyCode,
+      stageName,
+      expectedCloseDate: opportunity.expectedCloseDate,
+      createdByName: userName(creator),
+      createdAt: opportunity.createdDt,
+    });
+  } catch (error) {
+    console.error("Could not send the opportunity-created notification email", error);
   }
 }
 
@@ -89,6 +134,7 @@ async function create(
   }, userId);
   const sourceDocumentId = (input as OpportunityInput & { sourceDocumentId?: string | null }).sourceDocumentId;
   if (sourceDocumentId) await attachSourceDocument(created.opportunityId, userId, sourceDocumentId);
+  void notifyOpportunityCreated(created.opportunityId, userId);
   return created;
 }
 
@@ -142,7 +188,9 @@ async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunity
   const access = await accessFor(ctx), userId = access.userId;
   if (!access.create) throw conflict('You do not have permission to create opportunities.');
   await validateActiveOwner(input.ownerId);
-  return repository.finalizeRfpIntakeOpportunity(input, userId, null);
+  const created = await repository.finalizeRfpIntakeOpportunity(input, userId, null);
+  void notifyOpportunityCreated(created.opportunityId, userId);
+  return created;
 }
 
 async function updateRfpIntakeOpportunity(

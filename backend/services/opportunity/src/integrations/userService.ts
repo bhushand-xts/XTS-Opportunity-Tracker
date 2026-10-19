@@ -4,13 +4,16 @@ export interface DirectoryUser {
   id: number;
   roleId: number | null;
   isActive: boolean | null;
+  email?: string;
+  firstName?: string | null;
+  lastName?: string | null;
 }
 
 async function listUsers(): Promise<DirectoryUser[]> {
   const response = await fetch(env.userServiceUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: '{ userList { id roleId isActive } }' }),
+    body: JSON.stringify({ query: '{ userList { id roleId isActive email firstName lastName } }' }),
   });
   if (!response.ok) throw new Error(`User service returned ${response.status}.`);
 

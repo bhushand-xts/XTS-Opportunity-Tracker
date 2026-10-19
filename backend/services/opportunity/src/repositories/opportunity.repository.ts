@@ -3,6 +3,25 @@ import type { PoolClient } from "pg";
 
 const GENERIC_RFP_TYPE_ID = 2;
 
+// mst_roles lives in the admin service's database, but opportunity already reads
+// other admin-owned tables (mst_client, mst_currency) directly from the same DB.
+async function findSalesHeadRoleId(): Promise<number | null> {
+  const rows = await query<{ roleId: number }>(
+    `SELECT role_id AS "roleId" FROM mst_roles WHERE role_name = 'Sales Head' AND is_active = TRUE LIMIT 1`
+  );
+  return rows[0]?.roleId ?? null;
+}
+async function findStageName(stageId: number | null): Promise<string | null> {
+  if (!stageId) return null;
+  const rows = await query<{ stageName: string }>(`SELECT stage_name AS "stageName" FROM mst_stage WHERE stage_id = $1`, [stageId]);
+  return rows[0]?.stageName ?? null;
+}
+async function findCurrencyCode(currencyId: number | null): Promise<string | null> {
+  if (!currencyId) return null;
+  const rows = await query<{ currencyCode: string }>(`SELECT currency_code AS "currencyCode" FROM mst_currency WHERE currency_id = $1`, [currencyId]);
+  return rows[0]?.currencyCode ?? null;
+}
+
 export interface Opportunity {
   opportunityId: number;
   opportunityNumber: string | null;
@@ -1417,5 +1436,8 @@ export {
   updateRfpIntakeOpportunity,
   transitionWorkflow,
   create,
-  update
+  update,
+  findSalesHeadRoleId,
+  findStageName,
+  findCurrencyCode
 };
