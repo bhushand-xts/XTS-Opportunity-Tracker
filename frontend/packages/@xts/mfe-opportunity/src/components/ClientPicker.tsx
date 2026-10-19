@@ -112,5 +112,5 @@ export function ClientPicker({ selected, onSelect, lookups, disabled, canCreate,
 export function ClientValues({ client: c }: { client: OpportunityClient }) { return <><Values values={[
   ['Client name', c.name], ['Account type', c.accountTypeName], ['Sector / industry', c.industryName], ['Website', c.website], ['Street address', c.streetAddress], ['Country', c.country], ['State / province', c.stateProvince], ['City', c.city], ['Primary contact', c.primaryContact.name], ['Title / role', c.primaryContact.title], ['Email', c.primaryContact.email], ['Phone', c.primaryContact.phone], ['Role in decision', c.primaryContact.decisionRole === 'Other' ? c.primaryContact.decisionRoleOther : c.primaryContact.decisionRole],
 ]} />{c.additionalContacts.map((contact, i) => <div key={contact.id ?? i} className="mt-3 border-t pt-3"><h4 className="mb-2 text-sm font-semibold">Additional contact {i + 1}</h4><Values values={[
-  ['Full name', contact.name], ['Title / role', contact.title], ['Email', contact.email], ['Phone', contact.phone], ['Role in decision', contact.decisionRole],
+  ['Full name', contact.name], ['Title / role', contact.title], ['Email', contact.email], ['Phone', contact.phone], ['Role in decision', contact.decisionRole === 'Other' ? contact.decisionRoleOther : contact.decisionRole],
 ]} /></div>)}</>; }

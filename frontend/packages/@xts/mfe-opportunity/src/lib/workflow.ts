@@ -110,11 +110,37 @@ export function money(value: Decimal, code: string) {
   try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(Number(value)); }
   catch { return `${code} ${value}`; }
 }
-export function decisionError(o: OpportunityDetail, decision: Action, reason: string, confirmed: boolean): string | null {
+export function decisionError(o: OpportunityDetail, decision: Action, reason: string, confirmed: boolean, reasonCodeId?: number | null): string | null {
   if (!may(o, decision)) return 'You are not permitted to make this decision.';
+  if (o.stageId != null) {
+    if (!applicableDecisions(o).includes(decision)) return 'This opportunity is no longer awaiting this decision. Refresh the opportunity.';
+    if (decision.endsWith('_HOLD') || ['SALES_REJECT', 'GATE1_NO_GO', 'ESTIMATE_REJECT'].includes(decision)) {
+      const label = decision.endsWith('_HOLD') ? 'hold' : 'rejection';
+      if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) return `Select a ${label} reason.`;
+      if (!reason.trim()) return `Enter a ${label} description.`;
+    }
+    if (decision === 'SUBMIT_ESTIMATE' && !o.estimation?.rows.length) return 'Save an estimation with at least one work item before submitting for CEO approval.';
+    if (decision.endsWith('_REQUEST_CHANGES') && !reason.trim()) return 'Enter the changes requested before returning the opportunity.';
+    return null;
+  }
   if ((decision.startsWith('SALES_') && o.state !== 'SALES_REVIEW') || (decision.startsWith('GATE1_') && o.state !== 'GATE1_PENDING')) return 'This package is no longer awaiting this decision. Refresh the opportunity.';
   if (o.packageRevision === null) return 'There is no submitted package to review.';
   if (!confirmed) return 'Confirm that you reviewed this package revision.';
   if ((decision === 'SALES_REJECT' || decision === 'GATE1_NO_GO') && !reason.trim()) return 'Enter a reason for this decision.';
   return null;
+}
+
+export function applicableDecisions(o: OpportunityDetail): Action[] {
+  const stage = o.stageId, substage = o.subStageId;
+  const decisions: Action[] = [];
+  if (stage === 1 && [1, 3].includes(substage ?? 0)) decisions.push('SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_HOLD', 'SALES_REJECT');
+  if (stage === 2 && [4, 6].includes(substage ?? 0)) decisions.push('GATE1_GO', 'GATE1_REQUEST_CHANGES', 'GATE1_HOLD', 'GATE1_NO_GO');
+  if (stage === 1 && substage === 2 || stage === 2 && substage === 5) decisions.push('RESUBMIT');
+  if (stage === 3 && substage === 7) decisions.push('SUBMIT_ESTIMATE');
+  if (stage === 4 && [8, 9].includes(substage ?? 0)) decisions.push('ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT');
+  if (stage === 5 && substage === 10) decisions.push('BID_SUBMITTED');
+  if (stage === 5 && substage === 11) decisions.push('START_NEGOTIATION');
+  if (stage === 6 && substage === 12) decisions.push('MARK_WON', 'MARK_LOST');
+  if ([1, 2, 3, 4, 5, 6].includes(stage ?? 0)) decisions.push('CLOSE_OPPORTUNITY');
+  return decisions;
 }

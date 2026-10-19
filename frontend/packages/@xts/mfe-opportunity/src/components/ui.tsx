@@ -2,9 +2,9 @@ import { useFieldError } from './FieldValidation';
 import { useId, type ReactNode } from 'react';
 import { Briefcase, Layers, Users } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Spinner, Textarea } from '@xts/design-system';
-import type { LookupOption, OpportunityState } from '@xts/api-contracts';
-import { STATE_LABELS } from '../lib/workflow';
+import type { LookupOption, OpportunitySummary } from '@xts/api-contracts';
 import { SearchableSelect } from './SearchableSelect';
+import { opportunityStatus } from '../lib/opportunityStatus';
 
 export function Panel({ title, description, tone = 'violet', children, className = '' }: { title: string; description?: string; tone?: 'violet' | 'indigo' | 'teal' | 'neutral'; children: ReactNode; className?: string }) {
   const Icon = tone === 'teal' ? Users : tone === 'indigo' ? Layers : Briefcase;
@@ -24,7 +24,10 @@ export function Notice({ error, title = 'Unable to complete this action', retry 
   return <Alert variant="destructive" role="alert"><AlertTitle>{title}</AlertTitle><AlertDescription>{typeof error === 'string' ? error : error.message}{retry && <Button type="button" variant="outline" size="sm" className="ml-3 mt-2" onClick={retry}>Retry</Button>}</AlertDescription></Alert>;
 }
 export function Loading({ label = 'Loading opportunity…' }: { label?: string }) { return <div role="status" className="flex items-center gap-2 py-12 text-sm text-muted-foreground"><Spinner className="size-4" />{label}</div>; }
-export function Status({ state }: { state: OpportunityState }) { return <Badge className={`opp-status opp-state-${state}`}>{STATE_LABELS[state]}</Badge>; }
+export function Status(opportunity: Pick<OpportunitySummary, 'state' | 'stageId' | 'subStageId'>) {
+  const { stage, substage } = opportunityStatus(opportunity);
+  return <Badge className={`opp-status opp-state-${opportunity.state} ${substage ? 'opp-status-pair' : ''}`} aria-label={substage ? `Stage: ${stage}; substage: ${substage}` : undefined}>{substage ? <><span>{stage}</span><span aria-hidden="true">·</span><span>{substage}</span></> : stage}</Badge>;
+}
 export function Values({ values }: { values: [string, ReactNode][] }) {
   return <dl className="opp-values">{values.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value === null || value === undefined || value === '' ? 'Not provided' : value}</dd></div>)}</dl>;
 }

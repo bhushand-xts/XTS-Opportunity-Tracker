@@ -62,7 +62,7 @@ export function OpportunityFormPage() {
     <header className="opp-form-heading">
       <h1 className="sr-only">{saved ? 'Opportunity workspace' : 'New opportunity'}</h1>
       <Link to="/opportunity" className="opp-back">← Back to Pipeline</Link>
-      {saved ? <Status state={saved.state} /> : <Badge variant="outline">Not saved yet</Badge>}
+      {saved ? <Status {...saved} /> : <Badge variant="outline">Not saved yet</Badge>}
       <p className="text-muted-foreground">{saved ? `${saved.number} · ${saved.title}` : 'Add opportunity and client details. RFP preparation is optional.'}</p>
     </header>
     {!editable && <p className="opp-notice">Opportunity details are read-only for your permissions or this stage. Your permitted response actions remain available below.</p>}
