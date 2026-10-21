@@ -33,21 +33,40 @@
 .opp-section button { margin-top: 3px; flex-shrink: 0; }
 .opp-notice { background: #f5f3ff; border: 1px solid #e0daf3; color: #5c527c; border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.45; }
 .opp-upload { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 12px; border: 1px dashed #c9c5ec; border-radius: 9px; padding: 8px 10px; background: #fbfaff; text-align: left; }
-.opp-upload-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Explicit column (rather than relying on auto-placement after the label) so the row still
+   lands in column 2 when the label is visually hidden (sr-only) for the questionnaire/extraction
+   flow. Wraps whenever the row is too narrow for its content — a narrow container the component
+   sits in (not just a narrow viewport), not just the width-based breakpoint below. Without this,
+   the file-picker (flex:1) stretches into dead space while the checkboxes/button get clipped
+   instead of dropping to their own line. */
+.opp-upload-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; grid-column: 2; }
 .opp-upload-controls input { flex: 1; min-width: 0; }
-.opp-file-picker { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; min-height: 34px; border: 1px solid #d5d7e2; border-radius: 6px; padding: 4px 10px; }
+.opp-file-picker { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; min-height: 34px; border: 1px solid #d5d7e2; border-radius: 6px; padding: 4px 10px; background: #fff; }
+/* Only the file-picker panel itself is themed (not the whole upload section around it): a light
+   tint of the module's primary color for the panel, and "Choose File" (styled via buttonVariants
+   in the component) in the full, darker primary shade — same hue, more saturated for the action. */
+.opp-file-picker-compact { padding: 5px 10px; gap: 8px; background: hsl(var(--primary) / 0.1); border-color: hsl(var(--primary) / 0.4); }
+.opp-file-picker-compact:focus-within { outline-color: hsl(var(--primary)); }
+.opp-file-picker-compact .opp-file-name { font-size: 12px; }
 .opp-file-choose { flex-shrink: 0; cursor: pointer; font-size: 13px; font-weight: 500; }
 .opp-file-choose[aria-disabled=true] { cursor: default; opacity: .5; }
 .opp-file-picker:focus-within { outline: 2px solid #8054ec; outline-offset: 2px; }
 .opp-file-name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
 .opp-upload-controls button { flex-shrink: 0; }
+/* The two mutually-exclusive extraction-mode checkboxes, shown inline with the (compact) file picker. */
+.opp-mode-options { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex-shrink: 0; }
+.opp-mode-option { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+/* The mode-checkbox tooltips use the app's light panel background (same #fbfaff as the upload
+   section) instead of the design system's default dark tooltip. */
+.opp-tooltip { background: #fbfaff !important; color: hsl(var(--foreground)) !important; border: 1px solid hsl(var(--primary)) !important; box-shadow: 0 2px 8px #00000014 !important; }
+.opp-tooltip strong { color: hsl(var(--accent-foreground)); }
 .opp-upload-status { grid-column: 2; min-width: 0; overflow-wrap: anywhere; font-size: 11px; color: #64748b; }
 /* Extraction status, instructions and progress span the full row so they don't widen the label column. */
 .opp-upload-extraction { grid-column: 1 / -1; min-width: 0; }
 @media (max-width: 640px) {
   .opp-upload { grid-template-columns: minmax(0, 1fr); }
+  .opp-upload-controls { grid-column: 1; }
   .opp-upload-status { grid-column: 1; }
-  .opp-upload-controls { flex-wrap: wrap; }
   .opp-upload-controls input { flex-basis: 160px; }
 }
 .opp-proposal-sections { min-width: 0; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 8px 12px 12px; }
@@ -86,6 +105,36 @@
 .opp-status.opp-state-GATE1_GO { background: #e7f6f0; color: #18745f; border-color: #bddfd3; }
 .opp-status.opp-state-SALES_REJECTED, .opp-status.opp-state-GATE1_NO_GO { background: #fff0ef; color: #a34242; border-color: #efcece; }
 .opp-lane.opp-state-PREPARATION_PENDING { border-top-color: #b08a33; }.opp-lane.opp-state-IN_PROGRESS { border-top-color: #4e70b8; }.opp-lane.opp-state-SALES_REVIEW { border-top-color: #8e7bd2; }.opp-lane.opp-state-GATE1_PENDING { border-top-color: #6352cc; }.opp-lane.opp-state-GATE1_GO { border-top-color: #3e957e; }
+/* Vibrant, cosmetic-only accents for the pipeline board: a colored dot per lane, a matching
+   top edge on each card, and richer colors for the type/priority pills and owner avatar. None
+   of this reflects new data — it recolors fields the card already shows. */
+.opp-lane-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: #8e7bd2; }
+.opp-lane.opp-state-PREPARATION_PENDING .opp-lane-dot { background: #d9a441; }
+.opp-lane.opp-state-IN_PROGRESS .opp-lane-dot { background: #4e70b8; }
+.opp-lane.opp-state-SALES_REVIEW .opp-lane-dot { background: #8e7bd2; }
+.opp-lane.opp-state-GATE1_PENDING .opp-lane-dot { background: #6352cc; }
+.opp-lane.opp-state-GATE1_GO .opp-lane-dot { background: #3e957e; }
+.opp-lane.opp-state-SALES_REJECTED .opp-lane-dot, .opp-lane.opp-state-GATE1_NO_GO .opp-lane-dot { background: #c15c5c; }
+.opp-pipeline-card.opp-state-PREPARATION_PENDING { border-top: 3px solid #d9a441; }
+.opp-pipeline-card.opp-state-IN_PROGRESS { border-top: 3px solid #4e70b8; }
+.opp-pipeline-card.opp-state-SALES_REVIEW { border-top: 3px solid #8e7bd2; }
+.opp-pipeline-card.opp-state-GATE1_PENDING { border-top: 3px solid #6352cc; }
+.opp-pipeline-card.opp-state-GATE1_GO { border-top: 3px solid #3e957e; }
+.opp-pipeline-card.opp-state-SALES_REJECTED, .opp-pipeline-card.opp-state-GATE1_NO_GO { border-top: 3px solid #c15c5c; }
+.opp-rfp-badge.opp-rfp-questionnaire { background: #efe9fb !important; color: #7250c5 !important; border-color: #d0c6ed !important; }
+.opp-rfp-badge.opp-rfp-generic { background: #e3f3ee !important; color: #1f8a6d !important; border-color: #b9d8ce !important; }
+.opp-priority-badge.opp-priority-high { background: #fff0ef !important; color: #b3362c !important; border-color: #f3c9c4 !important; }
+.opp-priority-badge.opp-priority-medium { background: #fff6e0 !important; color: #8a5a10 !important; border-color: #ecd9a6 !important; }
+.opp-priority-badge.opp-priority-low { background: #eaf6f1 !important; color: #1f7a63 !important; border-color: #bfe3d4 !important; }
+.opp-card-avatar { width: 20px; height: 20px; }
+.opp-card-avatar .opp-avatar-a, .opp-card-avatar .opp-avatar-b, .opp-card-avatar .opp-avatar-c,
+.opp-card-avatar .opp-avatar-d, .opp-card-avatar .opp-avatar-e, .opp-card-avatar .opp-avatar-f { color: #fff !important; font-size: 10px; font-weight: 700; }
+.opp-card-avatar .opp-avatar-a { background: #7250c5 !important; }
+.opp-card-avatar .opp-avatar-b { background: #3f6fd1 !important; }
+.opp-card-avatar .opp-avatar-c { background: #1f8a6d !important; }
+.opp-card-avatar .opp-avatar-d { background: #c9890f !important; }
+.opp-card-avatar .opp-avatar-e { background: #c24d82 !important; }
+.opp-card-avatar .opp-avatar-f { background: #2098a6 !important; }
 .opp-overview { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.3fr) minmax(220px,.7fr); gap: 12px; align-items: start; }
 .opp-values { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px 12px; margin-top: 8px; }.opp-values dt { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 2px; }.opp-values dd { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .opp-detail-heading { display: grid; gap: 8px; margin-bottom: 10px; }
@@ -105,14 +154,22 @@
 .opp-upload input[type=file] { padding-left: 4px; }
 .opp-upload input[type=file]::file-selector-button { margin-right: 12px; padding: 2px 12px; border: 0; border-radius: 6px; background: hsl(var(--primary) / 0.12); color: hsl(var(--primary)); font-weight: 600; cursor: pointer; }
 .opp-upload input[type=file]:not(:disabled)::file-selector-button:hover { background: hsl(var(--primary) / 0.2); }
-/* Underline tabs for extracted question categories. */
-.opp-question-tabs { height: auto; width: 100%; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 4px; padding: 0; border-radius: 0; background: transparent; border-bottom: 1px solid hsl(var(--border)); }
-.opp-question-tabs > button { margin-bottom: -1px; padding: 6px 10px; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; box-shadow: none; color: hsl(var(--muted-foreground)); }
+/* Underline tabs for extracted question categories: a single scrollable row (many categories no
+   longer wrap onto several lines), with optional arrow buttons alongside it. */
+.opp-question-tabs-row { display: flex; align-items: flex-end; gap: 4px; min-width: 0; }
+.opp-question-tabs { height: auto; width: 100%; display: flex; flex-wrap: nowrap; justify-content: flex-start; gap: 4px; padding: 0; border-radius: 0; background: transparent; border-bottom: 1px solid hsl(var(--border)); overflow-x: auto; scroll-behavior: smooth; scrollbar-width: none; }
+.opp-question-tabs::-webkit-scrollbar { display: none; }
+.opp-question-tabs > button { flex-shrink: 0; margin-bottom: -1px; padding: 6px 10px; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; box-shadow: none; color: hsl(var(--muted-foreground)); }
 .opp-question-tabs > button:hover { color: hsl(var(--foreground)); }
 .opp-question-tabs > button[data-state=active] { background: transparent; background-image: none; box-shadow: none; color: hsl(var(--primary)); border-bottom-color: hsl(var(--primary)); }
+.opp-tabs-arrow { flex-shrink: 0; margin-bottom: 5px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: #fff; color: hsl(var(--muted-foreground)); cursor: pointer; }
+.opp-tabs-arrow:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.opp-tabs-arrow:disabled { opacity: .35; cursor: default; }
 /* Question box with the section picker inside its bottom-right corner (manual questions). */
 .opp-question-input { position: relative; flex: 1; min-width: 0; }
-.opp-question-input textarea { width: 100%; }
+/* Auto-grows with content (see the Textarea ref in RfpPreparation.tsx) — no manual resize handle,
+   overriding the more specific .opp-field rule that would otherwise re-enable one. */
+.opp-question-input textarea { width: 100%; resize: none !important; }
 .opp-question-input textarea.opp-question-with-section { padding-bottom: 32px; }
 .opp-question-input .opp-question-section { position: absolute; right: 6px; bottom: 6px; width: auto; height: 24px; gap: 4px; padding: 0 8px; font-size: 11px; background: hsl(var(--muted)); border-color: transparent; }
 .opp-question-panel { max-height: 28rem; overflow-y: auto; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 8px; }

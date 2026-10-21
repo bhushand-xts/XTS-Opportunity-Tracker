@@ -1,7 +1,7 @@
 import type { Block } from './types';
 
 // Bump when parsing/coverage or model output representation changes.
-export const EXTRACTOR_VERSION = 'questions-v9-categories';
+export const EXTRACTOR_VERSION = 'questions-v14-question-label-stripped';
 // Jobs extracted with user instructions store "<version>:<instructions hash>" so
 // cached results are only reused for the same prompt.
 export const promptVersion = (hash?: string | null) => hash ? `${EXTRACTOR_VERSION}:${hash}` : EXTRACTOR_VERSION;

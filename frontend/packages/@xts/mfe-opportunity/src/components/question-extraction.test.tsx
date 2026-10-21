@@ -96,9 +96,36 @@ describe('prompt-driven question extraction', () => {
     api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);
     await mount(); await upload();
     fireEvent.click(extractButton());
-    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), ''));
+    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), '', undefined));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Extraction instructions')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Describe security controls.');
+  });
+  it('defaults to Document-Based Questionnaire, and the two extraction-mode checkboxes are mutually exclusive', async () => {
+    await mount(); await upload();
+    const generated = screen.getByRole('checkbox', { name: 'Document-Based Questionnaire' });
+    const asWritten = screen.getByRole('checkbox', { name: 'Client-Predefined Questionnaire' });
+    expect(generated).toBeChecked();
+    expect(asWritten).not.toBeChecked();
+    fireEvent.click(asWritten);
+    expect(asWritten).toBeChecked();
+    expect(generated).not.toBeChecked();
+    // Clicking the already-checked box again can't deselect down to zero selections.
+    fireEvent.click(asWritten);
+    expect(asWritten).toBeChecked();
+    fireEvent.click(generated);
+    expect(generated).toBeChecked();
+    expect(asWritten).not.toBeChecked();
+  });
+  it('imports questions as-is when "Client-Predefined Questionnaire" is checked, hiding instructions and sending none to the server', async () => {
+    api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);
+    await mount(); await upload();
+    fireEvent.change(instructionsBox(), { target: { value: 'Extract: staffing questions.' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Client-Predefined Questionnaire' }));
+    expect(screen.queryByLabelText('Extraction instructions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /extraction instructions/i })).not.toBeInTheDocument();
+    fireEvent.click(extractButton());
+    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), undefined, 'AS_IS'));
     expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Describe security controls.');
   });
   it('keeps typed instructions when the box is hidden and shows Edit on the button', async () => {
@@ -109,7 +136,7 @@ describe('prompt-driven question extraction', () => {
     expect(instructionsToggle()).toHaveTextContent('Edit extraction instructions');
     api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);
     fireEvent.click(extractButton());
-    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), 'Extract: staffing questions.'));
+    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), 'Extract: staffing questions.', undefined));
   });
   it('rejects instructions too short to mean anything, without starting an extraction', async () => {
     await mount(); await upload();
@@ -129,7 +156,7 @@ describe('prompt-driven question extraction', () => {
     fireEvent.change(instructionsBox(), { target: { value: 'Extract: security questions only.' } });
     startExtraction();
     await waitFor(() => expect(api.status).toHaveBeenCalled());
-    expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), 'Extract: security questions only.');
+    expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), 'Extract: security questions only.', undefined);
     // No percentage before progress; a spinner shows instead.
     expect(progress()).toHaveTextContent('Reading the document...');
     expect(progress()).not.toHaveTextContent('%');
@@ -292,6 +319,44 @@ describe('prompt-driven question extraction', () => {
       expect(screen.getByRole('region', { name: 'Extracted questions' })).toHaveClass('opp-question-panel');
       expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the technology platform.');
     });
+    it('shows no scroll arrows when the tab row fits, and shows them (with correct enabled state) once it overflows', async () => {
+      await extractCategorized();
+      expect(screen.queryByRole('button', { name: /Scroll categories/ })).not.toBeInTheDocument();
+      // jsdom never lays out real scroll dimensions; simulate overflow directly on the tab list.
+      const tabs = screen.getByRole('tablist');
+      Object.defineProperty(tabs, 'scrollWidth', { value: 500, configurable: true });
+      Object.defineProperty(tabs, 'clientWidth', { value: 200, configurable: true });
+      Object.defineProperty(tabs, 'scrollLeft', { value: 0, configurable: true, writable: true });
+      const scrollBy = vi.fn(); tabs.scrollBy = scrollBy;
+      fireEvent.scroll(tabs);
+      const left = await screen.findByRole('button', { name: 'Scroll categories left' });
+      const right = screen.getByRole('button', { name: 'Scroll categories right' });
+      expect(left).toBeDisabled();
+      expect(right).toBeEnabled();
+      fireEvent.click(right);
+      expect(scrollBy).toHaveBeenCalledWith({ left: 160, behavior: 'smooth' });
+      // Scrolled away from the start: the left arrow enables, and at the end the right arrow disables.
+      tabs.scrollLeft = 300;
+      fireEvent.scroll(tabs);
+      expect(left).toBeEnabled();
+      expect(right).toBeDisabled();
+    });
+    it('shows a verbatim file section (e.g. from "Client-Predefined Questionnaire") as its own tab, not forced into Other', async () => {
+      api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue({ ...success, questions: [
+        { id: 'extracted-sec', text: 'Have you ever experienced a data breach? If so, how was it managed?', sourceReference: 'Sheet row 4', validated: false, category: 'Information Security and Compliance', sourceOrder: 10 },
+        { id: 'extracted-tech', text: 'Describe your hosting environment.', sourceReference: 'Sheet row 9', validated: false, category: 'Technical', sourceOrder: 20 },
+      ] });
+      await mount(); await upload();
+      startExtraction();
+      await screen.findByRole('tab', { name: /^Information Security and Compliance/ });
+      const tabs = screen.getAllByRole('tab');
+      // Fixed categories ("Technical", then "Other" for the uncategorized manual question) keep
+      // their defined order; the file's own section is appended after them, verbatim.
+      expect(tabs.map(t => t.textContent)).toEqual(['Technical (1)', 'Other (1)', 'Information Security and Compliance (1)']);
+      fireEvent.mouseDown(tab(/^Information Security and Compliance/));
+      await waitFor(() => expect(tab(/^Information Security and Compliance/)).toHaveAttribute('data-state', 'active'));
+      expect(screen.getByLabelText('Question 1 text')).toHaveValue('Have you ever experienced a data breach? If so, how was it managed?');
+    });
     it('filters a tab to its questions in document order', async () => {
       await extractCategorized();
       fireEvent.mouseDown(tab(/^Technical/));
@@ -299,6 +364,26 @@ describe('prompt-driven question extraction', () => {
       expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the technology platform.');
       expect(screen.getByLabelText('Question 2 text')).toHaveValue('Describe your hosting environment.');
       expect(screen.queryByLabelText('Question 3 text')).not.toBeInTheDocument();
+    });
+    it('searches across every category, not just the active tab, and clearing it restores the tabs', async () => {
+      await extractCategorized();
+      expect(tab(/^Technical/)).toHaveAttribute('data-state', 'active');
+      fireEvent.change(screen.getByRole('textbox', { name: 'Search all questions' }), { target: { value: 'cost proposal' } });
+      // Tabs are hidden while searching; the match from the (inactive) Pricing & Commercial tab shows up anyway.
+      expect(screen.queryAllByRole('tab')).toHaveLength(0);
+      expect(screen.getByText('1 of 4 questions match "cost proposal".')).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Search results' })).toHaveTextContent('Pricing & Commercial');
+      expect(screen.getByLabelText('Question 1 text')).toHaveValue('Provide a detailed cost proposal.');
+      fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+      expect(screen.getByRole('textbox', { name: 'Search all questions' })).toHaveValue('');
+      await waitFor(() => expect(tab(/^Technical/)).toHaveAttribute('data-state', 'active'));
+      expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the technology platform.');
+    });
+    it('shows a no-match message when the search finds nothing', async () => {
+      await extractCategorized();
+      fireEvent.change(screen.getByRole('textbox', { name: 'Search all questions' }), { target: { value: 'nonexistent topic' } });
+      expect(screen.getByText('No questions match "nonexistent topic".')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Question 1 text')).not.toBeInTheDocument();
     });
     it('adds a manual question to the open tab with a section picker inside its box', async () => {
       await extractCategorized();
@@ -377,7 +462,7 @@ describe('reopening a saved opportunity', () => {
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Technical (1)' })).toBeInTheDocument());
     expect(screen.getByDisplayValue('Manual staffing question')).toBeInTheDocument();
     expect(confirm).toHaveBeenCalled();
-    expect(api.retry).toHaveBeenCalledWith(restoredSource.document.id, expect.any(String), expect.any(AbortSignal), '');
+    expect(api.retry).toHaveBeenCalledWith(restoredSource.document.id, expect.any(String), expect.any(AbortSignal), '', undefined);
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Technical (1)' }));
     await waitFor(() => expect(screen.getByDisplayValue('Describe your hosting and security approach.')).toBeInTheDocument());
     expect(screen.queryByDisplayValue('Describe your hosting environment.')).not.toBeInTheDocument();
