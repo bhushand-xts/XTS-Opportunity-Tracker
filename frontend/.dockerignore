@@ -1,0 +1,11 @@
+# Local-dev Docker setup — keeps the build context small.
+node_modules
+**/node_modules
+dist
+**/dist
+storybook-static
+**/storybook-static
+.env
+**/.env
+.git
+npm-debug.log
