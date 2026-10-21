@@ -8,6 +8,7 @@ import ExcelJS from 'exceljs';
 import type { Block } from './types';
 import { mammothHtmlText, splitSemanticText, wordXmlText } from './parser.semantic';
 import { sheetBlocks, SheetData } from './parser.sheet';
+import { looksLikeHeading } from './localMatch';
 
 const [filename, kind, pagesArg, charsArg, libreOffice, ocr, temporary] = process.argv.slice(2);
 const maxPages = Number(pagesArg), maxChars = Number(charsArg);
@@ -143,6 +144,39 @@ export function pdfNativeText(items: any[]): string {
   return text;
 }
 
+// Font size doesn't survive pdfNativeText's single joined string, so this is a separate pass
+// over the same items: a standalone short line set in a visibly larger font than the page's
+// typical body text reads as a section heading (PDF has no "heading style" to read directly,
+// unlike DOCX). Grouped into lines with the same Y-proximity rule pdfNativeText uses.
+export function detectHeadingLines(items: any[]): Set<string> {
+  interface Line { text: string; height: number; y: number; }
+  const lines: Line[] = [];
+  let current: Line | undefined;
+  for (const item of items) {
+    if (typeof item.str !== 'string' || !item.str.trim()) continue;
+    const y = Number(item.transform?.[5]);
+    const height = Math.abs(Number(item.height)) || current?.height || 12;
+    if (!current || !Number.isFinite(y) || !Number.isFinite(current.y) || Math.abs(y - current.y) > Math.max(height, current.height) * 0.5) {
+      current = { text: '', height, y: Number.isFinite(y) ? y : 0 };
+      lines.push(current);
+    }
+    current.text += item.str;
+    current.height = Math.max(current.height, height);
+  }
+  // With fewer than two lines there's no "typical body size" on the page to compare against.
+  if (lines.length < 2) return new Set();
+  // The smallest line height on the page stands in for "body text size": body text is normally
+  // the smallest regularly-occurring size, and headings are reliably at or above it, which also
+  // behaves sensibly with only a couple of lines (unlike a median, which a heading can skew).
+  // A manual loop, not Math.min(...spread): a dense or OCR'd page can produce thousands of
+  // lines, and spreading that many arguments into Math.min can overflow the call stack.
+  let body = lines[0].height;
+  for (const line of lines) if (line.height < body) body = line.height;
+  const headings = new Set<string>();
+  for (const line of lines) if (line.height >= body * 1.15 && looksLikeHeading(line.text)) headings.add(line.text.trim());
+  return headings;
+}
+
 async function main() {
   const blocks: Block[] = [];
   let total = 0;
@@ -172,7 +206,7 @@ async function main() {
     }
     return pdfjs;
   }
-  interface PageText { text: string; raster: boolean; graphics: boolean; }
+  interface PageText { text: string; raster: boolean; graphics: boolean; headingLines: Set<string>; }
   async function pages(file: string): Promise<PageText[]> {
     const library = await pdfLibrary();
     const task = library.getDocument({ data: new Uint8Array(await readFile(file)), isEvalSupported: false, useSystemFonts: false, verbosity: 0 });
@@ -190,7 +224,12 @@ async function main() {
           const text = pdfNativeText(content.items);
           chars += text.length;
           if (chars > maxChars) throw new Error('Text limit exceeded');
-          values.push({ text, raster: operators.fnArray.some((op: number) => imageOps.has(op)), graphics: operators.fnArray.some((op: number) => graphicOps.has(op)) });
+          // Heading detection is a best-effort enhancement on top of the text that's already been
+          // read; it must never fail the extraction itself, whatever shape a real-world PDF's
+          // text items turn out to have.
+          let headingLines: Set<string>;
+          try { headingLines = detectHeadingLines(content.items); } catch { headingLines = new Set(); }
+          values.push({ text, raster: operators.fnArray.some((op: number) => imageOps.has(op)), graphics: operators.fnArray.some((op: number) => graphicOps.has(op)), headingLines });
         } finally { page.cleanup(); }
       }
       return values;
@@ -221,7 +260,11 @@ async function main() {
       const page = index + 1, reference = `Page ${page}`;
       const needsRecognition = needsOcr.includes(page);
       if (value.text.trim()) {
-        for (const paragraph of value.text.split(/\n[ \t]*\n/)) add(paragraph, reference, { page, structure: paragraph.includes('\t') ? 'table' : 'paragraph' });
+        for (const paragraph of value.text.split(/\n[ \t]*\n/)) {
+          const trimmed = paragraph.trim();
+          const heading = !trimmed.includes('\n') && value.headingLines.has(trimmed);
+          add(paragraph, reference, { page, structure: heading ? 'heading' : paragraph.includes('\t') ? 'table' : 'paragraph' });
+        }
       }
       if (needsRecognition && ocrFailed) coverage(reference, 'unreadable', 'OCR_UNAVAILABLE_OR_FAILED', page);
       else if (needsRecognition && !value.text.trim()) coverage(reference, 'unreadable', 'OCR_NO_READABLE_TEXT', page);
@@ -262,7 +305,13 @@ async function main() {
       const data = await readFile(filename);
       if (data.includes(0)) throw new Error('Binary text file');
       const text = new TextDecoder('utf-8', { fatal: true }).decode(data);
-      for (const paragraph of text.split(/\n[ \t]*\n/)) add(paragraph, 'Text document', { structure: 'paragraph' });
+      for (const paragraph of text.split(/\n[ \t]*\n/)) {
+        // No font information exists in plain text; a standalone short line that isn't itself a
+        // question or request is the best available signal for a section heading.
+        const trimmed = paragraph.trim();
+        const heading = !trimmed.includes('\n') && looksLikeHeading(trimmed);
+        add(paragraph, 'Text document', { structure: heading ? 'heading' : 'paragraph' });
+      }
       coverage('Text document', text.trim() ? 'native' : 'blank');
     }
     process.stdout.write(JSON.stringify(blocks));

@@ -78,6 +78,76 @@ test('parser extracts actual DOCX paragraphs/tables and a text PDF', async () =>
   const filename = storage.storagePath('synthetic.pdf'); await fs.writeFile(filename, pdf);
   const pdfBlocks = await parseDocument(filename, 'pdf'); assert.match(pdfBlocks[0].text, /security controls/);
 });
+test('PDF section headings (larger font, standalone line) become verbatim categories, not keyword guesses', async () => {
+  await storage.prepareStorage();
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  const stream = [
+    'BT /F1 18 Tf 72 740 Td (Information Security and Compliance) Tj ET',
+    'BT /F1 10 Tf 72 700 Td (Have you ever experienced a data breach?) Tj ET',
+  ].join('\n');
+  objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  let pdf = '%PDF-1.4\n'; const offsets = [0];
+  objects.forEach((object, i) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${i + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('');
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const filename = storage.storagePath('headings.pdf'); await fs.writeFile(filename, pdf);
+  const blocks = await parseDocument(filename, 'pdf');
+  assert.equal(blocks.find(b => b.text === 'Information Security and Compliance')?.structure, 'heading');
+  assert.equal(blocks.find(b => /data breach/.test(b.text))?.structure, 'paragraph');
+  const { candidates } = matchLocal(blocks);
+  // Without the heading, "data breach" would keyword-match "Technical" (it contains "data"), not Security & Compliance.
+  assert.equal(candidates[0].category, 'Information Security and Compliance');
+});
+test('PDF heading detection handles thousands of lines without crashing (regression for a Math.min spread overflow)', async () => {
+  await storage.prepareStorage();
+  const bodyCount = 5000;
+  const lines = ['BT /F1 18 Tf 72 699980 Td (Document Overview) Tj ET'];
+  for (let i = 0; i < bodyCount; i++) lines.push(`BT /F1 10 Tf 72 ${699940 - i * 14} Td (Body line number ${i}.) Tj ET`);
+  const stream = lines.join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 700000] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  let pdf = '%PDF-1.4\n'; const offsets = [0];
+  objects.forEach((object, i) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${i + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('');
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const filename = storage.storagePath('many-lines.pdf'); await fs.writeFile(filename, pdf);
+  const blocks = await parseDocument(filename, 'pdf');
+  assert.equal(blocks.find(b => b.text === 'Document Overview')?.structure, 'heading');
+  assert.ok(!blocks.some(b => b.structure === 'heading' && b.text !== 'Document Overview'));
+  assert.ok(blocks.some(b => /Body line number 0\./.test(b.text)));
+});
+test('plain-text section headings (short standalone line) become verbatim categories, not keyword guesses', async () => {
+  await storage.prepareStorage();
+  const filename = storage.storagePath('headings.txt');
+  await fs.writeFile(filename, [
+    'Information Security and Compliance', '',
+    'Have you ever experienced a data breach? If so, how was it managed?', '',
+    'Company Overview', '',
+    'Provide your company name and headquarters location.',
+  ].join('\n'));
+  const blocks = await parseDocument(filename, 'txt');
+  assert.equal(blocks.find(b => b.text === 'Information Security and Compliance')?.structure, 'heading');
+  assert.equal(blocks.find(b => /data breach/.test(b.text))?.structure, 'paragraph');
+  const { candidates } = matchLocal(blocks);
+  assert.deepEqual(candidates.map(c => [c.text, c.category]), [
+    ['Have you ever experienced a data breach? If so, how was it managed?', 'Information Security and Compliance'],
+    ['Provide your company name and headquarters location.', 'Company Overview'],
+  ]);
+});
 test('source attachment is owner scoped and requires no change for omitted fields', async () => {
   const writes = [];
   const client = { query: async (sql, values) => {
@@ -207,14 +277,61 @@ test('local matching stops a span at the next numbered item and never crosses in
   assert.equal(candidates[0].text, 'Provide your implementation timeline.');
   assert.equal(candidates[1].text, '2. Explain your onboarding process.');
 });
-test('local and AI-origin candidates share the same id/sourceReference for the same source span', async () => {
+test('local and AI-origin candidates share the same id/sourceReference/category for the same source span', async () => {
   const blocks = [{ id: 'b1', reference: 'Page 1', text: 'Describe your controls.' }];
   const { candidates } = matchLocal(blocks);
   const viaAi = expandSelections({ questions: [{ startId: 's1', endId: 's1' }] }, prepareSource(blocks));
   assert.equal(candidates.length, 1);
-  const { category, ...aiWithoutCategory } = viaAi[0];
-  assert.deepEqual(candidates[0], aiWithoutCategory);
-  assert.equal(category, 'Other');
+  // Neither side has a heading/keyword match here, so both fall back to the same default.
+  assert.deepEqual(candidates[0], viaAi[0]);
+  assert.equal(candidates[0].category, 'Other');
+});
+test('matchLocal carries the nearest preceding heading block onto every question as its verbatim category', () => {
+  const blocks = [
+    { id: 'b1', reference: 'Page 1', text: 'Information Security and Compliance', structure: 'heading' },
+    { id: 'b2', reference: 'Page 1', text: 'Have you ever experienced a data breach? If so, how was it managed?' },
+    { id: 'b3', reference: 'Page 1', text: 'Company Overview', structure: 'heading' },
+    { id: 'b4', reference: 'Page 1', text: 'Provide your company name and headquarters location.' },
+    { id: 'b5', reference: 'Page 1', text: 'Describe your support model.' },
+  ];
+  const { candidates } = matchLocal(blocks);
+  assert.deepEqual(candidates.map(c => [c.text, c.category]), [
+    // Without a heading, "data breach" would keyword-match "Technical" (see the Section-column test above).
+    ['Have you ever experienced a data breach? If so, how was it managed?', 'Information Security and Compliance'],
+    ['Provide your company name and headquarters location.', 'Company Overview'],
+    ['Describe your support model.', 'Company Overview'],
+  ]);
+});
+test('a heading\'s own outline number is stripped from the category, but a heading that is only a number is kept', () => {
+  const blocks = [
+    { id: 'b1', reference: 'Page 1', text: '1 Vendor Profile', structure: 'heading' },
+    { id: 'b2', reference: 'Page 1', text: "What is your organisation's legal name and year of establishment?" },
+    { id: 'b3', reference: 'Page 1', text: '2. Functional Requirements', structure: 'heading' },
+    { id: 'b4', reference: 'Page 1', text: 'How does your solution track sales opportunities?' },
+    { id: 'b5', reference: 'Page 1', text: 'Section 3: Integration and Data', structure: 'heading' },
+    { id: 'b6', reference: 'Page 1', text: 'Which APIs are available for creating opportunities?' },
+    { id: 'b7', reference: 'Page 1', text: '4', structure: 'heading' },
+    { id: 'b8', reference: 'Page 1', text: 'How are user roles and permissions enforced?' },
+  ];
+  const { candidates } = matchLocal(blocks);
+  assert.deepEqual(candidates.map(c => c.category), ['Vendor Profile', 'Functional Requirements', 'Integration and Data', '4']);
+});
+test('a letter-prefixed ID label is stripped from the question text, but a purely numeric clause number is kept', () => {
+  const blocks = [
+    { id: 'b1', reference: 'Page 1', text: "Q1.1 What is your organisation's legal name and year of establishment?" },
+    { id: 'b2', reference: 'Page 1', text: 'REQ2.3 Does the solution support single sign-on?' },
+    // Unaffected: no letter prefix, so this is the document's own clause numbering, not a label (see the span-detection test above for the same text).
+    { id: 'b3', reference: 'Page 1', text: '3.2 Describe your support model. Include escalation timelines.' },
+  ];
+  const { candidates } = matchLocal(blocks);
+  assert.deepEqual(candidates.map(c => c.text), [
+    "What is your organisation's legal name and year of establishment?",
+    'Does the solution support single sign-on?',
+    '3.2 Describe your support model. Include escalation timelines.',
+  ]);
+  // sourceReference/sourceOrder stay tied to the original span; only the text (and the id derived from it) changes.
+  assert.equal(candidates[0].sourceReference, 'Page 1 (b1)');
+  assert.ok(candidates[0].id.startsWith('extracted-'));
 });
 
 // Mounts the router with JSON parsing, as index.ts does, with the caller's identity headers.
@@ -366,6 +483,28 @@ test('extraction request stores instructions and keys the job by prompt version'
     });
   } finally { restores.forEach(restore => restore()); }
 });
+test('as-is extraction mode works without AI configured, forces local rules, and ignores instructions', async () => {
+  const doc = { id: randomUUID(), owner_id: 11, opportunity_id: null, deleting: false, original_name: 'rfp.xlsx' };
+  let call;
+  const restores = [salesRep(), stub(env.extraction, { aiExtraction: true, apiKey: '', zdrConfirmed: false }),
+    stub(repo, { document: async () => doc, retryDocument: async (_d, _o, _k, version, model) => { call = { version, model }; return { id: 'job-1' }; } })];
+  try {
+    await withRouter(async (url, headers) => {
+      const post = body => fetch(`${url}/documents/${doc.id}/extractions`, { method: 'POST',
+        headers: { ...headers, 'x-idempotency-key': randomUUID(), 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      // AI is configured to be required here but not actually ready; the plain AI path is rejected.
+      assert.equal((await post({ instructions: '' })).status, 503);
+      const asIs = await post({ mode: 'AS_IS', instructions: 'Extract: pricing questions only.' });
+      assert.equal(asIs.status, 202);
+      assert.equal(call.model, 'local-rules-v1');
+      // Instructions are ignored for as-is extraction: no hash is appended to the version.
+      assert.equal(call.version, EXTRACTOR_VERSION);
+      const bogus = await post({ mode: 'BOGUS' });
+      assert.equal(bogus.status, 400);
+      assert.equal((await bogus.json()).code, 'INVALID_EXTRACTION_MODE');
+    });
+  } finally { restores.forEach(restore => restore()); }
+});
 test('there is no prompt-suggestion endpoint, so nothing can spend tokens on suggestions', async () => {
   await withRouter(async (url, headers) => {
     const response = await fetch(`${url}/documents/${randomUUID()}/prompt-suggestion`, { method: 'POST', headers });
@@ -451,6 +590,17 @@ function describe_spreadsheets() {
     ]);
     assert.deepEqual(blocks.map(b => b.reference), ['Sheet "RFP", row 2', 'Sheet "RFP", row 3']);
   });
+  test('a "Question ID" column is never mistaken for the question-text column, even though it also contains the word "question"', () => {
+    const blocks = sheetBlocks([{ name: 'RFP', rows: [
+      { number: 1, cells: ['Question ID', 'Section', 'Question'] },
+      { number: 2, cells: ['Q1.1', 'Vendor Profile', "What is your organisation's legal name and year of establishment?"] },
+      { number: 3, cells: ['Q1.2', 'Vendor Profile', 'How many years of experience do you have?'] },
+    ] }]);
+    assert.deepEqual(blocks.map(b => b.rowQuestion), [
+      { text: "What is your organisation's legal name and year of establishment?", section: 'Vendor Profile' },
+      { text: 'How many years of experience do you have?', section: 'Vendor Profile' },
+    ]);
+  });
   test('single-cell rows act as section headings when there is no section column; free-form sheets become table rows for the AI', () => {
     const blocks = sheetBlocks([
       { name: 'Q', rows: [
@@ -465,7 +615,7 @@ function describe_spreadsheets() {
     assert.equal(blocks[1].text, 'The vendor shall provide\tmonthly reports');
     assert.equal(blocks[1].structure, 'table');
   });
-  test('direct spreadsheet questions get keyword categories and need no AI call', async () => {
+  test('direct spreadsheet questions keep the file\'s own section verbatim, falling back to keyword categories only when none is given', async () => {
     assert.equal(categoryFor('Hosting', 'Describe it'), 'Technical');
     assert.equal(categoryFor(undefined, 'Provide annual licence fees.'), 'Pricing & Commercial');
     assert.equal(categoryFor('General', 'Anything else?'), 'Other');
@@ -477,13 +627,33 @@ function describe_spreadsheets() {
     const result = await sectionCandidates(blocks, async () => { aiCalls++; return []; });
     assert.equal(aiCalls, 0);
     assert.deepEqual(result.map(q => [q.text, q.category, q.sourceReference]), [
-      ['Describe your hosting environment.', 'Technical', 'Sheet "RFP", row 2 (b1)'],
+      // b1 has its own section ("Hosting"): kept exactly as the file wrote it, not re-bucketed into the fixed "Technical" category.
+      ['Describe your hosting environment.', 'Hosting', 'Sheet "RFP", row 2 (b1)'],
+      // b2 has no section at all: falls back to keyword-based categorization as before.
       ['Provide annual licence fees.', 'Pricing & Commercial', 'Sheet "RFP", row 3 (b2)'],
     ]);
     assert.deepEqual(directQuestions(blocks).map(q => q.id), result.map(q => q.id));
     const mixed = await sectionCandidates([...blocks, { id: 'b3', reference: 'Sheet "Notes", row 1', text: 'The vendor shall provide reports.', sourceOrder: 30 }],
       async rest => { aiCalls++; assert.deepEqual(rest.map(b => b.id), ['b3']); return []; });
     assert.equal(aiCalls, 1); assert.equal(mixed.length, 2);
+  });
+  test('a declared Section column left blank per row falls back to the banner heading above it (reproduces mis-sectioned extraction)', () => {
+    const blocks = sheetBlocks([{ name: 'RFP', rows: [
+      { number: 1, cells: ['Section', 'Question'] },
+      { number: 2, cells: ['Information Security and Compliance'] },
+      { number: 3, cells: ['', 'What security measures do you have in place to protect client data and intellectual property?'] },
+      { number: 4, cells: ['', 'Have you ever experienced a data breach? If so, how was it managed?'] },
+      { number: 5, cells: ['Company Overview'] },
+      { number: 6, cells: ['', 'Provide your company name, headquarters location, and year of establishment.'] },
+    ] }]);
+    assert.deepEqual(blocks.map(b => b.rowQuestion.section), [
+      'Information Security and Compliance', 'Information Security and Compliance', 'Company Overview',
+    ]);
+    // Without the file's own section, "data breach" keyword-matches "Technical" (it contains "data"), not Security
+    // & Compliance — exactly the mis-categorization reported. directQuestions() keeps the file's real section instead.
+    assert.equal(categoryFor(undefined, 'Have you ever experienced a data breach? If so, how was it managed?'), 'Technical');
+    const breach = { id: 'b1', reference: blocks[1].reference, text: blocks[1].text, sourceOrder: 10, rowQuestion: blocks[1].rowQuestion };
+    assert.equal(directQuestions([breach])[0].category, 'Information Security and Compliance');
   });
   test('real .xlsx and .csv files parse into direct questions, skipping hidden sheets', async () => {
     const file = await writeWorkbook(workbook => {
