@@ -8,6 +8,7 @@ import { buildSubgraphSchema } from '@apollo/subgraph';
 
 import env from './config/env';
 import { buildContext } from './graphql/context';
+import clientTypes from './graphql/typeDefs/client.typeDefs';
 import menusTypes from './graphql/typeDefs/menus.typeDefs';
 import permissionsTypes from './graphql/typeDefs/permissions.typeDefs';
 import phasesTypes from './graphql/typeDefs/phases.typeDefs';
@@ -19,6 +20,7 @@ import rolesTypes from './graphql/typeDefs/roles.typeDefs';
 import stagesTypes from './graphql/typeDefs/stages.typeDefs';
 
 import subStagesTypes from './graphql/typeDefs/sub-stages.typeDefs';
+import clientResolvers from './graphql/resolvers/client.resolver';
 import menusResolvers from './graphql/resolvers/menus.resolver';
 import permissionsResolvers from './graphql/resolvers/permissions.resolver';
 import phasesResolvers from './graphql/resolvers/phases.resolver';
@@ -48,9 +50,9 @@ const base = `
   type Mutation { _empty: String }
 `;
 
-const typeDefs = [base, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, rfpQuestionsTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes, currencyTypes, accountTypeTypes, industryTypes];
+const typeDefs = [base, clientTypes, menusTypes, permissionsTypes, phasesTypes, proposalSectionsTypes, rateMasterTypes, reasonCodesTypes, rfpQuestionsTypes, rolesTypes, stagesTypes, subStagesTypes, accessTypes, currencyTypes, accountTypeTypes, industryTypes];
 
-const parts = [menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, rfpQuestionsResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers, currencyResolvers, accountTypeResolvers, industryResolvers];
+const parts = [clientResolvers, menusResolvers, permissionsResolvers, phasesResolvers, proposalSectionsResolvers, rateMasterResolvers, reasonCodesResolvers, rfpQuestionsResolvers, rolesResolvers, stagesResolvers, subStagesResolvers,accessResolvers, currencyResolvers, accountTypeResolvers, industryResolvers];
 // Merges every top-level key each resolver file exports (Query, Mutation,
 // and any type-level field resolver like Stage.inUse) -- not just
 // Query/Mutation. A plain Query/Mutation-only file merges exactly the same

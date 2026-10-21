@@ -26,6 +26,7 @@ import {
   MAX_INSTRUCTIONS,
 } from '../services/QuestionExtractionService';
 import { useOpportunityService } from '../services/OpportunityService';
+import { randomUUID } from '../lib/uuid';
 import { DocumentDownload } from './DocumentDownload';
 export const GET_PROPOSAL_SECTIONS = gql`query OpportunityProposalSections { rfpQuestionsList { id question description displayOrder isActive } }`;
 import { Choice, Field, Notice } from './ui';
@@ -156,7 +157,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
         if (runningRef.current?.id === jobId) runningRef.current = undefined;
         return;
       }
-      await pollDelay(1500, signal);
+      await pollDelay(400, signal);
     }
   }
   // Cancels any upload/extraction in flight and returns a fresh signal and generation for the next one.
@@ -202,7 +203,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     update({ questions: rfp.questions.filter(q => !fromDocument(q) && q.text.trim()) });
     const { controller, generation } = restart();
     try {
-      const accepted = await questionExtractionService.retry(uploaded.id, crypto.randomUUID(), controller.signal, instructions);
+      const accepted = await questionExtractionService.retry(uploaded.id, randomUUID(), controller.signal, instructions);
       if (generationRef.current !== generation) return;
       runningRef.current = { id: accepted.jobId, documentId: accepted.document.id };
       setJob({ id: accepted.jobId, documentId: accepted.document.id });
@@ -254,7 +255,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     setError(undefined); setSelectedFile(file); setUploading(true);
     uploadPending.current = true; onUploadingChange?.(true);
     try {
-      const source = await service.upload({ opportunityId: saved?.id ?? '', expectedRevision: saved?.revision ?? 0, idempotencyKey: crypto.randomUUID() }, file);
+      const source = await service.upload({ opportunityId: saved?.id ?? '', expectedRevision: saved?.revision ?? 0, idempotencyKey: randomUUID() }, file);
       if (mounted.current) setForm(current => ({ ...current, rfp: { ...current.rfp, source, extraction: null } }));
     } catch (failure) {
       if (mounted.current) setError(failure instanceof Error ? failure.message : 'Document upload failed. Please try again.');
@@ -353,7 +354,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
         <Field label="Evaluation basis / criteria" multiline value={rfp.evaluation} onChange={v => update({ evaluation: v })} disabled={locked} />
       </>}
       <div className="w-full space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Questions · {rfp.questions.length}</h3><div className="flex flex-wrap gap-2"><Button type="button" variant="link" disabled={locked} onClick={() => { const id = `draft-${crypto.randomUUID()}`; const category = tabbed ? activeTab || 'Other' : undefined; focusQuestionId.current = id; if (category) { draftTabs.current.set(id, category); setQuestionTab(category); } update({ questions: [...rfp.questions, { id, text: '', sourceReference: '', validated: false, ...(category ? { category } : {}) }] }); }}>+ Add question</Button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Questions · {rfp.questions.length}</h3><div className="flex flex-wrap gap-2"><Button type="button" variant="link" disabled={locked} onClick={() => { const id = `draft-${randomUUID()}`; const category = tabbed ? activeTab || 'Other' : undefined; focusQuestionId.current = id; if (category) { draftTabs.current.set(id, category); setQuestionTab(category); } update({ questions: [...rfp.questions, { id, text: '', sourceReference: '', validated: false, ...(category ? { category } : {}) }] }); }}>+ Add question</Button></div></div>
         {tabbed && rfp.questions.length > 0 ? <>
           <Tabs value={activeTab} onValueChange={setQuestionTab}>
             <TabsList className="opp-question-tabs" aria-label="Question categories">

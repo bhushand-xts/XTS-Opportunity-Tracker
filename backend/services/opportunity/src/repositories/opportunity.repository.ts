@@ -757,8 +757,7 @@ async function finalizeRfpIntakeOpportunity(
           file_name, document_type, doc_submission_format, evaluation_basis,
           proposal_due_date, created_by, is_active)
        VALUES (
-         'OPP-' || TO_CHAR(CURRENT_DATE, 'YYYY') || '-' ||
-           LPAD(nextval('tbl_opportunity_opportunity_id_seq')::TEXT, 6, '0'),
+         fn_next_opportunity_number(),
          $1, $10, $2, $3, 1, 1, $4, $5, $6, $7, $8, $9,
          $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, TRUE
        )
@@ -993,12 +992,7 @@ async function create(
     )
     VALUES
     (
-      'OPP-' || TO_CHAR(CURRENT_DATE, 'YYYY') || '-' ||
-      LPAD(
-        nextval('tbl_opportunity_opportunity_id_seq')::TEXT,
-        6,
-        '0'
-      ),
+      fn_next_opportunity_number(),
       $1,
       $2,
       $3,

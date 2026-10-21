@@ -22,11 +22,14 @@ export async function createDocument(doc: DocumentRecord, requestKey: string) {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`upload-owner:${doc.owner_id}`]);
     const prior = (await client.query<Job>('SELECT * FROM question_extraction_jobs WHERE owner_id=$1 AND request_key=$2', [doc.owner_id, requestKey])).rows[0];
     if (prior) return prior;
+    // A zero-candidate success isn't reused: that outcome is as likely to be AI variance
+    // on one run as a genuine "nothing qualifies", so the next attempt gets a fresh call.
     const reusable = (await client.query<Job>(`SELECT j.* FROM question_extraction_jobs j
       JOIN question_documents d ON d.id=j.document_id
       WHERE d.owner_id=$1 AND j.owner_id=$1 AND d.sha256=$2 AND d.opportunity_id IS NOT DISTINCT FROM $3
       AND NOT d.deleting AND (d.expires_at IS NULL OR d.expires_at>now()) AND j.model=$4
-      AND (j.state IN ('QUEUED','PROCESSING') OR (j.state='SUCCEEDED' AND j.prompt_version=$5))
+      AND (j.state IN ('QUEUED','PROCESSING') OR (j.state='SUCCEEDED' AND j.prompt_version=$5
+        AND EXISTS (SELECT 1 FROM question_extraction_chunks c WHERE c.job_id=j.id AND coalesce(jsonb_array_length(c.candidates),0)>0)))
       ORDER BY (j.state='SUCCEEDED') DESC,j.created_at ASC LIMIT 1`,
     [doc.owner_id,doc.sha256,doc.opportunity_id,env.extraction.model,EXTRACTOR_VERSION])).rows[0];
     if (reusable) return reusable;
@@ -63,8 +66,12 @@ export async function retryDocument(doc: DocumentRecord, owner: number, requestK
       if (prior.document_id !== doc.id) throw new ExtractionError('IDEMPOTENCY_CONFLICT', 409);
       return prior;
     }
-    const cached = (await client.query<Job>(`SELECT * FROM question_extraction_jobs WHERE document_id=$1 AND state='SUCCEEDED'
-      AND model=$2 AND prompt_version=$3 ORDER BY created_at DESC LIMIT 1`, [doc.id, env.extraction.model, version])).rows[0];
+    // A zero-candidate success isn't reused: that outcome is as likely to be AI variance
+    // on one run as a genuine "nothing qualifies", so the next attempt gets a fresh call.
+    const cached = (await client.query<Job>(`SELECT j.* FROM question_extraction_jobs j WHERE j.document_id=$1 AND j.state='SUCCEEDED'
+      AND j.model=$2 AND j.prompt_version=$3 AND EXISTS (SELECT 1 FROM question_extraction_chunks c
+      WHERE c.job_id=j.id AND coalesce(jsonb_array_length(c.candidates),0)>0) ORDER BY j.created_at DESC LIMIT 1`,
+    [doc.id, env.extraction.model, version])).rows[0];
     if (cached) return cached;
     const active = (await client.query<Job>(`SELECT * FROM question_extraction_jobs WHERE document_id=$1 AND state IN ('QUEUED','PROCESSING') ORDER BY created_at DESC LIMIT 1`, [doc.id])).rows[0];
     if (active && active.prompt_version === version) return active;

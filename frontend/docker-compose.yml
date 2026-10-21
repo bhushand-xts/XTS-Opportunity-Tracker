@@ -1,10 +1,10 @@
-# Local dev only — containerizes the two packages actually served as running
-# apps today: app-shell (the host) and mfe-admin (the one remote App.tsx
-# actually loads via Module Federation). design-system/api-client/
-# api-contracts are shared libraries consumed through workspace resolution,
-# not standalone servers, so they don't get their own container.
-# mfe-opportunity/solution/approval/dashboard aren't wired into app-shell's
-# routes yet either — add a service block for one the same way once it is.
+# Local dev only — containerizes the packages actually served as running
+# apps today: app-shell (the host), mfe-admin, and mfe-opportunity — the
+# remotes App.tsx actually loads via Module Federation. design-system/
+# api-client/api-contracts are shared libraries consumed through workspace
+# resolution, not standalone servers, so they don't get their own container.
+# mfe-solution/approval/dashboard aren't wired into app-shell's routes yet
+# either — add a service block for one the same way once it is.
 #
 # Module Federation's remoteEntry.js is fetched by the BROWSER, not
 # container-to-container, so as long as each container's port is mapped to
@@ -69,6 +69,7 @@ services:
       # frontend/.env file, since docker compose auto-loads one from this
       # directory for ${...} substitution in this file.
       ADMIN_REMOTE_URL: ${ADMIN_REMOTE_URL:-http://localhost:3001}
+      OPPORTUNITY_REMOTE_URL: ${OPPORTUNITY_REMOTE_URL:-http://localhost:3002}
     volumes: *workspace-node-modules-volumes
 
   mfe-admin:
@@ -86,4 +87,17 @@ services:
       # can't come from frontend/.env (Dotenv-webpack only reaches bundled
       # application source, not the config file itself).
       ADMIN_REMOTE_URL: ${ADMIN_REMOTE_URL:-http://localhost:3001}
+    volumes: *workspace-node-modules-volumes
+
+  mfe-opportunity:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        PACKAGE_PATH: packages/@xts/mfe-opportunity
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    ports:
+      - "3002:3002"
+    environment:
+      OPPORTUNITY_REMOTE_URL: ${OPPORTUNITY_REMOTE_URL:-http://localhost:3002}
     volumes: *workspace-node-modules-volumes

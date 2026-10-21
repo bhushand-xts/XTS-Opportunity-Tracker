@@ -1,5 +1,6 @@
 export * from "./accountType";
 export * from "./auth";
+export * from "./client";
 export * from "./estimationPhase";
 export * from "./industry";
 export * from "./menu";

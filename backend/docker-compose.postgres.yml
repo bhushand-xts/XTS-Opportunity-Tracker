@@ -4,9 +4,9 @@
 # machines are already inside that network, so they never need this).
 #
 # Adds a local Postgres container seeded from a dump of the real database,
-# and points user/admin at it instead of the remote one. Doesn't touch
-# services/user/.env or services/admin/.env — those keep the real DB_HOST so
-# local dev is unaffected.
+# and points user/admin/opportunity at it instead of the remote one. Doesn't
+# touch services/{user,admin,opportunity}/.env — those keep the real
+# DB_HOST so local dev is unaffected.
 #
 # Run with both files together:
 #   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
@@ -40,6 +40,14 @@ services:
         condition: service_healthy
 
   admin:
+    environment:
+      DB_HOST: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  opportunity:
     environment:
       DB_HOST: postgres
       DB_PASSWORD: ${DB_PASSWORD}

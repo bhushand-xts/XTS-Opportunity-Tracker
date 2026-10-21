@@ -6,6 +6,12 @@ import { getApolloClient } from '@xts/api-client';
 import type { Action, ClientDraft, DecisionCommand, DirectoryUser, Estimation, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
 import { CREATE_OPPORTUNITY_CLIENT, UPDATE_OPPORTUNITY_CLIENT, GET_CLIENT_CREATE_ACCESS, CREATE_OPPORTUNITY, GET_OPPORTUNITY, GET_OPPORTUNITY_LOOKUPS, LIST_OPPORTUNITIES, LIST_OPPORTUNITY_CLIENTS, UPDATE_OPPORTUNITY, TRANSITION_OPPORTUNITY, GET_HOLD_REASON_CODES } from './opportunity.queries';
 
+// The opportunity service's own base URL (its direct REST endpoints, not the
+// gateway) — used below for document upload/download. Overridable via
+// frontend/.env's OPPORTUNITY_SERVICE_URL (see frontend/.env.example),
+// injected at build time by webpack the same way GRAPHQL_API_URL is.
+const OPPORTUNITY_SERVICE_URL = process.env.OPPORTUNITY_SERVICE_URL || 'http://localhost:4003';
+
 export class IntegrationUnavailable extends Error {
   readonly code = 'INTEGRATION_UNAVAILABLE';
   constructor(capability: string) { super(`${capability} is not available yet. Your work has not been saved. Please try again once this service is connected.`); }
@@ -266,7 +272,7 @@ export const productionOpportunityService: OpportunityService = {
     if (typeof token !== 'string' || !token) throw new Error('Please sign in before uploading.');
     const body = new FormData();
     body.append('file', file);
-    const response = await fetch('http://localhost:4003/documents/upload', {
+    const response = await fetch(`${OPPORTUNITY_SERVICE_URL}/documents/upload`, {
       method: 'POST', headers: { Authorization: `Bearer ${token}` }, body,
     });
     const result: unknown = await response.json().catch(() => null);
@@ -289,7 +295,7 @@ export const productionOpportunityService: OpportunityService = {
     catch { throw new Error('Please sign in again.'); }
     if (typeof token !== 'string' || !token) throw new Error('Please sign in before downloading.');
     const query = opportunityId ? `?opportunityId=${encodeURIComponent(opportunityId)}` : '';
-    const response = await fetch(`http://localhost:4003/documents/download/${encodeURIComponent(filename)}${query}`, {
+    const response = await fetch(`${OPPORTUNITY_SERVICE_URL}/documents/download/${encodeURIComponent(filename)}${query}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) {

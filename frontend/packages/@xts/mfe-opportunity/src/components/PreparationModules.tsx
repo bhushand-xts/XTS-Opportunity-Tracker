@@ -4,6 +4,7 @@ import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow }
 import type { Estimation, OpportunityDetail, Scope } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useSave } from '../hooks/useSave';
+import { randomUUID } from '../lib/uuid';
 import { useUnsaved } from '../hooks/useUnsaved';
 import { estimateTotal, isPreparing, money, rowAmount, SCOPE_FIELDS } from '../lib/workflow';
 import { Field, Notice, Panel, Values } from './ui';
