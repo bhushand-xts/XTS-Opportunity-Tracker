@@ -41,6 +41,22 @@ describe('production approval schema', () => {
 });
 
 describe('production opportunity stage data', () => {
+  it('keeps creation and transition dates and resolves tracker users separately from the creator', async () => {
+    const stageHistory = [
+      { id: '1', stageId: 1, subStageId: 1, reachedAt: '2026-10-19T04:00:00.000Z', updatedBy: 11, comment: null },
+      { id: '2', stageId: 2, subStageId: 4, reachedAt: '2026-10-20T04:00:00.000Z', updatedBy: 12, comment: 'Approved.' },
+    ];
+    api.query.mockResolvedValueOnce({ data: { opportunity: { ...opportunity(2, 4), createdBy: 11, createdDt: '2026-10-19T03:00:00.000Z', stageHistory } } }).mockResolvedValueOnce({ data: {
+      userList: [
+        { id: 11, firstName: 'Original', lastName: 'Creator', email: 'creator@example.test', roleId: null, isActive: true },
+        { id: 12, firstName: 'Sales', lastName: 'Approver', email: 'sales@example.test', roleId: null, isActive: false },
+      ], rolesList: [],
+    } });
+    expect(await productionOpportunityService.detail('10')).toMatchObject({
+      createdDt: '2026-10-19T03:00:00.000Z', createdBy: { id: '11', name: 'Original Creator' },
+      stageHistory: stageHistory.map(({ updatedBy, ...event }) => ({ ...event, actor: { id: String(updatedBy), name: updatedBy === 11 ? 'Original Creator' : 'Sales Approver' } })),
+    });
+  });
   it('loads active hold reasons in master display order and retains descriptions', async () => {
     api.query.mockResolvedValueOnce({ data: { reasonCodesList: [
       { id: 4, reasonName: 'Pending client budget', description: 'Budget approval pending.', displayOrder: 4, isActive: true },
@@ -81,13 +97,10 @@ describe('production opportunity stage data', () => {
 });
 
 describe('production opportunity decisions', () => {
-  it.each([{ stage: 1, substage: 2, nextSubstage: 1 }, { stage: 2, substage: 5, nextSubstage: 4 }])('resubmits requested changes without skipping stage $stage', async ({ stage, substage, nextSubstage }) => {
-    api.query.mockResolvedValueOnce({ data: { opportunity: opportunity(stage, substage) } })
-      .mockResolvedValueOnce({ data: { opportunity: opportunity(stage, nextSubstage) } }).mockResolvedValueOnce(directory);
-    api.mutate.mockResolvedValueOnce({ data: { transitionOpportunity: { opportunityId: 10 } } });
-    const saved = await productionOpportunityService.decide({ ...command, decision: 'RESUBMIT', expectedStageId: stage, expectedSubStageId: substage });
-    expect(api.mutate).toHaveBeenCalledWith(expect.objectContaining({ variables: { opportunityId: 10, action: 'RESUBMIT', comment: null } }));
-    expect(saved).toMatchObject({ stageId: stage, subStageId: nextSubstage });
+  it('directs legacy resubmit requests to Update Opportunity without making a separate mutation', async () => {
+    await expect(productionOpportunityService.decide({ ...command, decision: 'RESUBMIT' })).rejects.toThrow('Use Update Opportunity');
+    expect(api.mutate).not.toHaveBeenCalled();
+    expect(api.query).not.toHaveBeenCalled();
   });
   it.each([
     { decision: 'SALES_APPROVE', action: 'APPROVE', stage: 1, substage: 1, nextStage: 2, nextSubstage: 4 },

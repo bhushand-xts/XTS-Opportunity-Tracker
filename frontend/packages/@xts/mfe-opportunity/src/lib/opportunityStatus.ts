@@ -40,7 +40,7 @@ export function opportunityStatus(opportunity: Pick<OpportunitySummary, 'state' 
   if (opportunity.stageId == null) return { stage: STATE_LABELS[opportunity.state], substage: null };
   const substage = opportunity.subStageId == null ? undefined : SUBSTAGES[opportunity.subStageId];
   return {
-    stage: STAGE_LABELS[opportunity.stageId] ?? `Stage ${opportunity.stageId}`,
-    substage: substage?.stageId === opportunity.stageId ? substage.label : 'Substage not provided',
+    stage: STAGE_LABELS[opportunity.stageId] ?? 'Status unavailable',
+    substage: substage?.stageId === opportunity.stageId ? substage.label : null,
   };
 }

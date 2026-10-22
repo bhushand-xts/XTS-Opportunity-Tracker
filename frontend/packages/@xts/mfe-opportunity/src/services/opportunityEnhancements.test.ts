@@ -6,7 +6,7 @@ import { productionOpportunityService } from './OpportunityService';
 const api = vi.hoisted(() => ({ query: vi.fn(), mutate: vi.fn() }));
 vi.mock('@xts/api-client', () => ({ getApolloClient: () => api }));
 
-describe('opportunity custom choices and USD estimate', () => {
+describe('opportunity custom choices and client budget', () => {
   beforeEach(() => vi.resetAllMocks());
 
   it('requires custom service text and rejects invalid USD amounts', () => {
@@ -15,14 +15,28 @@ describe('opportunity custom choices and USD estimate', () => {
     expect(draft.solicitation.submissionMethod).toBe('');
     expect(draft.solicitation.preBidMeeting).toBe('');
     const form = { ...newDraft('1'), serviceLine: 'Other', estimatedValueUsd: '' };
-    expect(pendingSaveFieldErrors(form)['Estimated value (USD)']).toBe('Please fill the Estimated value (USD).');
+    expect(pendingSaveFieldErrors(form)['Client budget (USD)']).toBe('Please fill the Client budget (USD).');
     form.estimatedValueUsd = '-1';
     expect(pendingSaveFieldErrors(form)).toHaveProperty('Other service line');
-    expect(pendingSaveFieldErrors(form)).toHaveProperty('Estimated value (USD)');
+    expect(pendingSaveFieldErrors(form)).toHaveProperty('Client budget (USD)');
     form.serviceLineOther = 'Specialized delivery';
     form.estimatedValueUsd = '1200.50';
     expect(pendingSaveFieldErrors(form)).not.toHaveProperty('Other service line');
-    expect(pendingSaveFieldErrors(form)).not.toHaveProperty('Estimated value (USD)');
+    expect(pendingSaveFieldErrors(form)).not.toHaveProperty('Client budget (USD)');
+  });
+
+  it.each(['0', '0.00', '-0', '-0.01', '-100', 'NaN', 'Infinity', '1.001', '10000000000000'])('rejects an invalid client budget in either currency: %s', value => {
+    const form = { ...newDraft('1'), estimatedValue: value, estimatedValueUsd: value };
+    const errors = pendingSaveFieldErrors(form);
+    expect(errors).toHaveProperty('Client budget');
+    expect(errors).toHaveProperty('Client budget (USD)');
+  });
+
+  it.each(['0.01', '0.50', '1', '1200.50', '9999999999999.99'])('accepts a positive client budget in either currency: %s', value => {
+    const form = { ...newDraft('1'), estimatedValue: value, estimatedValueUsd: value };
+    const errors = pendingSaveFieldErrors(form);
+    expect(errors).not.toHaveProperty('Client budget');
+    expect(errors).not.toHaveProperty('Client budget (USD)');
   });
 
   it('saves and reloads a custom service line and USD estimate', async () => {

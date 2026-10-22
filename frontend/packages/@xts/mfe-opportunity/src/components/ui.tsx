@@ -11,9 +11,9 @@ export function Panel({ title, description, tone = 'violet', icon, accentIcon = 
   const Icon = icon ?? (tone === 'teal' ? Users : tone === 'indigo' ? Layers : Briefcase);
   return <Card className={`opp-panel opp-${tone} ${className}`}><CardHeader><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className={`grid size-7 shrink-0 place-items-center rounded-lg ${accentIcon ? `opp-panel-icon-${tone}` : 'bg-accent text-accent-foreground'}`}><Icon className="size-4" aria-hidden="true" /></span><div><CardTitle className="text-sm">{title}</CardTitle>{description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}</div></div>{headerRight}</div></CardHeader><CardContent>{children}</CardContent></Card>;
 }
-export function Field({ label, value, onChange, type = 'text', required = false, multiline = false, disabled = false, hint }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean; multiline?: boolean; disabled?: boolean; hint?: string }) {
+export function Field({ label, value, onChange, type = 'text', required = false, multiline = false, disabled = false, hint, min, step }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean; multiline?: boolean; disabled?: boolean; hint?: string; min?: number; step?: number }) {
   const id = useId(), error = useFieldError(label);
-  return <div className="opp-field min-w-0 space-y-1"><Label htmlFor={id} className={error ? 'text-destructive' : undefined}>{label}{required && <span className="text-destructive"> *</span>}</Label>{multiline ? <Textarea id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} required={required} /> : <Input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} type={type} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} required={required} min={type === 'number' ? '0' : undefined} step={type === 'number' ? 'any' : undefined} />}{error && <p id={`${id}-error`} role="alert" className="text-xs text-destructive">{error}</p>}{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div>;
+  return <div className="opp-field min-w-0 space-y-1"><Label htmlFor={id} className={error ? 'text-destructive' : undefined}>{label}{required && <span className="text-destructive"> *</span>}</Label>{multiline ? <Textarea id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} required={required} /> : <Input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} type={type} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} required={required} min={type === 'number' ? min ?? 0 : undefined} step={type === 'number' ? step ?? 'any' : undefined} />}{error && <p id={`${id}-error`} role="alert" className="text-xs text-destructive">{error}</p>}{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div>;
 }
 export function Choice({ label, value, onChange, options, disabled = false, required = false, searchable = false }: { label: string; value: string; onChange: (value: string) => void; options: LookupOption[]; disabled?: boolean; required?: boolean; searchable?: boolean }) {
   const id = useId(), error = useFieldError(label);
@@ -27,7 +27,13 @@ export function Notice({ error, title = 'Unable to complete this action', retry 
 export function Loading({ label = 'Loading opportunity…' }: { label?: string }) { return <div role="status" className="flex items-center gap-2 py-12 text-sm text-muted-foreground"><Spinner className="size-4" />{label}</div>; }
 export function Status(opportunity: Pick<OpportunitySummary, 'state' | 'stageId' | 'subStageId'> & { size?: 'default' | 'sm' }) {
   const { stage, substage } = opportunityStatus(opportunity);
-  return <Badge size={opportunity.size} className={`opp-status opp-state-${opportunity.state} ${substage ? 'opp-status-pair' : ''}`} aria-label={substage ? `Stage: ${stage}; substage: ${substage}` : undefined}>{substage ? <><span>{stage}</span><span aria-hidden="true">·</span><span>{substage}</span></> : stage}</Badge>;
+  return <div className="inline-flex max-w-full flex-col items-start gap-1" aria-label={substage ? `${stage} — ${substage}` : stage}>
+    <span className="text-xs font-medium text-foreground">{stage}</span>
+    {substage && <span className="text-xs text-muted-foreground">{substage}</span>}
+  </div>;
+}
+export function OpportunityNumber({ number }: { number: string }) {
+  return <span className="opp-opportunity-number" aria-label={`Opportunity number ${number}`}><span>Opportunity no.</span><strong>{number}</strong></span>;
 }
 export function Values({ values }: { values: [string, ReactNode][] }) {
   return <dl className="opp-values">{values.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value === null || value === undefined || value === '' ? 'Not provided' : value}</dd></div>)}</dl>;

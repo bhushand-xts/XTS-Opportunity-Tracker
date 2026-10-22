@@ -40,7 +40,8 @@ export interface OpportunityDraft {
 }
 export interface OpportunitySummary {
   id: string; number: string; title: string; estimatedValue: Decimal; estimatedValueUsd?: Decimal; currencyCode: string; currencySymbol?: string;
-  clientName: string | null; owner: DirectoryUser | null; priority: OpportunityDraft['priority'];
+  clientName: string | null; owner: DirectoryUser | null; createdBy?: DirectoryUser | null; priority: OpportunityDraft['priority'];
+  createdDt?: string | null;
   state: OpportunityState; stageId?: number | null; subStageId?: number | null; holdReasonCodeId?: number | null; rfpType: RfpDraft['type']; submissionDeadline: LocalDate | null;
   revision: number; packageRevision: number | null; allowedActions: Action[];
 }
@@ -57,7 +58,9 @@ export interface ResponseItem {
   approvedRevision: number | null; reviewComment: string | null; allowedActions: Action[];
 }
 export interface ActivityEvent { id: string; action: string; actor: DirectoryUser; at: string; note: string | null; packageRevision: number | null; }
+export interface OpportunityStageHistory { id: string; stageId: number; subStageId: number; reachedAt: string; actor?: DirectoryUser | null; comment?: string | null; }
 export interface OpportunityDetail extends OpportunitySummary {
+  stageHistory?: OpportunityStageHistory[];
   form: OpportunityDraft; client: OpportunityClient | null; visibleModules: Module[];
   /** Restricted values must be null/redacted on the backend, not merely hidden. */
   responses: ResponseItem[] | null; estimation: Estimation | null; scope: Scope | null;

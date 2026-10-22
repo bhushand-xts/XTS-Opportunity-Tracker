@@ -1,21 +1,22 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label } from '@xts/design-system';
 import type { DecisionCommand, OpportunityDetail } from '@xts/api-contracts';
 import { applicableDecisions, decisionError } from '../lib/workflow';
 import { useOpportunityService } from '../services/OpportunityService';
-import { useSave } from '../hooks/useSave';
-import { Field, Notice, Panel } from './ui';
+import { useSave, type ConfirmationTone } from '../hooks/useSave';
+import { Field, Notice } from './ui';
 import { useCallback, useId } from 'react';
 import { useResource } from '../hooks/useResource';
+import { Check } from 'lucide-react';
 
 const LABELS: Record<DecisionCommand['decision'], string> = {
   SALES_APPROVE: 'Approve & Send to CEO',
   SALES_REQUEST_CHANGES: 'Request Changes',
-  SALES_HOLD: 'Put On Hold',
+  SALES_HOLD: 'On Hold',
   SALES_REJECT: 'Reject Opportunity',
   GATE1_GO: 'Approve Go',
   GATE1_REQUEST_CHANGES: 'Request Changes',
-  GATE1_HOLD: 'Put On Hold',
+  GATE1_HOLD: 'On Hold',
   GATE1_NO_GO: 'Reject Opportunity',
   SUBMIT_ESTIMATE: 'Submit Estimation to CEO',
   ESTIMATE_APPROVE: 'Approve Estimation',
@@ -29,6 +30,28 @@ const LABELS: Record<DecisionCommand['decision'], string> = {
   RESUBMIT: 'Resubmit for Review',
 };
 const LEGACY_DECISIONS: DecisionCommand['decision'][] = ['SALES_APPROVE', 'SALES_REJECT', 'GATE1_GO', 'GATE1_NO_GO'];
+const NEGATIVE_DECISIONS: DecisionCommand['decision'][] = ['SALES_REJECT', 'GATE1_NO_GO', 'ESTIMATE_REJECT', 'MARK_LOST'];
+const CONFIRMATION_STYLES: Record<ConfirmationTone, string> = {
+  success: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  warning: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  error: 'border-destructive/30 bg-destructive/10 text-destructive',
+  info: 'border-primary/30 bg-accent text-accent-foreground',
+};
+function confirmationTone(decision: DecisionCommand['decision']): ConfirmationTone {
+  if (NEGATIVE_DECISIONS.includes(decision)) return 'error';
+  if (decision.endsWith('_HOLD') || decision.endsWith('_REQUEST_CHANGES')) return 'warning';
+  return 'success';
+}
+function persistedDecision(o: OpportunityDetail): DecisionCommand['decision'] | undefined {
+  if (o.stageId == null) return undefined;
+  // Keep the selected look only while the action's own workflow stage is current.
+  const decisions: Record<string, DecisionCommand['decision']> = {
+    '1/2': 'SALES_REQUEST_CHANGES', '1/3': 'SALES_HOLD',
+    '2/5': 'GATE1_REQUEST_CHANGES', '2/6': 'GATE1_HOLD',
+    '4/9': 'ESTIMATE_HOLD', '5/11': 'BID_SUBMITTED',
+  };
+  return decisions[`${o.stageId}/${o.subStageId}`];
+}
 
 function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['decision'], staged: boolean) {
   if (decision === 'RESUBMIT') return `After saving your changes, resubmit this opportunity to ${o.stageId === 1 ? 'Sales Head / Pending Review' : 'CEO / Pending Go/No-Go'}.`;
@@ -54,41 +77,36 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
   if (descriptions[decision]) return descriptions[decision];
   const stage = o.stageId === 1 ? 'Identified' : o.stageId === 4 ? 'Estimate Review & Approval' : 'Qualifying (Go/No-Go)';
   return decision.endsWith('REQUEST_CHANGES')
-    ? `The opportunity stays in ${stage} and returns to the ${o.stageId === 1 ? 'Sales Representative' : 'Sales Head'} as Changes Requested.`
+    ? `The opportunity stays in ${stage} and returns to the ${o.stageId === 1 ? 'opportunity creator' : 'Sales Head'} as Changes Requested.`
     : `The opportunity stays in ${stage} and moves to On Hold.`;
 }
 
-function approvalStatus(o: OpportunityDetail, staged: boolean) {
-  if (staged && o.stageId === 1 && o.subStageId === 2) return 'Changes requested by Sales Head. The opportunity remains Identified while the Sales Representative updates it.';
-  if (staged && o.stageId === 1 && o.subStageId === 3) return 'On hold with Sales Head. The opportunity remains Identified.';
-  if (staged && o.stageId === 2 && o.subStageId === 5) return 'Changes requested by CEO. The opportunity remains Qualifying (Go/No-Go) while the Sales Head updates it.';
-  if (staged && o.stageId === 2 && o.subStageId === 6) return 'On hold with CEO. The opportunity remains Qualifying (Go/No-Go).';
-  if (staged ? o.stageId === 1 && o.subStageId === 1 : o.state === 'SALES_REVIEW') return 'Pending Sales Head approval. Saving automatically places this opportunity in the Sales Head approval queue.';
-  if (staged ? o.stageId === 2 && o.subStageId === 4 : o.state === 'GATE1_PENDING') return 'Sales Head approved this opportunity. It is automatically queued for CEO approval.';
-  return 'No decision action is assigned to you for this revision. The recorded status and history remain available.';
-}
 export function ReviewActions({ opportunity: o, onSaved }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void }) {
   const service = useOpportunityService(), mutation = useSave();
   const [decision, setDecision] = useState<DecisionCommand['decision']>(), [reason, setReason] = useState(''), [confirmed, setConfirmed] = useState(false), [validation, setValidation] = useState<string>();
   const [holdReasonId, setHoldReasonId] = useState('');
+  const [completed, setCompleted] = useState<{ id: string; sourceStageId: OpportunityDetail['stageId']; sourceState: OpportunityDetail['state']; stageId: OpportunityDetail['stageId']; subStageId: OpportunityDetail['subStageId']; decision: DecisionCommand['decision'] }>();
   const holdReasonInputId = useId();
   const staged = o.stageId != null;
   const holding = staged && Boolean(decision?.endsWith('_HOLD'));
   const rejecting = staged && Boolean(decision && ['SALES_REJECT', 'GATE1_NO_GO', 'ESTIMATE_REJECT'].includes(decision));
   const requiresCode = holding || rejecting;
   const reasonLabel = holding ? 'Hold' : 'Rejection';
-  const held = staged && (o.stageId === 1 && o.subStageId === 3 || o.stageId === 2 && o.subStageId === 6 || o.stageId === 4 && o.subStageId === 9);
   const loadReasons = useCallback(() => service.holdReasons ? service.holdReasons() : Promise.reject(new Error('Hold reasons are not available. Please retry.')), [service]);
-  const holdReasons = useResource(loadReasons, requiresCode || (held || o.stageId === 9) && o.holdReasonCodeId != null);
+  const holdReasons = useResource(loadReasons, requiresCode);
   const selectedReason = holdReasons.data?.find(option => String(option.id) === holdReasonId);
-  const persistedReason = holdReasons.data?.find(option => option.id === o.holdReasonCodeId);
-  const salesReview = staged ? o.stageId === 1 : o.state === 'SALES_REVIEW';
   // The server checks the reviewer's role; the persisted stage limits the applicable review.
   const applicable = staged
     ? applicableDecisions(o) as DecisionCommand['decision'][]
     : LEGACY_DECISIONS.filter(action => action.startsWith('SALES_') ? o.state === 'SALES_REVIEW' : o.state === 'GATE1_PENDING');
-  const decisions = applicable.filter(action => o.allowedActions.includes(action));
+  const decisions = applicable.filter(action => action !== 'CLOSE_OPPORTUNITY' && action !== 'RESUBMIT' && o.allowedActions.includes(action));
   const requiresReason = requiresCode || decision?.endsWith('REQUEST_CHANGES') || decision === 'SALES_REJECT' || decision === 'GATE1_NO_GO';
+  const matchingCompletion = completed?.id === o.id && completed.stageId === o.stageId && completed.subStageId === o.subStageId &&
+    (staged ? completed.sourceStageId === o.stageId : completed.sourceState === o.state) ? completed : undefined;
+  const selectedDecision = matchingCompletion?.decision ?? persistedDecision(o);
+  // A saved workflow status must never create controls for a user without action permissions.
+  const completedChoices = selectedDecision && decisions.length > 0 ? [selectedDecision] : [];
+  const displayedDecisions = [...new Set([...completedChoices, ...decisions])].filter(action => action !== 'GATE1_REQUEST_CHANGES');
 
   async function decide() {
     if (!decision) return;
@@ -103,21 +121,27 @@ export function ReviewActions({ opportunity: o, onSaved }: { opportunity: Opport
     };
     await mutation.run(JSON.stringify(command), key => service.decide({ ...command, idempotencyKey: key }), value => {
       setDecision(undefined);
+      setCompleted({ id: value.id, sourceStageId: o.stageId, sourceState: o.state, stageId: value.stageId, subStageId: value.subStageId, decision: command.decision });
       onSaved(value);
-    }, 'Decision recorded. Pipeline and history will use the updated opportunity.');
+    }, null);
   }
 
-  return <Panel title={decisions.includes('RESUBMIT') ? 'Changes requested' : decisions.length ? o.stageId != null && o.stageId >= 3 ? 'Opportunity actions' : salesReview ? 'Your sales approval is required' : 'Your Gate 1 decision is required' : 'Approval status'} tone="violet">
-    {decisions.length > 0 ? <>
-      <p className="mb-3 text-sm text-muted-foreground">
-        {decisions.includes('RESUBMIT') ? 'Save the requested changes using Edit Opportunity, then resubmit them for review.' : staged && o.stageId! >= 3 ? 'Use the action for the current opportunity stage. Save your estimation before submitting it to CEO.' : <>{staged ? 'Review this opportunity before recording your decision. ' : `Review the saved opportunity revision ${o.packageRevision}. `}{salesReview ? 'Sales approval automatically sends this opportunity to CEO.' : 'Sales Head approved this opportunity. Record the Go / No-Go review decision.'}</>}
-      </p>
-      <div className="flex flex-wrap gap-3">{decisions.map(action => <Button key={action} type="button" variant={action === 'SALES_APPROVE' || action === 'GATE1_GO' ? 'default' : 'outline'} onClick={() => {
+  if (!displayedDecisions.length) return null;
+  const isPrimary = (action: DecisionCommand['decision']) => ['SALES_APPROVE', 'GATE1_GO', 'SUBMIT_ESTIMATE', 'ESTIMATE_APPROVE', 'BID_SUBMITTED', 'START_NEGOTIATION', 'MARK_WON'].includes(action);
+  const primary = decisions.find(isPrimary) ?? displayedDecisions.find(isPrimary);
+  const secondary = displayedDecisions.filter(action => action !== primary);
+  const buttonTone = (action: DecisionCommand['decision']) => `opp-review-${confirmationTone(action)}`;
+  const actionButton = (action: DecisionCommand['decision']) => {
+    const selected = action === selectedDecision;
+    return <Button key={action} type="button" size="sm" variant="outline"
+      aria-pressed={selected} title={selected ? 'Action completed' : undefined}
+      className={`${buttonTone(action)}${selected ? ` ${CONFIRMATION_STYLES[confirmationTone(action)]} border shadow-inner ring-2 ring-inset ring-current disabled:opacity-100` : ''}`}
+      disabled={mutation.saving || selected || !decisions.includes(action)} onClick={() => {
         setDecision(action); setReason(''); setHoldReasonId(''); setConfirmed(false); setValidation(undefined);
-      }}>{LABELS[action]}</Button>)}</div>
-    </> : <p className="text-sm text-muted-foreground">{approvalStatus(o, staged)}</p>}
-    {staged && ([2, 3, 5, 6, 9].includes(o.subStageId ?? 0) || o.stageId === 9) && o.form.context.notes.trim() && <div className="mt-3 border-t pt-3 text-sm"><h4 className="font-semibold">{o.subStageId === 2 || o.subStageId === 5 ? 'Requested changes' : 'Decision note'}</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{o.form.context.notes}</p></div>}
-    {(held || o.stageId === 9) && o.holdReasonCodeId != null && <p className="mt-2 text-sm text-muted-foreground">{held ? 'Hold reason' : 'Reason'}: {persistedReason?.name ?? `Reason code ${o.holdReasonCodeId}`}</p>}
+      }}>{selected && <Check aria-hidden="true" />}{LABELS[action]}</Button>;
+  };
+  return <section className="opp-review-actions" aria-label="Opportunity actions">
+    {displayedDecisions.length > 0 && <div className="opp-review-buttons">{primary && actionButton(primary)}{secondary.map(actionButton)}</div>}
     {!decision && validation && <Notice error={validation} />}
     {!decision && mutation.error && <Notice error={mutation.error} />}
     <Dialog open={Boolean(decision)} onOpenChange={open => { if (!open && !mutation.saving) setDecision(undefined); }}>
@@ -127,7 +151,7 @@ export function ReviewActions({ opportunity: o, onSaved }: { opportunity: Opport
           <DialogDescription>{o.number}{staged ? '. ' : ` · package revision ${o.packageRevision}. `}{decision && decisionDescription(o, decision, staged)}</DialogDescription>
         </DialogHeader>
         {requiresCode && <div className="space-y-1"><Label htmlFor={holdReasonInputId}>{reasonLabel} reason (required)</Label><select id={holdReasonInputId} value={holdReasonId} required disabled={mutation.saving || holdReasons.loading || Boolean(holdReasons.error)} onChange={event => setHoldReasonId(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"><option value="">{holdReasons.loading ? 'Loading hold reasons…' : 'Select a reason'}</option>{holdReasons.data?.map(option => <option key={option.id} value={String(option.id)}>{option.name}</option>)}</select>{selectedReason?.description && <p className="text-xs text-muted-foreground">{selectedReason.description}</p>}{holdReasons.error && <Notice error={holdReasons.error} retry={holdReasons.reload} />}{!holdReasons.loading && !holdReasons.error && holdReasons.data?.length === 0 && <p className="text-sm text-muted-foreground">No active reasons are available.</p>}</div>}
-        <Field label={requiresCode ? `${reasonLabel} description (required)` : decision?.endsWith('REQUEST_CHANGES') ? 'Changes requested (required)' : requiresReason ? 'Reason (required)' : 'Decision note (optional)'} value={reason} onChange={setReason} multiline disabled={mutation.saving} required={Boolean(requiresReason)} />
+        {decision !== 'RESUBMIT' && <Field label={requiresCode ? `${reasonLabel} description (required)` : decision?.endsWith('REQUEST_CHANGES') ? 'Changes requested (required)' : requiresReason ? 'Reason (required)' : 'Decision note (optional)'} value={reason} onChange={setReason} multiline disabled={mutation.saving} required={Boolean(requiresReason)} />}
         {!staged && <Label className="flex items-start gap-3 leading-relaxed">
           <Checkbox checked={confirmed} onCheckedChange={v => setConfirmed(v === true)} disabled={mutation.saving} />
           {staged ? 'I have reviewed this opportunity.' : `I have reviewed this saved opportunity revision ${o.packageRevision}.`}
@@ -136,9 +160,9 @@ export function ReviewActions({ opportunity: o, onSaved }: { opportunity: Opport
         {mutation.error && <Notice error={mutation.error} />}
         <DialogFooter>
           <Button type="button" variant="outline" disabled={mutation.saving} onClick={() => setDecision(undefined)}>Cancel</Button>
-          <Button type="button" disabled={mutation.saving} onClick={() => void decide()}>{mutation.saving ? 'Recording…' : 'Confirm decision'}</Button>
+          <Button type="button" variant="outline" className={decision ? buttonTone(decision) : undefined} disabled={mutation.saving} onClick={() => void decide()}>{mutation.saving ? 'Recording…' : 'Confirm decision'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </Panel>;
+  </section>;
 }

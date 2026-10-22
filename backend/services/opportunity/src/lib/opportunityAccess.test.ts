@@ -43,14 +43,17 @@ test('does not grant writes from view, or opportunity creation from approvals Ad
   assert.equal(access.review, false);
 });
 
-test('keeps workflow steps and creator-only returned changes intact', () => {
+test('Edit permission applies at every workflow stage without granting review decisions', () => {
   const access = opportunityAccess(1, menus, [grant(101, 'edit')]);
-  assert.equal(access.canEdit({ ...record, subStageId: 2 }), false);
+  assert.equal(access.canEdit({ ...record, subStageId: 2 }), true);
   assert.equal(access.canEdit({ ...record, subStageId: 2, createdBy: 1 }), true);
   assert.equal(access.canEdit({ ...record, stageId: 2, subStageId: 5 }), true);
-  for (const [stageId, subStageId] of [[2, 4], [3, 7], [4, 8], [5, 10]]) {
-    assert.equal(access.canEdit({ ...record, stageId, subStageId }), false);
+  for (const [stageId, subStageId] of [[2, 4], [3, 7], [4, 8], [5, 10], [6, 12], [7, 13], [8, 14], [9, 15]]) {
+    assert.equal(access.canEdit({ ...record, stageId, subStageId }), true);
+    assert.equal(opportunityAccess(1, menus, []).canEdit({ ...record, stageId, subStageId }), false);
   }
+  assert.equal(access.review, false);
+  assert.equal(access.gateReview, false);
 });
 
 test('scopes My Work to the creator, owner or assignee and gate visibility to its stages', () => {
@@ -132,13 +135,15 @@ test('Sales Representatives with View see every creator but Edit only changes th
   }
   assert.equal(access.canEdit({ ...record, createdBy: 1 }), true);
   assert.equal(opportunityAccess(1, menus, [], rep).canEdit({ ...record, createdBy: 1 }), false);
-  assert.equal(access.canEdit({ ...record, createdBy: 1, stageId: 3, subStageId: 7 }), false);
+  assert.equal(access.canEdit({ ...record, createdBy: 1, stageId: 3, subStageId: 7 }), true);
   const returned = { ...record, createdBy: 1, subStageId: 2 };
-  assert.equal(opportunityAccess(1, menus, [], rep).canResubmit(returned), true);
-  assert.equal(access.canResubmit({ ...returned, createdBy: 55, ownerId: 1, assignedTo: 1 }), false);
-  const sales = opportunityAccess(1, menus, [], role('SH'));
-  assert.equal(sales.canResubmit({ ...record, stageId: 2, subStageId: 5 }), true);
-  assert.equal(access.canResubmit({ ...record, stageId: 2, subStageId: 5 }), false);
+  assert.equal(access.canEdit(returned), true);
+  assert.equal(access.canEdit({ ...returned, createdBy: 55, ownerId: 1, assignedTo: 1 }), false);
+  for (const creatorRole of ['SH', 'custom_creator']) {
+    const creator = opportunityAccess(1, menus, [grant(101, 'edit')], role(creatorRole));
+    assert.equal(creator.canEdit(returned), true);
+    assert.equal(creator.canEdit({ ...returned, createdBy: 55, ownerId: 1 }), true);
+  }
 });
 
 test('recognizes Pipeline as its own menu when its route is the opportunity root', () => {

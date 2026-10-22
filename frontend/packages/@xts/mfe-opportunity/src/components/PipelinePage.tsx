@@ -6,7 +6,7 @@ import type { ListFilter, OpportunitySummary, OpportunityState } from '@xts/api-
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource, useDebounce } from '../hooks/useResource';
 import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
-import { Loading, Notice, Status } from './ui';
+import { Loading, Notice, OpportunityNumber, Status } from './ui';
 import { money, STATE_LABELS, userLabel } from '../lib/workflow';
 import { AccessUnavailable } from './AccessUnavailable';
 import { STAGE_LABELS } from '../lib/opportunityStatus';
@@ -32,8 +32,8 @@ function localEstimate(o: OpportunitySummary) {
 }
 function OpportunityEstimates({ opportunity: o }: { opportunity: OpportunitySummary }) {
   return <div className="space-y-0.5">
-    <div><span className="block text-[10.5px] leading-tight text-muted-foreground">Estimated value</span><strong className="text-[12.5px]">{localEstimate(o)}</strong></div>
-    <div><span className="block text-[10.5px] leading-tight text-muted-foreground">Estimated value (USD)</span><strong className="text-[12.5px]">{o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'Not provided'}</strong></div>
+    <div><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget</span><strong className="text-[12.5px]">{localEstimate(o)}</strong></div>
+    <div><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget (USD)</span><strong className="text-[12.5px]">{o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'Not provided'}</strong></div>
   </div>;
 }
 // Decorative only: a vibrant, deterministic accent for the owner's initials avatar. Carries no data of its own.
@@ -66,7 +66,7 @@ function OpportunityBadges({ opportunity: o }: { opportunity: OpportunitySummary
 /** List view row: the same compact details and stage colours as the board card, laid out in columns. */
 function OpportunityRow({ opportunity: o, highlight }: { opportunity: OpportunitySummary; highlight: boolean }) {
   return <TableRow className={cn('hover:bg-accent/50', highlight && 'opp-highlight')}>
-    <TableCell className={cn('min-w-[200px] border-l-[3px]', STAGE_TONE[o.state].edge)}><Link className="break-words text-[13px] font-semibold text-primary hover:underline" to={`/opportunity/${o.id}/details`}>{o.title}</Link><div className="mt-0.5 flex flex-wrap items-center gap-1.5"><span className="text-[10px] tracking-wide text-muted-foreground">{o.number}</span><OpportunityBadges opportunity={o} /></div></TableCell>
+    <TableCell className={cn('min-w-[200px] border-l-[3px]', STAGE_TONE[o.state].edge)}><Link className="break-words text-[13px] font-semibold text-primary hover:underline" to={`/opportunity/${o.id}/details`}>{o.title}</Link><div className="mt-0.5 flex flex-wrap items-center gap-1.5"><OpportunityNumber number={o.number} /><OpportunityBadges opportunity={o} /></div></TableCell>
     <TableCell className="text-[12.5px]">{o.clientName || <span className="text-muted-foreground">Client not provided</span>}</TableCell>
     <TableCell className="hidden lg:table-cell"><OwnerBadge opportunity={o} /></TableCell>
     <TableCell className="hidden whitespace-nowrap text-[12.5px] lg:table-cell">{o.submissionDeadline || <span className="text-muted-foreground">Not set</span>}</TableCell>
@@ -84,7 +84,7 @@ function OpportunityCard({ opportunity: o, highlight }: { opportunity: Opportuni
         <span>Due {o.submissionDeadline || 'Not set'}</span>
         <OwnerBadge opportunity={o} />
       </div>
-      <StageProgress state={o.state} className="mt-1.5" /><div className="mt-1.5"><Status {...o} size="sm" /></div>
+      <StageProgress state={o.state} className="mt-1.5" /><div className="mt-1.5"><Status {...o} size="sm" /></div><p className="mt-1.5 border-t pt-1.5 text-[11px] text-muted-foreground">Created by: {o.createdBy?.name || o.createdBy?.email || 'Not available'}</p>
     </Link>
   </Card>;
 }
@@ -121,7 +121,6 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
   const title = queue === 'MY_APPROVALS' ? 'My approvals' : queue === 'MY_WORK' ? 'My Work' : 'Opportunity pipeline';
   useSetPageTitle(title);
   const list = resource.data?.nodes ?? [];
-  const totalLabel = money(list.reduce((sum, o) => sum + Number(o.estimatedValueUsd || 0), 0).toFixed(2), 'USD');
   if (!allowed || resource.error?.message.includes('You do not have permission to view this workflow.')) return <AccessUnavailable page={title} changed={visited.current === queue} destination={
     queue !== 'PIPELINE' && access.pipeline ? { path: '/opportunity', label: 'Go to Pipeline' } :
     queue !== 'MY_WORK' && access.work ? { path: '/opportunity/work', label: 'Go to My Work' } :
@@ -135,7 +134,7 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
         { title: 'All opportunities', value: resource.data.totalCount, hint: 'Permitted opportunities', icon: Briefcase, tone: 'border-t-primary', iconTone: 'text-primary', wash: 'to-primary/5' },
         { title: 'Pipeline value', value: totalLabel, hint: 'Total estimated value (USD)', icon: Briefcase, tone: 'border-t-amber-600', iconTone: 'text-amber-600', wash: 'to-amber-500/5' },
         { title: 'Pending approval', value: list.filter(o => o.stageId == null ? o.state === 'SALES_REVIEW' : o.stageId === 1 && o.subStageId === 1 || o.stageId === 2 && o.subStageId === 4 || o.stageId === 4 && o.subStageId === 8).length, hint: 'Awaiting a reviewer decision', icon: Clock, tone: 'border-t-progress-3', iconTone: 'text-progress-3', wash: 'to-progress-3/5' },
-        { title: 'Won opportunities', value: list.filter(o => o.stageId === 7 && o.subStageId === 13).length, hint: 'Closed ? Won', icon: CheckCircle2, tone: 'border-t-progress-5', iconTone: 'text-progress-5', wash: 'to-progress-5/5' },
+        { title: 'Won opportunities', value: list.filter(o => o.stageId === 7 && o.subStageId === 13).length, hint: 'Closed — Won', icon: CheckCircle2, tone: 'border-t-progress-5', iconTone: 'text-progress-5', wash: 'to-progress-5/5' },
       ].map(stat => <Card key={stat.title} className={cn('min-w-0 border-t-[3px] bg-gradient-to-br from-card from-50% shadow-sm', stat.tone, stat.wash)}><section className="px-3 py-2.5"><div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">{stat.title}<stat.icon className={cn('size-4 shrink-0', stat.iconTone)} /></div><strong className="my-0.5 block break-words text-xl font-semibold">{stat.value}</strong><p className="text-xs text-muted-foreground">{stat.hint}</p></section></Card>)}</div>
     </>}
     <div className="my-3 flex flex-wrap items-center justify-between gap-3"><div className="relative w-full sm:max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input className="pl-9" aria-label="Search opportunities" placeholder="Search opportunity, client or reference…" value={search} onChange={e => { setSearch(e.target.value); setAfter(null); }} /></div><div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Pipeline view">{(['board', 'list'] as const).map(v => <Button key={v} size="sm" variant={view === v ? 'secondary' : 'ghost'} aria-pressed={view === v} onClick={() => setView(v)}>{v === 'board' ? 'Board' : 'List'}</Button>)}</div></div>

@@ -2,6 +2,7 @@ export const opportunityTypeDefs = `#graphql
 
   type Opportunity {
     estimation: OpportunityEstimation
+    stageHistory: [OpportunityStageHistory!]!
     allowedActions: [String!]!
     opportunityId: Int!
     opportunityNumber: String
@@ -66,6 +67,15 @@ export const opportunityTypeDefs = `#graphql
     proposalQuestions: [String!]!
     proposalQuestionIds: [Int]!
     proposalQuestionCategories: [String]!
+  }
+
+  type OpportunityStageHistory {
+    id: ID!
+    stageId: Int!
+    subStageId: Int!
+    reachedAt: String!
+    updatedBy: Int
+    comment: String
   }
 
   type OpportunityContact {

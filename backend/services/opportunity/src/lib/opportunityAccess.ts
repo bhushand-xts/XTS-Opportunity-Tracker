@@ -80,15 +80,9 @@ export function opportunityAccess(userId: number, menus: AccessMenu[], grants: A
   function canEdit(record: WorkflowRecord) {
     if (!edit) return false;
     if (salesRepresentative && record.createdBy !== userId) return false;
-    if (record.stageId === 1 && record.subStageId === 2) return record.createdBy === userId;
-    return (record.stageId === 1 && [1, 3].includes(record.subStageId ?? 0)) ||
-      (record.stageId === 2 && record.subStageId === 5);
-  }
-  function canResubmit(record: WorkflowRecord) {
-    return (record.stageId === 1 && record.subStageId === 2 && salesRepresentative && record.createdBy === userId) ||
-      (record.stageId === 2 && record.subStageId === 5 && review);
+    return true;
   }
   const canList = viewAll || create || edit || review || gateReview || estimate || has(['work', 'approvals', 'gate', 'estimation', 'reestimation'], 'view');
-  return { userId, has, create, edit, readClients, review, gateReview, estimate, canList, canListQueue, canViewInQueue, canView, canEdit, canResubmit };
+  return { userId, has, create, edit, readClients, review, gateReview, estimate, canList, canListQueue, canViewInQueue, canView, canEdit };
 }
 export type OpportunityAccess = ReturnType<typeof opportunityAccess>;

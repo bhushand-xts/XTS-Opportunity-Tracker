@@ -8,12 +8,17 @@ function formDate(value: Date | string | null | undefined): string | null {
 
 export const opportunityResolvers = {
   Opportunity: {
+    stageHistory: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getStageHistory(opportunity.opportunityId, ctx),
+    createdDt: (opportunity: { createdDt: Date | string }) => opportunity.createdDt instanceof Date ? opportunity.createdDt.toISOString() : opportunity.createdDt,
     estimation: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getEstimation(opportunity.opportunityId, ctx),
     allowedActions: (opportunity: Parameters<typeof service.allowedActions>[0], _: unknown, ctx: any) => service.allowedActions(opportunity, ctx),
     leadReceivedDate: (opportunity: { leadReceivedDate: Date | string | null }) => formDate(opportunity.leadReceivedDate),
     queDueDate: (opportunity: { queDueDate: Date | string | null }) => formDate(opportunity.queDueDate),
     proposalDueDate: (opportunity: { proposalDueDate: Date | string | null }) => formDate(opportunity.proposalDueDate),
     uploadedDt: (opportunity: { uploadedDt: Date | string | null }) => opportunity.uploadedDt instanceof Date ? opportunity.uploadedDt.toISOString() : opportunity.uploadedDt,
+  },
+  OpportunityStageHistory: {
+    reachedAt: (event: { reachedAt: Date | string }) => event.reachedAt instanceof Date ? event.reachedAt.toISOString() : event.reachedAt,
   },
   Query: {
     opportunityClientCreateAllowed: async (_: unknown, __: unknown, ctx: any) => service.canCreateClient(ctx),

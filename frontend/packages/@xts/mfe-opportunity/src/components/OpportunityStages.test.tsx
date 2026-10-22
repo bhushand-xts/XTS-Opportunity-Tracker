@@ -22,6 +22,15 @@ function mount(records: OpportunityDetail[], details = false) {
 }
 
 describe('persisted stage and substage display', () => {
+  it('shows opportunity progress without review buttons for a creator who cannot approve', async () => {
+    mount([fixtureOpportunity({ stageId: 1, subStageId: 2, allowedActions: ['EDIT'], visibleModules: ['overview'] })], true);
+    expect(await screen.findByText('Opportunity progress')).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Opportunity actions' })).not.toBeInTheDocument();
+    for (const name of ['Approve & Send to CEO', 'Request Changes', 'On Hold', 'Reject Opportunity']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
+  });
+
   it.each([
     [1, 1, 'Identified', 'Pending Review'],
     [1, 2, 'Identified', 'Changes Requested'],
@@ -43,7 +52,7 @@ describe('persisted stage and substage display', () => {
     [9, 18, 'No-Bid / Declined', 'Closed by Sales'],
   ])('shows stage %s / substage %s independently of the legacy state', (stageId, subStageId, stage, substage) => {
     render(<Status state="SALES_REVIEW" stageId={Number(stageId)} subStageId={Number(subStageId)} />);
-    expect(screen.getByLabelText(`Stage: ${stage}; substage: ${substage}`)).toBeVisible();
+    expect(screen.getByLabelText(`${stage} — ${substage}`)).toBeVisible();
   });
 
   it('keeps pending, changes requested and held opportunities in the Identified board column', async () => {
@@ -51,19 +60,21 @@ describe('persisted stage and substage display', () => {
     const heading = await screen.findByRole('heading', { name: /^Identified/ });
     const identified = within(heading.closest('section')!);
     expect(identified.getAllByRole('link')).toHaveLength(3);
-    for (const substage of ['Pending Review', 'Changes Requested', 'On Hold']) expect(identified.getByLabelText(`Stage: Identified; substage: ${substage}`)).toBeVisible();
+    for (const substage of ['Pending Review', 'Changes Requested', 'On Hold']) expect(identified.getByLabelText(`Identified — ${substage}`)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'List' }));
     const table = within(screen.getByRole('table'));
-    for (const substage of ['Pending Review', 'Changes Requested', 'On Hold']) expect(table.getByLabelText(`Stage: Identified; substage: ${substage}`)).toBeInTheDocument();
+    for (const substage of ['Pending Review', 'Changes Requested', 'On Hold']) expect(table.getByLabelText(`Identified — ${substage}`)).toBeInTheDocument();
   });
 
-  it.each([[1, 3, 'Identified', 'On Hold'], [2, 4, 'Qualifying (Go/No-Go)', 'Pending Go/No-Go']])('uses persisted status in the detail header and progress at %s / %s', async (stageId, subStageId, stage, substage) => {
+  it.each([[1, 3, 'Identified', 'On Hold'], [2, 4, 'Qualifying (Go/No-Go)', 'Pending Go/No-Go']])('shows persisted progress without duplicating it in the detail header at %s / %s', async (stageId, subStageId, stage, substage) => {
     const { container } = mount([fixtureOpportunity({ stageId: Number(stageId), subStageId: Number(subStageId), visibleModules: ['overview'], allowedActions: [] })], true);
     await screen.findByText('Opportunity progress');
-    expect(within(container.querySelector('header')!).getByLabelText(`Stage: ${stage}; substage: ${substage}`)).toBeVisible();
+    expect(within(container.querySelector('header')!).queryByLabelText(`${stage} — ${substage}`)).not.toBeInTheDocument();
+    expect(within(container.querySelector('header')!).getByLabelText('Opportunity number OPP-TEST-401')).toBeVisible();
     const progress = within(screen.getByText('Opportunity progress').closest('.opp-panel')!);
-    expect(progress.getByLabelText(`Stage: ${stage}; substage: ${substage}`)).toBeVisible();
-    expect(progress.getByText(`${stage} · ${substage}`)).toBeVisible();
+    const current = within(progress.getByRole('list', { name: 'Opportunity progress history' }).querySelector('[aria-current="step"]')!);
+    expect(current.getByRole('heading', { name: String(stage) })).toBeVisible();
+    expect(current.getByText(String(substage))).toBeVisible();
   });
 });
 
@@ -74,7 +85,10 @@ describe('existing stage decision boundaries', () => {
     expect(decisionError(record, 'SALES_REQUEST_CHANGES', ' ', true)).toContain('changes requested');
     expect(decisionError(record, 'SALES_REQUEST_CHANGES', 'Update the scope', true)).toBeNull();
     expect(decisionError({ ...record, subStageId: 3 }, 'SALES_APPROVE', '', true)).toBeNull();
-    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_APPROVE', '', true)).toContain('no longer awaiting');
+    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_APPROVE', '', true)).toBeNull();
+    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_HOLD', '', true)).toContain('hold reason');
+    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_HOLD', 'Awaiting details', true, 3)).toBeNull();
+    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_REQUEST_CHANGES', 'Update the scope', true)).toContain('no longer awaiting');
     expect(decisionError(record, 'SALES_APPROVE', '', false)).toBeNull();
     expect(decisionError(record, 'SALES_HOLD', '', false)).toContain('hold reason');
     expect(decisionError(record, 'SALES_HOLD', 'Awaiting budget', false, 3)).toBeNull();
@@ -83,7 +97,10 @@ describe('existing stage decision boundaries', () => {
   it('keeps CEO actions at qualifying and requires the server action grant', () => {
     const record = fixtureOpportunity({ stageId: 2, subStageId: 4, packageRevision: null, allowedActions: ['GATE1_GO', 'GATE1_REQUEST_CHANGES', 'GATE1_HOLD'] });
     expect(decisionError(record, 'GATE1_GO', '', true)).toBeNull();
-    expect(decisionError({ ...record, subStageId: 6 }, 'GATE1_HOLD', 'Awaiting budget', true, 4)).toBeNull();
+    expect(decisionError({ ...record, subStageId: 5 }, 'GATE1_GO', '', true)).toBeNull();
+    expect(decisionError({ ...record, subStageId: 5 }, 'GATE1_HOLD', 'Awaiting scope', true, 3)).toBeNull();
+    expect(decisionError({ ...record, subStageId: 5 }, 'GATE1_REQUEST_CHANGES', 'Scope', true)).toContain('no longer awaiting');
+    expect(decisionError({ ...record, subStageId: 6 }, 'GATE1_HOLD', 'Awaiting budget', true, 4)).toContain('no longer awaiting');
     expect(decisionError({ ...record, stageId: 1, subStageId: 1 }, 'GATE1_GO', '', true)).toContain('no longer awaiting');
     expect(decisionError({ ...record, allowedActions: [] }, 'GATE1_GO', '', true)).toContain('not permitted');
   });

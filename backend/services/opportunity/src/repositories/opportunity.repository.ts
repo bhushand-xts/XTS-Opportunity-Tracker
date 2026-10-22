@@ -518,14 +518,40 @@ async function findById(
   return rows[0] || null;
 }
 
+type UpdateWorkflow = Pick<Opportunity, 'stageId' | 'subStageId' | 'createdBy' | 'assignedTo'>;
+
+// Saving corrections returns only the requested review to its pending step.
+// All writes use the caller's transaction, including the review audit.
+async function returnUpdatedOpportunityForReview(client: PoolClient, opportunityId: number,
+  current: UpdateWorkflow, userId: number | null, audit: WorkflowAudit): Promise<UpdateWorkflow> {
+  const salesChanges = current.stageId === 1 && current.subStageId === 2;
+  const ceoChanges = current.stageId === 2 && current.subStageId === 5;
+  if (!salesChanges && !ceoChanges) return current;
+  if (salesChanges && current.createdBy !== userId) return current;
+  const next = { ...current, subStageId: salesChanges ? 1 : 4, assignedTo: null };
+  await client.query(`UPDATE tbl_opportunity SET sub_stage_id = $2, assigned_to = NULL,
+    updated_by = $3, updated_dt = CURRENT_TIMESTAMP WHERE opportunity_id = $1`,
+    [opportunityId, next.subStageId, userId]);
+  await client.query(`UPDATE tbl_opportunity_engage_tracker SET is_current = FALSE
+    WHERE opportunity_id = $1 AND is_current = TRUE`, [opportunityId]);
+  await client.query(`INSERT INTO tbl_opportunity_engage_tracker
+    (opportunity_id, stage_id, substage_id, updated_by, updated_dt, is_current, comment, reason_code_id, role_id, role_name)
+    VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, TRUE, $5, NULL, $6, $7)`,
+    [opportunityId, next.stageId, next.subStageId, userId,
+      `Opportunity updated and sent to ${salesChanges ? 'Sales Head' : 'CEO'} for review.`, audit.roleId ?? null, audit.roleName ?? null]);
+  return next;
+}
+
 async function updateRfpIntakeOpportunity(
   opportunityId: number,
   input: RfpIntakeOpportunityUpdateInput,
-  userId: number
+  userId: number,
+  audit: WorkflowAudit = {}
 ): Promise<Opportunity | null> {
   return transaction(async (client) => {
-    const existing = await client.query<{ clientId: number }>(
-      `SELECT client_id AS "clientId"
+    const existing = await client.query<UpdateWorkflow & { clientId: number }>(
+      `SELECT client_id AS "clientId", stage_id AS "stageId", sub_stage_id AS "subStageId",
+         created_by AS "createdBy", assigned_to AS "assignedTo"
        FROM tbl_opportunity
        WHERE opportunity_id = $1 AND is_active = TRUE
        FOR UPDATE`,
@@ -658,6 +684,7 @@ async function updateRfpIntakeOpportunity(
       pre_bidmeeting = COALESCE($5, pre_bidmeeting), lead_received_date = COALESCE($6::TIMESTAMP, lead_received_date) WHERE opportunity_id = $1`,
       [opportunityId, input.opportunityDescription ?? null, input.contractTerm ?? null,
         input.incumbentVendor ?? null, input.preBidmeeting ?? null, input.leadReceivedDate || null]);
+    await returnUpdatedOpportunityForReview(client, opportunityId, existing.rows[0], userId, audit);
     await client.query(
       `UPDATE tbl_opportunity_tracker SET is_current = FALSE
        WHERE opportunity_id = $1 AND is_current = TRUE`,
@@ -837,6 +864,26 @@ export interface WorkflowAudit {
   reasonCodeId?: number | null;
   roleId?: number | null;
   roleName?: string | null;
+}
+
+export interface OpportunityStageHistory {
+  id: number;
+  stageId: number;
+  subStageId: number;
+  reachedAt: Date | string;
+  updatedBy: number | null;
+  comment: string | null;
+}
+
+export async function findStageHistory(opportunityId: number): Promise<OpportunityStageHistory[]> {
+  return query<OpportunityStageHistory>(
+    `SELECT tracker_id AS id, stage_id AS "stageId", substage_id AS "subStageId",
+            updated_dt AS "reachedAt", updated_by AS "updatedBy", comment
+     FROM tbl_opportunity_engage_tracker
+     WHERE opportunity_id = $1
+     ORDER BY updated_dt ASC, tracker_id ASC`,
+    [opportunityId]
+  );
 }
 
 export interface OpportunityEstimation {
@@ -1199,10 +1246,19 @@ async function create(
 async function update(
   opportunityId: number,
   input: OpportunityInput,
-  userId: number | null
+  userId: number | null,
+  audit: WorkflowAudit = {}
 ): Promise<Opportunity> {
   return transaction(async client => {
   const query = async <T = any>(sql: string, params?: any[]): Promise<T[]> => (await client.query(sql, params)).rows;
+  const locked = await query<UpdateWorkflow>(`SELECT stage_id AS "stageId", sub_stage_id AS "subStageId",
+    created_by AS "createdBy", assigned_to AS "assignedTo" FROM tbl_opportunity
+    WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE`, [opportunityId]);
+  const current = locked[0];
+  if (!current || input.stageId !== undefined && current.stageId !== input.stageId ||
+      input.subStageId !== undefined && current.subStageId !== input.subStageId) {
+    throw new Error('This opportunity changed while you were editing it. Refresh before saving.');
+  }
   const rows = await query<Opportunity>(
     `UPDATE tbl_opportunity
      SET
@@ -1248,10 +1304,10 @@ async function update(
       input.rfpType ?? input.opportunityTypeId ?? null,
       input.sourceTypeId ?? null,
       input.clientId ?? null,
-      input.stageId ?? null,
-      input.subStageId ?? null,
+      current.stageId,
+      current.subStageId,
       input.ownerId ?? null,
-      input.assignedTo ?? null,
+      current.assignedTo,
       input.priority?.trim() || null,
       input.serviceLine?.trim() || null,
       input.solicitationNumber?.trim() || null,
@@ -1283,6 +1339,8 @@ async function update(
   );
 
   const opportunity = rows[0];
+
+  Object.assign(opportunity, await returnUpdatedOpportunityForReview(client, opportunityId, current, userId, audit));
 
   /*
    * Mark previous tracker record as not current

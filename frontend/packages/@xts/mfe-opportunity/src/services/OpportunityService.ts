@@ -47,11 +47,13 @@ import { DECISION_ROLE_IDS, SERVICE_LINES } from '../lib/opportunityOptions';
 interface BackendContact { fullName: string; titleRole: string; email: string; phone: string; roleInDecision: number | null; roleInDecisionOther?: string | null; }
 interface BackendCurrency { currencyId: number; currencyCode: string; currencySymbol?: string; }
 interface BackendOpportunity {
+  createdDt?: string | null;
+  stageHistory?: { id: string; stageId: number; subStageId: number; reachedAt: string; updatedBy?: number | null; comment?: string | null }[];
   estimation?: Estimation | null;
   allowedActions?: Action[];
   opportunityId: number; opportunityNumber: string | null; opportunityName: string | null;
   sourceTypeId: number | null; clientId: number | null; stageId: number | null; subStageId: number | null;
-  ownerId: number | null; assignedTo: number | null; priority: string | null; serviceLine: string | null;
+  ownerId: number | null; createdBy?: number | null; assignedTo: number | null; priority: string | null; serviceLine: string | null;
   solicitationNumber: string | null; issuingAgency: string | null; procurementContact: string | null;
   queDueDate: string | null; submissionMethod: string | null; contractTerm: string | null; incumbentVendor: string | null;
   preBidMeeting: number | null; documentType: string | null; fileName: string | null; filePath: string | null; docSubmissionFormat: string | null;
@@ -131,9 +133,13 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
   })).filter(q => q.text.trim()); // Empty question boxes are never shown again.
   return {
     id: String(o.opportunityId), number: o.opportunityNumber ?? String(o.opportunityId), title: o.opportunityName ?? '',
-    estimatedValue: String(o.estimatedValue ?? ''), estimatedValueUsd: String(o.estimatedValueUsd ?? ''), currencyCode, currencySymbol, clientName: o.clientName, owner, priority: priority(o.priority),
+    estimatedValue: String(o.estimatedValue ?? ''), estimatedValueUsd: String(o.estimatedValueUsd ?? ''), currencyCode, currencySymbol, clientName: o.clientName, owner, createdBy: user(o.createdBy, directory), priority: priority(o.priority),
     state: currentState, stageId: o.stageId ?? null, subStageId: o.subStageId ?? null, holdReasonCodeId: o.workflowReasonCodeId ?? null, rfpType: rfpType(o.rfpType), submissionDeadline: o.proposalDueDate, revision: 1,
     packageRevision: null, allowedActions: actions(o),
+    createdDt: o.createdDt ?? null, stageHistory: (o.stageHistory ?? []).map(event => ({
+      id: event.id, stageId: event.stageId, subStageId: event.subStageId, reachedAt: event.reachedAt,
+      comment: event.comment, actor: user(event.updatedBy, directory),
+    })),
     form: {
       title: o.opportunityName ?? '', estimatedValue: String(o.estimatedValue ?? ''), estimatedValueUsd: String(o.estimatedValueUsd ?? ''), serviceLineOther: o.serviceLine && !SERVICE_LINES.includes(o.serviceLine) ? o.serviceLine : '', currencyId: String(o.currencyId ?? ''),
       serviceLine: o.serviceLine && !SERVICE_LINES.includes(o.serviceLine) ? 'Other' : o.serviceLine ?? '', leadSource: String(o.sourceTypeId ?? ''), ownerId: String(o.ownerId ?? ''),
@@ -329,13 +335,13 @@ export const productionOpportunityService: OpportunityService = {
       .map(reason => ({ id: reason.id, name: reason.reasonName, description: reason.description }));
   },
   async decide(command) {
+    if (command.decision === 'RESUBMIT') throw new Error('Use Update Opportunity to save corrections and send the opportunity for review.');
     const workflowActions = {
       SALES_APPROVE: 'APPROVE', SALES_REQUEST_CHANGES: 'REQUEST_CHANGES', SALES_HOLD: 'HOLD',
       SALES_REJECT: 'REJECT', GATE1_NO_GO: 'REJECT', ESTIMATE_REJECT: 'REJECT',
       ESTIMATE_APPROVE: 'APPROVE', ESTIMATE_HOLD: 'HOLD', SUBMIT_ESTIMATE: 'SUBMIT_ESTIMATE',
       BID_SUBMITTED: 'BID_SUBMITTED', START_NEGOTIATION: 'START_NEGOTIATION', MARK_WON: 'MARK_WON', MARK_LOST: 'MARK_LOST', CLOSE_OPPORTUNITY: 'CLOSE_OPPORTUNITY',
       GATE1_GO: 'APPROVE', GATE1_REQUEST_CHANGES: 'REQUEST_CHANGES', GATE1_HOLD: 'HOLD',
-      RESUBMIT: 'RESUBMIT',
     } as const;
     if (!(command.decision in workflowActions)) return unavailable('This approval decision');
     const action = workflowActions[command.decision as keyof typeof workflowActions];

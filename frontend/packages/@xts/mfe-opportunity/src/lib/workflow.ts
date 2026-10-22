@@ -58,10 +58,11 @@ export function userLabel(user: DirectoryUser | null) { return user ? `${user.na
 export function pendingSaveFieldErrors(form: OpportunityDraft): Record<string, string> {
   const errors: Record<string, string> = {};
   if (!form.title.trim()) errors['Opportunity name / title'] = 'Please fill the Opportunity name.';
-  if (!form.estimatedValue.trim()) errors['Estimated value'] = 'Please fill the Estimated value.';
-  else if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValue)) errors['Estimated value'] = 'Please enter a non-negative Estimated value with at most two decimals.';
-  if (!form.estimatedValueUsd?.trim()) errors['Estimated value (USD)'] = 'Please fill the Estimated value (USD).';
-  else if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValueUsd) || Number(form.estimatedValueUsd) >= 1e13) errors['Estimated value (USD)'] = 'Enter a non-negative USD value with at most two decimals, below 10 trillion.';
+  for (const [label, value] of [['Client budget', form.estimatedValue], ['Client budget (USD)', form.estimatedValueUsd]] as const) {
+    if (!value?.trim()) errors[label] = `Please fill the ${label}.`;
+    else if (!Number.isFinite(Number(value)) || Number(value) <= 0) errors[label] = `${label} must be greater than zero.`;
+    else if (!/^\d+(\.\d{1,2})?$/.test(value) || Number(value) >= 1e13) errors[label] = `${label} must have at most two decimals and be below 10 trillion.`;
+  }
   if (form.serviceLine === 'Other' && !form.serviceLineOther?.trim()) errors['Other service line'] = 'Please fill the Other service line.';
   if ((form.serviceLine === 'Other' ? form.serviceLineOther ?? '' : form.serviceLine).trim().length > 255) errors[form.serviceLine === 'Other' ? 'Other service line' : 'Service line'] = 'Service line must be at most 255 characters.';
   if (!form.currencyId) errors['Currency'] = 'Please select a Currency.';
@@ -136,11 +137,24 @@ export function decisionError(o: OpportunityDetail, decision: Action, reason: st
 export function applicableDecisions(o: OpportunityDetail): Action[] {
   const stage = o.stageId, substage = o.subStageId;
   const decisions: Action[] = [];
-  if (stage === 1 && [1, 3].includes(substage ?? 0)) decisions.push('SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_HOLD', 'SALES_REJECT');
-  if (stage === 2 && [4, 6].includes(substage ?? 0)) decisions.push('GATE1_GO', 'GATE1_REQUEST_CHANGES', 'GATE1_HOLD', 'GATE1_NO_GO');
-  if (stage === 1 && substage === 2 || stage === 2 && substage === 5) decisions.push('RESUBMIT');
+  if (stage === 1 && [1, 2, 3].includes(substage ?? 0)) {
+    decisions.push('SALES_APPROVE');
+    if (substage !== 2) decisions.push('SALES_REQUEST_CHANGES');
+    if (substage !== 3) decisions.push('SALES_HOLD');
+    decisions.push('SALES_REJECT');
+  }
+  if (stage === 2 && [4, 5, 6].includes(substage ?? 0)) {
+    decisions.push('GATE1_GO');
+    if (substage !== 5) decisions.push('GATE1_REQUEST_CHANGES');
+    if (substage !== 6) decisions.push('GATE1_HOLD');
+    decisions.push('GATE1_NO_GO');
+  }
   if (stage === 3 && substage === 7) decisions.push('SUBMIT_ESTIMATE');
-  if (stage === 4 && [8, 9].includes(substage ?? 0)) decisions.push('ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT');
+  if (stage === 4 && [8, 9].includes(substage ?? 0)) {
+    decisions.push('ESTIMATE_APPROVE');
+    if (substage === 8) decisions.push('ESTIMATE_HOLD');
+    decisions.push('ESTIMATE_REJECT');
+  }
   if (stage === 5 && substage === 10) decisions.push('BID_SUBMITTED');
   if (stage === 5 && substage === 11) decisions.push('START_NEGOTIATION');
   if (stage === 6 && substage === 12) decisions.push('MARK_WON', 'MARK_LOST');

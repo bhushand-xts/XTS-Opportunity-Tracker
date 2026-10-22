@@ -20,6 +20,8 @@ const OPPORTUNITY_FIELDS = gql`
     stageId
     subStageId
     ownerId
+    createdBy
+    createdDt
     assignedTo
     priority
     serviceLine
@@ -71,7 +73,11 @@ export const LIST_OPPORTUNITIES = gql`
 export const GET_OPPORTUNITY = gql`
   ${OPPORTUNITY_FIELDS}
   query GetOpportunity($opportunityId: Int!) {
-    opportunity(opportunityId: $opportunityId) { ...OpportunityFields estimation { revision rows { id workItem hours people hourlyRate } assumptions total } }
+    opportunity(opportunityId: $opportunityId) {
+      ...OpportunityFields
+      stageHistory { id stageId subStageId reachedAt updatedBy comment }
+      estimation { revision rows { id workItem hours people hourlyRate } assumptions total }
+    }
     currencies { currencyId currencyCode currencySymbol }
   }
 `;

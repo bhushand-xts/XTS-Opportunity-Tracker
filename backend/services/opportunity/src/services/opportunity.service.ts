@@ -62,15 +62,24 @@ function validateProposalQuestions(input: OpportunityInput) {
 
 function projectAllowedActions(opportunity: repository.Opportunity, access: OpportunityAccess): string[] {
   const actions = access.canEdit(opportunity) ? ['EDIT'] : [];
-  if (access.canResubmit(opportunity)) actions.push('RESUBMIT');
-  if (opportunity.stageId === 1 && [1, 3].includes(opportunity.subStageId ?? 0) && access.review) {
-    actions.push('SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_HOLD', 'SALES_REJECT');
+  if (opportunity.stageId === 1 && [1, 2, 3].includes(opportunity.subStageId ?? 0) && access.review) {
+    actions.push('SALES_APPROVE');
+    if (opportunity.subStageId !== 2) actions.push('SALES_REQUEST_CHANGES');
+    if (opportunity.subStageId !== 3) actions.push('SALES_HOLD');
+    actions.push('SALES_REJECT');
   }
-  if (opportunity.stageId === 2 && [4, 6].includes(opportunity.subStageId ?? 0) && access.gateReview) {
-    actions.push('GATE1_GO', 'GATE1_REQUEST_CHANGES', 'GATE1_HOLD', 'GATE1_NO_GO');
+  if (opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0) && access.gateReview) {
+    actions.push('GATE1_GO');
+    if (opportunity.subStageId !== 5) actions.push('GATE1_REQUEST_CHANGES');
+    if (opportunity.subStageId !== 6) actions.push('GATE1_HOLD');
+    actions.push('GATE1_NO_GO');
   }
   if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('EDIT_ESTIMATION', 'SUBMIT_ESTIMATE');
-  if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) actions.push('ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT');
+  if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) {
+    actions.push('ESTIMATE_APPROVE');
+    if (opportunity.subStageId === 8) actions.push('ESTIMATE_HOLD');
+    actions.push('ESTIMATE_REJECT');
+  }
   if (access.review) {
     if (opportunity.stageId === 5 && opportunity.subStageId === 10) actions.push('BID_SUBMITTED');
     if (opportunity.stageId === 5 && opportunity.subStageId === 11) actions.push('START_NEGOTIATION');
@@ -155,8 +164,9 @@ async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunity
   if (!Number.isInteger(input.currencyId) || input.currencyId <= 0) {
     throw validationFailed("A valid currency is required.");
   }
-  if (!Number.isFinite(input.estimatedValue) || input.estimatedValue <= 0) {
-    throw validationFailed("Estimated value must be greater than zero.");
+  if (!Number.isFinite(input.estimatedValue) || input.estimatedValue <= 0 ||
+      Math.round(input.estimatedValue * 100) / 100 <= 0) {
+    throw validationFailed("Client budget must be greater than zero.");
   }
   if (!Number.isInteger(input.sourceTypeId) || input.sourceTypeId <= 0 ||
       !Number.isInteger(input.rfpType) || input.rfpType <= 0) {
@@ -199,9 +209,12 @@ async function updateRfpIntakeOpportunity(
   )) {
     throw validationFailed("The selected proposal section IDs are invalid.");
   }
+  if (!Number.isFinite(input.estimatedValue) || input.estimatedValue <= 0 ||
+      Math.round(input.estimatedValue * 100) / 100 <= 0) {
+    throw validationFailed("Client budget must be greater than zero.");
+  }
   if (!Number.isInteger(input.ownerId) || input.ownerId <= 0 ||
       !Number.isInteger(input.currencyId) || input.currencyId <= 0 ||
-      !Number.isFinite(input.estimatedValue) || input.estimatedValue <= 0 ||
       !Number.isInteger(input.sourceTypeId) || input.sourceTypeId <= 0 ||
       !Number.isInteger(input.rfpType) || input.rfpType <= 0) {
     throw validationFailed("Complete the required opportunity fields before saving.");
@@ -213,12 +226,16 @@ async function updateRfpIntakeOpportunity(
   assertCanEdit(current, access);
   if (input.ownerId !== current.ownerId) throw conflict("The opportunity owner cannot be changed during review.");
 
-  const updated = await repository.updateRfpIntakeOpportunity(opportunityId, input, userId);
+  const updated = await repository.updateRfpIntakeOpportunity(opportunityId, input, userId, workflowAudit(access));
   if (!updated) throw notFound("Opportunity not found.");
   return updated;
 }
 
 type WorkflowAction = repository.OpportunityWorkflowAction;
+
+function workflowAudit(access: AuditedAccess): repository.WorkflowAudit {
+  return { roleId: access.actorRoleId ?? null, roleName: access.actorRoleName ?? null, reasonCodeId: null };
+}
 
 function assertCanEdit(opportunity: repository.Opportunity, access: OpportunityAccess) {
   if (!access.canEdit(opportunity)) throw conflict('You cannot edit this opportunity at its current workflow step.');
@@ -234,23 +251,6 @@ async function assertExtractionEdit(opportunityId: number, userId: number, ctx?:
   assertCanEdit(current, await accessFor(ctx ?? { user: { id: userId } }));
 }
 
-async function resubmitBySalesRepresentative(
-  opportunityId: number,
-  opportunity: repository.Opportunity,
-  userId: number,
-  access: OpportunityAccess,
-  comment: string | null,
-  opportunityDescription: string | null,
-  audit: repository.WorkflowAudit
-) {
-  const returnedFromSalesHead = opportunity.stageId === 1 && opportunity.subStageId === 2;
-  if (!access.canResubmit(opportunity) || opportunity.createdBy !== userId || !returnedFromSalesHead) {
-    throw conflict("Only the creator can resubmit an opportunity with requested changes.");
-  }
-  if (opportunityDescription?.trim() && !access.canEdit(opportunity)) throw conflict('Edit permission is required to change the opportunity description.');
-  return persistTransition(opportunity, opportunityId, 1, 1, null, userId, comment?.trim() || null, opportunityDescription?.trim() || null, audit);
-}
-
 async function reviewBySalesHead(
   opportunityId: number,
   opportunity: repository.Opportunity,
@@ -261,12 +261,13 @@ async function reviewBySalesHead(
   audit: repository.WorkflowAudit
 ) {
   if (!access.review || opportunity.stageId !== 1 ||
-      ![1, 3].includes(opportunity.subStageId ?? 0)) {
-    throw conflict("The Sales Head role and a pending or held sales review are required.");
+      ![1, 2, 3].includes(opportunity.subStageId ?? 0)) {
+    throw conflict("The Sales Head role and a pending, changes-requested or held sales review are required.");
   }
 
   if (action === "REQUEST_CHANGES") {
-    if (!comment?.trim()) throw validationFailed("Add the changes requested for the Sales Representative.");
+    if (opportunity.subStageId === 2) throw conflict('Changes have already been requested. Choose another available action.');
+    if (!comment?.trim()) throw validationFailed("Add the changes requested for the opportunity creator.");
     return persistTransition(opportunity, opportunityId, 1, 2, opportunity.createdBy, userId, comment.trim(), null, audit);
   }
   if (action === "HOLD") {
@@ -288,12 +289,13 @@ async function reviewByCeo(
   comment: string | null,
   audit: repository.WorkflowAudit
 ) {
-  const canReview = opportunity.stageId === 2 && [4, 6].includes(opportunity.subStageId ?? 0);
+  const canReview = opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0);
   if (!access.gateReview || !canReview) {
-    throw conflict("The CEO role and a pending or held Go/No-Go review are required.");
+    throw conflict("The CEO role and a pending, changes-requested or held Go/No-Go review are required.");
   }
 
   if (action === "REQUEST_CHANGES") {
+    if (opportunity.subStageId === 5) throw conflict('Changes have already been requested. Choose another available action.');
     if (!comment?.trim()) throw validationFailed("Add the changes requested for the Sales Head.");
     return persistTransition(opportunity, opportunityId, 2, 5, null, userId, comment.trim(), null, audit);
   }
@@ -324,10 +326,14 @@ async function transitionWorkflow(
   const access = await accessFor(ctx), userId = access.userId;
   const opportunity = await repository.findById(opportunityId);
   if (!opportunity) throw notFound('Opportunity not found.');
-  const audit: repository.WorkflowAudit = { roleId: access.actorRoleId ?? null, roleName: access.actorRoleName ?? null, reasonCodeId: null };
-  const reviewingSales = opportunity.stageId === 1 && [1, 3].includes(opportunity.subStageId ?? 0) && access.review;
-  const reviewingCeo = opportunity.stageId === 2 && [4, 6].includes(opportunity.subStageId ?? 0) && access.gateReview;
+  const audit = workflowAudit(access);
+  if (action === 'RESUBMIT') throw validationFailed('Use Update Opportunity to save corrections and send the opportunity for review.');
+  const reviewingSales = opportunity.stageId === 1 && [1, 2, 3].includes(opportunity.subStageId ?? 0) && access.review;
+  const reviewingCeo = opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const reviewingEstimate = opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview;
+  if (action === 'HOLD' && (reviewingSales && opportunity.subStageId === 3 || reviewingCeo && opportunity.subStageId === 6 || reviewingEstimate && opportunity.subStageId === 9)) {
+    throw conflict('This opportunity is already on hold. Choose another available action.');
+  }
   const closing = action === 'CLOSE_OPPORTUNITY' && access.review && [1, 2, 3, 4, 5, 6].includes(opportunity.stageId ?? 0);
   if ((action === 'HOLD' || action === 'REJECT') && (reviewingSales || reviewingCeo || reviewingEstimate)) {
     const reasonLabel = action === 'HOLD' ? 'hold' : 'rejection';
@@ -363,13 +369,6 @@ async function transitionWorkflow(
     if (action === 'APPROVE') return persistTransition(opportunity, opportunityId, 5, 10, null, userId, comment?.trim() || null, null, audit);
     if (action === 'REJECT') return persistTransition(opportunity, opportunityId, 9, 17, null, userId, comment!.trim(), null, audit);
     throw validationFailed('Use Hold, Approve or Reject for estimate review.');
-  }
-  if (action === 'RESUBMIT') {
-    if (opportunity.stageId === 2 && opportunity.subStageId === 5) {
-      if (!access.canResubmit(opportunity)) throw conflict('Only the Sales Head can resubmit requested Go/No-Go changes.');
-      return persistTransition(opportunity, opportunityId, 2, 4, null, userId, comment?.trim() || null, null, audit);
-    }
-    return resubmitBySalesRepresentative(opportunityId, opportunity, userId, access, comment, opportunityDescription, audit);
   }
   if (opportunity.stageId === 1) {
     return reviewBySalesHead(opportunityId, opportunity, userId, access, action, comment, audit);
@@ -411,7 +410,8 @@ async function update(
   const updated = await repository.update(
     opportunityId,
     { ...current, ...patch, ...documentUploadAudit(patch.filePath === undefined ? current.filePath : patch.filePath, userId, current) },
-    userId
+    userId,
+    workflowAudit(access)
   );
   const sourceDocumentId = (input as OpportunityInput & { sourceDocumentId?: string | null }).sourceDocumentId;
   if (sourceDocumentId !== undefined) await attachSourceDocument(opportunityId, userId, sourceDocumentId);
@@ -496,6 +496,11 @@ export async function allowedActions(opportunity: repository.Opportunity, ctx: a
 export async function getEstimation(opportunityId: number, ctx: any) {
   await get(opportunityId, ctx);
   return repository.findEstimation(opportunityId);
+}
+
+export async function getStageHistory(opportunityId: number, ctx: any) {
+  await get(opportunityId, ctx);
+  return repository.findStageHistory(opportunityId);
 }
 
 export async function saveEstimation(opportunityId: number, input: repository.OpportunityEstimation, ctx: any) {

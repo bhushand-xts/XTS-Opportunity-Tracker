@@ -44,7 +44,7 @@ function AuthedApp() {
 
   return (
     <>
-      <Toaster />
+      <Toaster richColors />
       {inRouterContext ? (
         <OpportunityRoutes />
       ) : (

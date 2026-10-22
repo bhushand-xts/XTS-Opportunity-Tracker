@@ -30,7 +30,8 @@ this is a backend handoff requirement only, with no backend implementation chang
 | Group | UI label | Domain ? API path | Validation | Storage owner |
 |---|---|---|---|---|
 | Opportunity | Opportunity name/title | form.title | Required for Pending; trim, bounded text | Opportunity service |
-| Opportunity | Estimated value | form.estimatedValue | Required; non-negative Decimal string, 2 decimals | Opportunity service |
+| Opportunity | Client budget | form.estimatedValue | Required; Decimal string greater than zero, 2 decimals | Opportunity service |
+| Opportunity | Client budget (USD) | form.estimatedValueUsd | Required; Decimal string greater than zero, 2 decimals | Opportunity service |
 | Opportunity | Currency | form.currencyId | Required active currencies.currencyId FK; summary returns currencyCode | Opportunity service |
 | Opportunity | Service line | form.serviceLine | Required dropdown: Digital engineering / Consulting from the HTML reference; retains existing saved values; no implemented service-line master | Opportunity service |
 | Opportunity | Lead source | form.leadSource | Optional controlled descriptive text | Opportunity service |
