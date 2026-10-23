@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Briefcase, Clock, Plus, Search, CheckCircle2 } from 'lucide-react';
-import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, SegmentedProgress, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle, type BadgeProps } from '@xts/design-system';
+import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, SegmentedProgress, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TooltipProvider, useSetPageTitle, type BadgeProps } from '@xts/design-system';
 import type { ListFilter, OpportunitySummary, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource, useDebounce } from '../hooks/useResource';
@@ -47,11 +47,11 @@ function initials(name: string) {
   const [first, second] = name.trim().split(/\s+/);
   return (`${first?.[0] ?? ''}${second?.[0] ?? first?.[1] ?? ''}`).toUpperCase();
 }
-/** Owner shown as an initials badge only; the full name appears on hover (and to screen readers). */
+/** Label the owner explicitly and show their full name beside the decorative initials. */
 function OwnerBadge({ opportunity: o }: { opportunity: OpportunitySummary }) {
   const ownerName = o.owner ? (o.owner.name || o.owner.email) : '';
-  if (!ownerName) return <span>Unassigned</span>;
-  return <Tooltip><TooltipTrigger asChild><span className="flex items-center"><Avatar className="size-[22px]"><AvatarFallback className={cn('text-[10px] font-bold text-white', avatarAccent(ownerName))}>{initials(ownerName)}</AvatarFallback></Avatar><span className="sr-only">Assigned to {userLabel(o.owner)}</span></span></TooltipTrigger><TooltipContent>Assigned to {userLabel(o.owner)}</TooltipContent></Tooltip>;
+  if (!ownerName) return <span>Owner: Unassigned</span>;
+  return <span className="inline-flex min-w-0 items-center gap-1.5"><Avatar className="size-[22px] shrink-0" aria-hidden="true"><AvatarFallback className={cn('text-[10px] font-bold text-white', avatarAccent(ownerName))}>{initials(ownerName)}</AvatarFallback></Avatar><span className="min-w-0 break-words text-[11px]"><span className="font-medium">Owner:</span> {userLabel(o.owner)}</span></span>;
 }
 function StageProgress({ state, className }: { state: OpportunityState; className?: string }) {
   const step = progressStep(state);
@@ -123,7 +123,6 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
   const title = queue === 'MY_APPROVALS' ? 'My approvals' : queue === 'MY_WORK' ? 'My Work' : 'Opportunity pipeline';
   useSetPageTitle(title);
   const list = resource.data?.nodes ?? [];
-  const totalLabel = money(list.reduce((sum, opportunity) => sum + Number(opportunity.estimatedValueUsd || 0), 0).toFixed(2), 'USD');
   if (!allowed || resource.error?.message.includes('You do not have permission to view this workflow.')) return <AccessUnavailable page={title} changed={visited.current === queue} destination={
     queue !== 'PIPELINE' && access.pipeline ? { path: '/opportunity', label: 'Go to Pipeline' } :
     queue !== 'MY_WORK' && access.work ? { path: '/opportunity/work', label: 'Go to My Work' } :
@@ -132,10 +131,8 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
   return <div className="opp-page">
     <div className="opp-heading"><div><p className="opp-eyebrow">{queue === 'MY_APPROVALS' ? 'OPPORTUNITY REVIEWS' : 'OPPORTUNITY MANAGEMENT'}</p><h2>{title}</h2><p className="text-sm text-muted-foreground">{queue === 'MY_APPROVALS' ? 'Track opportunities across all stages. Open Overview to take the action available to your role.' : queue === 'MY_WORK' ? 'Your preparation, response and review tasks, in one place.' : 'Track every opportunity through approvals, estimation, proposal, negotiation and outcome.'}</p></div>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new"><Plus className="size-4" />Add Opportunity</Link></Button>}</div>
     {resource.loading ? <Loading label="Loading permitted opportunities…" /> : resource.error ? <Notice error={resource.error} retry={resource.reload} title="Pipeline unavailable" /> : resource.data && <>
-      <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">{[
-        // "Pending approval" and "Gate 1 approved" reuse their stage colours; the totals use brand and gold.
+      <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-3">{[
         { title: 'All opportunities', value: resource.data.totalCount, hint: 'Permitted opportunities', icon: Briefcase, tone: 'border-t-primary', iconTone: 'text-primary', wash: 'to-primary/5' },
-        { title: 'Pipeline value', value: totalLabel, hint: 'Total estimated value (USD)', icon: Briefcase, tone: 'border-t-amber-600', iconTone: 'text-amber-600', wash: 'to-amber-500/5' },
         { title: 'Pending approval', value: list.filter(o => o.stageId == null ? o.state === 'SALES_REVIEW' : o.stageId === 1 && o.subStageId === 1 || o.stageId === 2 && o.subStageId === 4 || o.stageId === 4 && o.subStageId === 8).length, hint: 'Awaiting a reviewer decision', icon: Clock, tone: 'border-t-progress-3', iconTone: 'text-progress-3', wash: 'to-progress-3/5' },
         { title: 'Won opportunities', value: list.filter(o => o.stageId === 7 && o.subStageId === 13).length, hint: 'Closed — Won', icon: CheckCircle2, tone: 'border-t-progress-5', iconTone: 'text-progress-5', wash: 'to-progress-5/5' },
       ].map(stat => <Card key={stat.title} className={cn('min-w-0 border-t-[3px] bg-gradient-to-br from-card from-50% shadow-sm', stat.tone, stat.wash)}><section className="px-3 py-2.5"><div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">{stat.title}<stat.icon className={cn('size-4 shrink-0', stat.iconTone)} /></div><strong className="my-0.5 block break-words text-xl font-semibold">{stat.value}</strong><p className="text-xs text-muted-foreground">{stat.hint}</p></section></Card>)}</div>
