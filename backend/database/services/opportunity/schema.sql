@@ -93,6 +93,7 @@ CREATE TABLE tbl_opportunity_questions_answers (
   opportunity_type_id INTEGER,
   question TEXT,
   question_category VARCHAR(255),
+  questionnaire_type_id SMALLINT CHECK (questionnaire_type_id IN (1, 2)), -- 1: Document-Based; 2: Client-Predefined
   answer TEXT,
   answered_by INTEGER,        -- was FK -> mst_user(user_id) in user's DB
   answered_dt TIMESTAMP,

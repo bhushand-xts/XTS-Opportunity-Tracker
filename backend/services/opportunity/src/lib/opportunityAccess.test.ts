@@ -25,6 +25,18 @@ test('CEO-approved opportunities enter the permitted estimation team work queue 
   assert.equal(opportunityAccess(1, menus, [grant(106, 'edit')]).canViewInQueue(ready, 'MY_WORK'), false);
 });
 
+test('estimation users retain visibility of proposal, negotiation and outcomes without sales decision access', () => {
+  const estimator = opportunityAccess(1, menus, [], role('estimation_team'));
+  for (const [stageId, subStageId] of [[5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [10, 19]]) {
+    assert.equal(estimator.canView({ ...record, stageId, subStageId }), true);
+  }
+  assert.equal(estimator.review, false);
+  assert.equal(estimator.gateReview, false);
+  assert.equal(estimator.canView(record), false);
+  assert.equal(estimator.canView({ ...record, stageId: 2, subStageId: 4 }), false);
+  assert.equal(estimator.canView({ ...record, stageId: 9, subStageId: 15 }), false);
+});
+
 test('uses assigned permissions with arbitrary menu IDs and no role identity', () => {
   const access = opportunityAccess(1, menus, [grant(101, 'add'), grant(101, 'edit'), grant(102, 'view'), grant(104, 'approve')]);
   assert.equal(access.create, true);

@@ -74,7 +74,7 @@ export function opportunityAccess(userId: number, menus: AccessMenu[], grants: A
     if (viewAll || review || gateReview || (own(record) && (create || edit || has(['work'], 'view')))) return true;
     if (record.stageId === 1) return review;
     if (record.stageId === 2) return has(['gate'], 'view') || gateReview || (review && record.subStageId === 5);
-    if ([3, 4, 5].includes(record.stageId ?? 0)) return has(['gate', 'estimation', 'reestimation'], 'view') || estimate || gateReview;
+    if ([3, 4, 5, 6, 7, 8, 10].includes(record.stageId ?? 0)) return has(['gate', 'estimation', 'reestimation'], 'view') || estimate || gateReview;
     return false;
   }
   function canEdit(record: WorkflowRecord) {

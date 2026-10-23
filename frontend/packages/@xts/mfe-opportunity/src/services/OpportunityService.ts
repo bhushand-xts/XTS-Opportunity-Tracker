@@ -62,6 +62,7 @@ interface BackendOpportunity {
   workflowComment: string | null; workflowReasonCodeId?: number | null; clientName: string | null; accountType: string | null; sector: string | null;
   website: string | null; city: string | null; state: string | null; country: string | null; streetAddress: string | null;
   contacts: BackendContact[]; proposalQuestions: string[]; proposalQuestionIds: (number | null)[]; proposalQuestionCategories: (string | null)[];
+  proposalQuestionnaireTypeIds?: (number | null)[];
 }
 interface BackendClient {
   clientId: number; clientName: string; accountType: string | null; sector: string | null; website: string | null;
@@ -152,7 +153,7 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
       },
       dates: { issueDate: o.leadReceivedDate ?? '', questionsDue: o.queDueDate ?? '', proposalDue: o.proposalDueDate ?? '', submissionDeadline: o.proposalDueDate ?? '', additionalDeadline: '', additionalDeadlineLabel: '' },
       context: { instructions: '', submissionRequirements: '', opportunityOverview: o.opportunityDescription ?? '', scopeOfWork: '', requirements: '', notes: o.workflowComment ?? '' },
-      rfp: { type: rfpType(o.rfpType), source: o.fileName ? { id: o.filePath ?? o.fileName, name: o.fileName, storagePath: o.filePath ?? undefined, downloadUrl: null } : null, extraction: null, questions: questions.filter(q => q.masterQuestionId === null), sections: questions.filter(q => q.masterQuestionId !== null).map(q => ({ key: String(q.masterQuestionId), instructions: q.text })), submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: o.evaluationBasis ?? '' },
+      rfp: { type: rfpType(o.rfpType), questionnaireTypeId: o.rfpType === 1 ? o.proposalQuestionnaireTypeIds?.find((id): id is 1 | 2 => id === 1 || id === 2) ?? null : null, source: o.fileName ? { id: o.filePath ?? o.fileName, name: o.fileName, storagePath: o.filePath ?? undefined, downloadUrl: null } : null, extraction: null, questions: questions.filter(q => q.masterQuestionId === null), sections: questions.filter(q => q.masterQuestionId !== null).map(q => ({ key: String(q.masterQuestionId), instructions: q.text })), submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: o.evaluationBasis ?? '' },
     },
     client, visibleModules: o.stageId != null && o.stageId >= 3 || o.estimation || actions(o).includes('EDIT_ESTIMATION') ? ['overview', 'estimation', 'activity'] : ['overview', 'activity'], responses: null, estimation: o.estimation ?? null, scope: null,
     activity: [], responsible: user(o.assignedTo, directory) ?? owner, approvalAssignees: o.assignedTo ? [user(o.assignedTo, directory)!] : [],
@@ -162,8 +163,9 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function saveInput(command: SaveCommand) {
   const form = command.form;
+  const questionnaireTypeId = form.rfp.type === 'QUESTIONNAIRE' ? form.rfp.questionnaireTypeId ?? 1 : null;
   return {
-    proposalQuestionSelections: [...form.rfp.sections.map(s => ({ questionId: Number(s.key), question: s.instructions, category: 'Other' })), ...form.rfp.questions.filter(q => q.text.trim()).map(q => ({ questionId: q.masterQuestionId ?? null, question: q.text, category: q.category ?? 'Other' }))],
+    proposalQuestionSelections: [...form.rfp.sections.map(s => ({ questionId: Number(s.key), question: s.instructions, category: 'Other', questionnaireTypeId })), ...form.rfp.questions.filter(q => q.text.trim()).map(q => ({ questionId: q.masterQuestionId ?? null, question: q.text, category: q.category ?? 'Other', questionnaireTypeId }))],
     clientId: form.clientId ? Number(form.clientId) : null,
     opportunityDescription: form.description || null,
     contractTerm: form.rfp.type === 'QUESTIONNAIRE' ? form.solicitation.contractTerm || null : null,
@@ -340,7 +342,8 @@ export const productionOpportunityService: OpportunityService = {
       SALES_APPROVE: 'APPROVE', SALES_REQUEST_CHANGES: 'REQUEST_CHANGES', SALES_HOLD: 'HOLD',
       SALES_REJECT: 'REJECT', GATE1_NO_GO: 'REJECT', ESTIMATE_REJECT: 'REJECT',
       ESTIMATE_APPROVE: 'APPROVE', ESTIMATE_HOLD: 'HOLD', SUBMIT_ESTIMATE: 'SUBMIT_ESTIMATE',
-      BID_SUBMITTED: 'BID_SUBMITTED', START_NEGOTIATION: 'START_NEGOTIATION', MARK_WON: 'MARK_WON', MARK_LOST: 'MARK_LOST', CLOSE_OPPORTUNITY: 'CLOSE_OPPORTUNITY',
+      BID_SUBMITTED: 'BID_SUBMITTED', START_NEGOTIATION: 'START_NEGOTIATION', MARK_WON: 'MARK_WON', MARK_LOST: 'MARK_LOST',
+      OPPORTUNITY_HOLD: 'OPPORTUNITY_HOLD', RESUME_NEGOTIATION: 'RESUME_NEGOTIATION', RESUME_PROPOSAL: 'RESUME_PROPOSAL', CLOSE_OPPORTUNITY: 'CLOSE_OPPORTUNITY',
       GATE1_GO: 'APPROVE', GATE1_REQUEST_CHANGES: 'REQUEST_CHANGES', GATE1_HOLD: 'HOLD',
     } as const;
     if (!(command.decision in workflowActions)) return unavailable('This approval decision');
@@ -359,7 +362,7 @@ export const productionOpportunityService: OpportunityService = {
     const { data } = await client.mutate<{ transitionOpportunity: { opportunityId: number } | null }>({
       mutation: TRANSITION_OPPORTUNITY,
       variables: { opportunityId: Number(command.opportunityId), action, comment: command.reason.trim() || null,
-        ...(['HOLD', 'REJECT'].includes(action) ? { reasonCodeId: command.reasonCodeId ?? null } : {}),
+        ...(['HOLD', 'REJECT', 'OPPORTUNITY_HOLD'].includes(action) ? { reasonCodeId: command.reasonCodeId ?? null } : {}),
       },
       errorPolicy: 'none',
     });

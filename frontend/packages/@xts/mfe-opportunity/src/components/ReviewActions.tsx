@@ -22,10 +22,13 @@ const LABELS: Record<DecisionCommand['decision'], string> = {
   ESTIMATE_APPROVE: 'Approve Estimation',
   ESTIMATE_HOLD: 'Put Estimation On Hold',
   ESTIMATE_REJECT: 'Reject Estimation',
-  BID_SUBMITTED: 'Bid Submitted',
+  BID_SUBMITTED: 'Proposal / Bid Submitted',
   START_NEGOTIATION: 'Under Negotiation',
   MARK_WON: 'Won',
   MARK_LOST: 'Lost',
+  OPPORTUNITY_HOLD: 'On Hold',
+  RESUME_NEGOTIATION: 'Resume Negotiation',
+  RESUME_PROPOSAL: 'Resume Proposal Follow-up',
   CLOSE_OPPORTUNITY: 'Close Opportunity',
   RESUBMIT: 'Resubmit for Review',
 };
@@ -66,12 +69,15 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
     SALES_REJECT: 'This closes the opportunity as No-Bid / Declined · Rejected by Sales Head.',
     GATE1_NO_GO: 'This closes the opportunity as No-Bid / Declined · No-Go by CEO.',
     ESTIMATE_REJECT: 'This closes the opportunity as No-Bid / Declined · Estimate Rejected by CEO.',
-    SUBMIT_ESTIMATE: 'The saved estimation is sent to CEO: Estimate Review & Approval · Pending Approval.',
+    SUBMIT_ESTIMATE: 'This sends the estimation to CEO review and records your decision note. An estimation matrix is optional.',
     ESTIMATE_APPROVE: 'Approval moves this opportunity to Proposal / Bid Submitted · Proposal In Preparation.',
     BID_SUBMITTED: 'This records Proposal / Bid Submitted · Bid Submitted.',
     START_NEGOTIATION: 'This moves the opportunity to Negotiation · Under Negotiation.',
     MARK_WON: 'This closes the opportunity as Closed — Won · Won.',
     MARK_LOST: 'This closes the opportunity as Closed — Lost · Lost.',
+    OPPORTUNITY_HOLD: 'This records On Hold as the opportunity outcome. The Sales Head can resume the client follow-up when ready.',
+    RESUME_NEGOTIATION: 'This resumes the opportunity at Negotiation · Under Negotiation.',
+    RESUME_PROPOSAL: 'This returns the opportunity to Proposal / Bid Submitted for client follow-up.',
     CLOSE_OPPORTUNITY: 'This closes the opportunity as No-Bid / Declined · Closed by Sales.',
   };
   if (descriptions[decision]) return descriptions[decision];
@@ -103,7 +109,8 @@ export function ReviewActions({ opportunity: o, onSaved }: { opportunity: Opport
   const requiresReason = requiresCode || decision?.endsWith('REQUEST_CHANGES') || decision === 'SALES_REJECT' || decision === 'GATE1_NO_GO';
   const matchingCompletion = completed?.id === o.id && completed.stageId === o.stageId && completed.subStageId === o.subStageId &&
     (staged ? completed.sourceStageId === o.stageId : completed.sourceState === o.state) ? completed : undefined;
-  const selectedDecision = matchingCompletion?.decision ?? persistedDecision(o);
+  const keepSelectedReview = o.stageId == null || o.stageId < 3 || o.stageId === 4 && o.subStageId === 9;
+  const selectedDecision = keepSelectedReview ? matchingCompletion?.decision ?? persistedDecision(o) : undefined;
   // A saved workflow status must never create controls for a user without action permissions.
   const completedChoices = selectedDecision && decisions.length > 0 ? [selectedDecision] : [];
   const displayedDecisions = [...new Set([...completedChoices, ...decisions])].filter(action => action !== 'GATE1_REQUEST_CHANGES');
@@ -127,7 +134,7 @@ export function ReviewActions({ opportunity: o, onSaved }: { opportunity: Opport
   }
 
   if (!displayedDecisions.length) return null;
-  const isPrimary = (action: DecisionCommand['decision']) => ['SALES_APPROVE', 'GATE1_GO', 'SUBMIT_ESTIMATE', 'ESTIMATE_APPROVE', 'BID_SUBMITTED', 'START_NEGOTIATION', 'MARK_WON'].includes(action);
+  const isPrimary = (action: DecisionCommand['decision']) => ['SALES_APPROVE', 'GATE1_GO', 'SUBMIT_ESTIMATE', 'ESTIMATE_APPROVE', 'BID_SUBMITTED', 'START_NEGOTIATION', 'RESUME_NEGOTIATION', 'RESUME_PROPOSAL', 'MARK_WON'].includes(action);
   const primary = decisions.find(isPrimary) ?? displayedDecisions.find(isPrimary);
   const secondary = displayedDecisions.filter(action => action !== primary);
   const buttonTone = (action: DecisionCommand['decision']) => `opp-review-${confirmationTone(action)}`;

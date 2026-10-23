@@ -9,7 +9,7 @@ import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
 import { Loading, Notice, OpportunityNumber, Status } from './ui';
 import { money, STATE_LABELS, userLabel } from '../lib/workflow';
 import { AccessUnavailable } from './AccessUnavailable';
-import { STAGE_LABELS } from '../lib/opportunityStatus';
+import { isOpportunityOutcome, OPPORTUNITY_OUTCOME_LABEL, PIPELINE_STAGE_IDS, STAGE_LABELS } from '../lib/opportunityStatus';
 
 const STAGES: OpportunityState[] = ['PREPARATION_PENDING', 'IN_PROGRESS', 'SALES_REVIEW', 'GATE1_PENDING', 'GATE1_GO', 'SALES_REJECTED', 'GATE1_NO_GO'];
 // Workflow progress, coloured with the design system's --progress-* ramp (later steps read greener).
@@ -77,7 +77,7 @@ function OpportunityRow({ opportunity: o, highlight }: { opportunity: Opportunit
 function OpportunityCard({ opportunity: o, highlight }: { opportunity: OpportunitySummary; highlight: boolean }) {
   return <Card className={cn('min-w-0 overflow-hidden border-t-[3px] shadow-sm transition-shadow hover:shadow-md', STAGE_TONE[o.state].top, highlight && 'opp-highlight')}>
     <Link className="block px-2.5 pb-2 pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" to={`/opportunity/${o.id}/details`} aria-label={`View ${o.title}`}>
-      <div className="flex flex-wrap items-center justify-between gap-1.5"><span className="text-[10px] tracking-wide text-muted-foreground">{o.number}</span><OpportunityBadges opportunity={o} /></div>
+      <div className="flex flex-wrap items-center justify-between gap-1.5"><OpportunityNumber number={o.number} /><OpportunityBadges opportunity={o} /></div>
       <h3 className="mt-1 break-words text-[13px] font-semibold leading-snug">{o.title}</h3><p className="text-[11.5px] text-muted-foreground">{o.clientName || 'Client not provided'}</p>
       <div className="mt-1.5"><OpportunityEstimates opportunity={o} /></div>
       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-1.5 text-[11px] text-muted-foreground">
@@ -92,19 +92,21 @@ function OpportunityBoard({ opportunities, savedId }: { opportunities: Opportuni
   type Lane = { key: string; label: string; state: OpportunityState; order: number; items: OpportunitySummary[] };
   const lanes = new Map<string, Lane>();
   if (opportunities.some(o => o.stageId != null)) {
-    lanes.set('stage-1', { key: 'stage-1', label: STAGE_LABELS[1], state: 'SALES_REVIEW', order: 1, items: [] });
-    lanes.set('stage-2', { key: 'stage-2', label: STAGE_LABELS[2], state: 'GATE1_PENDING', order: 2, items: [] });
+    for (const [order, stageId] of PIPELINE_STAGE_IDS.entries()) {
+      const state = stageId === 1 ? 'SALES_REVIEW' : stageId === 2 || stageId === 4 ? 'GATE1_PENDING' : stageId === 3 || stageId === 6 || stageId === 10 ? 'IN_PROGRESS' : stageId === 8 || stageId === 9 ? 'GATE1_NO_GO' : 'GATE1_GO';
+      lanes.set(`stage-${stageId}`, { key: `stage-${stageId}`, label: stageId === 7 ? OPPORTUNITY_OUTCOME_LABEL : STAGE_LABELS[stageId], state, order, items: [] });
+    }
   } else {
     for (const state of ['SALES_REVIEW', 'GATE1_PENDING'] as const) lanes.set(state, { key: state, label: STATE_LABELS[state], state, order: STAGES.indexOf(state), items: [] });
   }
   for (const opportunity of opportunities) {
     const { stageId, state } = opportunity;
-    const key = stageId == null ? state : `stage-${stageId}`;
+    const key = stageId == null ? state : `stage-${isOpportunityOutcome(stageId) ? 7 : stageId}`;
     if (!lanes.has(key)) lanes.set(key, { key, label: stageId == null ? STATE_LABELS[state] : STAGE_LABELS[stageId] ?? `Stage ${stageId}`, state, order: stageId ?? STAGES.indexOf(state), items: [] });
     lanes.get(key)!.items.push(opportunity);
   }
   return <div className="opp-board">{Array.from(lanes.values()).sort((a, b) => a.order - b.order).map(lane => <section key={lane.key} className={`opp-lane opp-state-${lane.state}`}>
-    <h3 className="mb-2 flex items-center justify-between gap-2 text-sm font-semibold">{lane.label}<Badge variant="outline">{lane.items.length}</Badge></h3>
+    <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><span className="opp-lane-dot" aria-hidden="true" /><span className="flex-1">{lane.label}</span><Badge variant="outline">{lane.items.length}</Badge></h3>
     {lane.items.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={savedId === o.id} />)}
     {!lane.items.length && <p className="opp-empty text-xs">No opportunities in this stage.</p>}
   </section>)}</div>;
@@ -121,13 +123,14 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
   const title = queue === 'MY_APPROVALS' ? 'My approvals' : queue === 'MY_WORK' ? 'My Work' : 'Opportunity pipeline';
   useSetPageTitle(title);
   const list = resource.data?.nodes ?? [];
+  const totalLabel = money(list.reduce((sum, opportunity) => sum + Number(opportunity.estimatedValueUsd || 0), 0).toFixed(2), 'USD');
   if (!allowed || resource.error?.message.includes('You do not have permission to view this workflow.')) return <AccessUnavailable page={title} changed={visited.current === queue} destination={
     queue !== 'PIPELINE' && access.pipeline ? { path: '/opportunity', label: 'Go to Pipeline' } :
     queue !== 'MY_WORK' && access.work ? { path: '/opportunity/work', label: 'Go to My Work' } :
     queue !== 'MY_APPROVALS' && access.approvals ? { path: '/opportunity/approvals', label: 'Go to My approvals' } : undefined
   } />;
   return <div className="opp-page">
-    <div className="opp-heading"><div><p className="opp-eyebrow">{queue === 'MY_APPROVALS' ? 'REVIEW & GATE 1' : 'OPPORTUNITY MANAGEMENT'}</p><h2>{title}</h2><p className="text-sm text-muted-foreground">{queue === 'MY_APPROVALS' ? 'Track opportunities across all stages. Open Overview to take the action available to your role.' : queue === 'MY_WORK' ? 'Your preparation, response and review tasks, in one place.' : 'A clear view of every opportunity, from first contact to Gate 1.'}</p></div>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new"><Plus className="size-4" />Add Opportunity</Link></Button>}</div>
+    <div className="opp-heading"><div><p className="opp-eyebrow">{queue === 'MY_APPROVALS' ? 'OPPORTUNITY REVIEWS' : 'OPPORTUNITY MANAGEMENT'}</p><h2>{title}</h2><p className="text-sm text-muted-foreground">{queue === 'MY_APPROVALS' ? 'Track opportunities across all stages. Open Overview to take the action available to your role.' : queue === 'MY_WORK' ? 'Your preparation, response and review tasks, in one place.' : 'Track every opportunity through approvals, estimation, proposal, negotiation and outcome.'}</p></div>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new"><Plus className="size-4" />Add Opportunity</Link></Button>}</div>
     {resource.loading ? <Loading label="Loading permitted opportunities…" /> : resource.error ? <Notice error={resource.error} retry={resource.reload} title="Pipeline unavailable" /> : resource.data && <>
       <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">{[
         // "Pending approval" and "Gate 1 approved" reuse their stage colours; the totals use brand and gold.

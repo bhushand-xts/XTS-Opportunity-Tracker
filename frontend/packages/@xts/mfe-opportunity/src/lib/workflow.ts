@@ -123,7 +123,6 @@ export function decisionError(o: OpportunityDetail, decision: Action, reason: st
       if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) return `Select a ${label} reason.`;
       if (!reason.trim()) return `Enter a ${label} description.`;
     }
-    if (decision === 'SUBMIT_ESTIMATE' && !o.estimation?.rows.length) return 'Save an estimation with at least one work item before submitting for CEO approval.';
     if (decision.endsWith('_REQUEST_CHANGES') && !reason.trim()) return 'Enter the changes requested before returning the opportunity.';
     return null;
   }
@@ -156,8 +155,10 @@ export function applicableDecisions(o: OpportunityDetail): Action[] {
     decisions.push('ESTIMATE_REJECT');
   }
   if (stage === 5 && substage === 10) decisions.push('BID_SUBMITTED');
-  if (stage === 5 && substage === 11) decisions.push('START_NEGOTIATION');
-  if (stage === 6 && substage === 12) decisions.push('MARK_WON', 'MARK_LOST');
+  if (stage === 5 && substage === 11) decisions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
+  if (stage === 6 && substage === 12) decisions.push('MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
+  if (stage === 10 && substage === 19) decisions.push('RESUME_NEGOTIATION');
+  if (stage === 10 && substage === 20) decisions.push('RESUME_PROPOSAL');
   if ([1, 2, 3, 4, 5, 6].includes(stage ?? 0)) decisions.push('CLOSE_OPPORTUNITY');
   return decisions;
 }

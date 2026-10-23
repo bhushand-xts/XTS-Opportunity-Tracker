@@ -67,7 +67,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
   const [questionSearch, setQuestionSearch] = useState('');
   // When checked, the file's own questions are copied verbatim via deterministic local rules; no AI
   // is used and no extraction instructions apply.
-  const [asIs, setAsIs] = useState(false);
+  const asIs = form.rfp.questionnaireTypeId === 2;
   const instructionsRef = useRef<HTMLTextAreaElement>(null);
   const rfpTypeError = useFieldError('RFP type');
   // Always read the latest form/disabled from async extraction callbacks, never a stale closure.
@@ -76,6 +76,8 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
   const generationRef = useRef(0);
   const abortRef = useRef<AbortController>();
   const removedRef = useRef(new Set<string>());
+  const hasExtractedRef = useRef(Boolean(saved?.id || form.rfp.extraction));
+  const replaceOnNextResultRef = useRef(false);
   // The server-side job this form started and hasn't seen finish. Results are only ever
   // applied to this open form, so once it stops watching, the job is cancelled to free the
   // user's pending-extraction slot.
@@ -136,14 +138,17 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     const category = chosenCategory(question) ?? draftTabs.current.get(question.id);
     return category?.trim() || 'Other';
   };
-  // Questions that came from the document, including saved ones recovered on reopening; these are
-  // what a re-extraction or a replaced file replaces.
+  // Recognize extracted questions after reopening for their category controls and replacement flow.
   const fromDocument = (question: PreparedQuestion) => extractedQuestion(question) || restored.fromDocument.has(question.id);
   useEffect(() => {
     if (!status || disabledRef.current) return;
     const incoming = status.questions.filter(q => !removedRef.current.has(q.id) && !removedRef.current.has(extractionCandidateKeys(q)[1]));
     const current = formRef.current;
-    const questions = mergeExtractedQuestions(current.rfp.questions, incoming);
+    // Wait for usable results before replacing a saved set, so a failed retry keeps it intact.
+    if (replaceOnNextResultRef.current && !incoming.length && status.state !== 'SUCCEEDED') return;
+    const questions = mergeExtractedQuestions(replaceOnNextResultRef.current ? [] : current.rfp.questions, incoming);
+    replaceOnNextResultRef.current = false;
+    if (incoming.length || status.state === 'SUCCEEDED') hasExtractedRef.current = true;
     const extraction = { id: status.id, error: status.error, state: extractionState(status.state) };
     setForm({ ...current, rfp: { ...current.rfp, questions, extraction } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176,6 +181,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     cancelRunning();
     const controller = new AbortController(); abortRef.current = controller;
     removedRef.current = new Set();
+    replaceOnNextResultRef.current = false;
     setJob(undefined); setStatus(undefined); setError(undefined);
     return { controller, generation: ++generationRef.current };
   }
@@ -210,9 +216,10 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
       return;
     }
     setInstructionsError(undefined);
-    if (rfp.questions.some(fromDocument) && !window.confirm('Extract again? Previously extracted questions will be replaced; manually added questions are kept.')) return;
-    update({ questions: rfp.questions.filter(q => !fromDocument(q) && q.text.trim()) });
+    const replacing = hasExtractedRef.current || rfp.questions.some(fromDocument);
+    if (replacing && rfp.questions.length && !window.confirm('Extract again? All current questions, including manually added questions, will be replaced.')) return;
     const { controller, generation } = restart();
+    replaceOnNextResultRef.current = replacing;
     try {
       const accepted = await questionExtractionService.retry(uploaded.id, randomUUID(), controller.signal, asIs ? undefined : instructions, asIs ? 'AS_IS' : undefined);
       if (generationRef.current !== generation) return;
@@ -237,8 +244,10 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     generationRef.current++;
     abortRef.current?.abort(); abortRef.current = undefined; cancelRunning();
     setSelectedFile(undefined); setUploaded(undefined); setJob(undefined); setStatus(undefined); setError(undefined);
-    setInstructions(''); setInstructionsError(undefined); setShowInstructions(false); setAsIs(false); setQuestionTab(''); setQuestionSearch('');
+    setInstructions(''); setInstructionsError(undefined); setShowInstructions(false); setQuestionTab(''); setQuestionSearch('');
     removedRef.current.clear();
+    hasExtractedRef.current = false;
+    replaceOnNextResultRef.current = false;
     setRestored({ categories: new Map<string, string>(), fromDocument: new Set<string>() });
     setForm(current => ({
       ...current,
@@ -246,7 +255,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
         ? { ...current.solicitation, contractTerm: '', incumbentVendor: '', preBidMeeting: '' }
         : current.solicitation,
       rfp: {
-        ...current.rfp, type, source: null, extraction: null, questions: [], sections: [],
+        ...current.rfp, type, questionnaireTypeId: type === 'QUESTIONNAIRE' ? 1 : null, source: null, extraction: null, questions: [], sections: [],
         ...(current.rfp.type === 'GENERIC' ? { submissionFormat: 'TECHNICAL_COST' as const, evaluation: '' } : {}),
       },
     }));
@@ -256,9 +265,10 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
     const aiUpload = rfp.type === 'QUESTIONNAIRE' && extractionEnabled;
     if (!(aiUpload ? /\.(pdf|docx?|txt|xlsx|csv)$/i : /\.(pdf|docx?|txt)$/i).test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) { setError(aiUpload ? 'Choose a non-empty PDF, Word, Excel (.xlsx), CSV or text document up to 25 MB.' : 'Choose a non-empty PDF, Word or text document up to 25 MB.'); return; }
     if (rfp.type === 'QUESTIONNAIRE' && extractionEnabled) {
-      if (rfp.questions.some(fromDocument) && !window.confirm('Replace the source document? Previously extracted questions will be removed; manually added questions are kept.')) return;
+      const replacing = hasExtractedRef.current || rfp.questions.some(fromDocument);
+      if (replacing && rfp.questions.length && !window.confirm('Replace the source document? All current questions, including manually added questions, will be removed.')) return;
       setError(undefined); setSelectedFile(file);
-      update({ questions: rfp.questions.filter(q => !fromDocument(q) && q.text.trim()) });
+      update({ questions: replacing ? [] : rfp.questions.filter(q => q.text.trim()) });
       // Upload only; the user extracts once their instructions are ready.
       await uploadDocument(file);
       return;
@@ -363,7 +373,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
             <Tooltip>
               <TooltipTrigger asChild>
                 <Label className="opp-mode-option">
-                  <Checkbox disabled={locked} checked={!asIs} onCheckedChange={checked => { if (checked === true) setAsIs(false); }} />
+                  <Checkbox disabled={locked} checked={!asIs} onCheckedChange={checked => { if (checked === true) update({ questionnaireTypeId: 1 }); }} />
                   <span>Document-Based Questionnaire</span>
                 </Label>
               </TooltipTrigger>
@@ -372,7 +382,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
             <Tooltip>
               <TooltipTrigger asChild>
                 <Label className="opp-mode-option">
-                  <Checkbox disabled={locked} checked={asIs} onCheckedChange={checked => { if (checked === true) setAsIs(true); }} />
+                  <Checkbox disabled={locked} checked={asIs} onCheckedChange={checked => { if (checked === true) update({ questionnaireTypeId: 2 }); }} />
                   <span>Client-Predefined Questionnaire</span>
                 </Label>
               </TooltipTrigger>

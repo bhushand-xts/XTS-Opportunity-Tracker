@@ -5,6 +5,18 @@ import { OpportunityProgress } from './OpportunityProgress';
 
 afterEach(cleanup);
 
+it('shows Negotiation followed by the combined outcome position after proposal submission', () => {
+  render(<OpportunityProgress opportunity={fixtureOpportunity({ stageId: 5, subStageId: 11, stageHistory: [] })} />);
+  const timeline = screen.getByRole('list', { name: 'Opportunity progress history' });
+  expect(Array.from(timeline.children).slice(0, 3).map(item => item.querySelector('h3')?.textContent)).toEqual([
+    'Outcome (Won / Lost / Hold)', 'Negotiation', 'Proposal / Bid Submitted',
+  ]);
+  const outcome = screen.getByRole('heading', { name: 'Outcome (Won / Lost / Hold)' }).closest('li')!;
+  expect(outcome).toHaveClass('upcoming');
+  expect(outcome.querySelector('time')).toBeNull();
+  for (const label of ['Won', 'Lost', 'On Hold']) expect(within(outcome).queryByText(label)).not.toBeInTheDocument();
+});
+
 it('shows recorded progress newest first with dates and no comments', () => {
   const createdDt = '2026-10-19T04:00:00.000Z';
   const pending = '2026-10-19T04:01:00.000Z', held = '2026-10-19T05:00:00.000Z', qualifying = '2026-10-20T06:00:00.000Z';
@@ -16,7 +28,7 @@ it('shows recorded progress newest first with dates and no comments', () => {
   const timeline = screen.getByRole('list', { name: 'Opportunity progress history' });
   expect(Array.from(timeline.querySelectorAll('time')).map(time => time.dateTime)).toEqual([qualifying, qualifying, held, pending, createdDt]);
   expect(Array.from(timeline.children).map(item => item.querySelector('h3')?.textContent)).toEqual([
-    'Negotiation', 'Proposal / Bid Submitted', 'Estimate Review & Approval', 'Solution/Scoping Estimation (Engineering)', 'Qualifying (Go/No-Go)', 'Identified',
+    'Outcome (Won / Lost / Hold)', 'Negotiation', 'Proposal / Bid Submitted', 'Estimate Review & Approval', 'Solution/Scoping Estimation (Engineering)', 'Qualifying (Go/No-Go)', 'Identified',
   ]);
   const future = screen.getByRole('heading', { name: 'Negotiation' }).closest('li')!;
   expect(future).toHaveClass('upcoming');
@@ -115,4 +127,56 @@ it('keeps the current status visible without inventing a date when history is mi
   expect(timeline.querySelectorAll('time')).toHaveLength(0);
   expect(timeline.querySelector('[aria-current="step"]')).toHaveTextContent('Pending Go/No-Go');
   expect(timeline.querySelector('[aria-current="step"]')).toHaveTextContent('Date unavailable');
+});
+
+it('records proposal, negotiation, hold, resume and outcome without replacing the original stage completion', () => {
+  const proposalAt = '2026-10-23T04:00:00Z';
+  const negotiationAt = '2026-10-23T05:00:00Z';
+  const heldAt = '2026-10-23T06:00:00Z';
+  const resumedAt = '2026-10-23T07:00:00Z';
+  const wonAt = '2026-10-23T08:00:00Z';
+  render(<OpportunityProgress opportunity={fixtureOpportunity({ stageId: 7, subStageId: 13, stageHistory: [
+    { id: '1', stageId: 5, subStageId: 10, reachedAt: proposalAt },
+    { id: '2', stageId: 5, subStageId: 11, reachedAt: proposalAt },
+    { id: '3', stageId: 6, subStageId: 12, reachedAt: negotiationAt },
+    { id: '4', stageId: 10, subStageId: 19, reachedAt: heldAt },
+    { id: '5', stageId: 6, subStageId: 12, reachedAt: resumedAt },
+    { id: '6', stageId: 7, subStageId: 13, reachedAt: wonAt },
+  ] })} />);
+  const timeline = screen.getByRole('list', { name: 'Opportunity progress history' });
+  expect(timeline.querySelector('[aria-current="step"]')).toHaveTextContent('Outcome (Won / Lost / Hold)');
+  expect(timeline.querySelector('[aria-current="step"]')).toHaveTextContent('Won');
+  const proposal = screen.getByRole('heading', { name: 'Proposal / Bid Submitted' }).closest('li')!;
+  expect(proposal.querySelector('.opp-stage-completion time')).toHaveAttribute('datetime', new Date(negotiationAt).toISOString());
+  expect(within(proposal).getByText('Bid Submitted')).toBeVisible();
+  const negotiation = screen.getByRole('heading', { name: 'Negotiation' }).closest('li')!;
+  expect(within(negotiation).getAllByText('Under Negotiation')).toHaveLength(2);
+  expect(within(negotiation).getByText('Won')).toBeVisible();
+  const outcome = screen.getByRole('heading', { name: 'Outcome (Won / Lost / Hold)' }).closest('li')!;
+  expect(within(outcome).getByText('On Hold')).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Closed — Lost' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Closed — Won' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'On Hold' })).not.toBeInTheDocument();
+});
+
+it.each([[7, 13, 'Won'], [8, 14, 'Lost'], [10, 20, 'On Hold']] as const)('shows only the recorded %s outcome after a submitted bid', (stageId, subStageId, label) => {
+  render(<OpportunityProgress opportunity={fixtureOpportunity({ stageId, subStageId, stageHistory: [
+    { id: '1', stageId: 5, subStageId: 11, reachedAt: '2026-10-23T05:00:00Z' },
+    { id: '2', stageId, subStageId, reachedAt: '2026-10-23T06:00:00Z' },
+  ] })} />);
+  const outcome = screen.getByRole('heading', { name: 'Outcome (Won / Lost / Hold)' }).closest('li')!;
+  expect(outcome).toHaveAttribute('aria-current', 'step');
+  expect(within(outcome).getByText(label)).toBeVisible();
+  expect(outcome.querySelectorAll('time')).toHaveLength(1);
+  for (const other of ['Won', 'Lost', 'On Hold'].filter(choice => choice !== label)) expect(within(outcome).queryByText(other)).not.toBeInTheDocument();
+  const negotiation = screen.getByRole('heading', { name: 'Negotiation' }).closest('li')!;
+  expect(negotiation).toHaveClass('upcoming');
+  expect(negotiation.querySelector('time')).toBeNull();
+});
+
+it('shows an outcome status without inventing timestamps when history is missing', () => {
+  render(<OpportunityProgress opportunity={fixtureOpportunity({ stageId: 8, subStageId: 14, stageHistory: [] })} />);
+  const outcome = screen.getByRole('heading', { name: 'Outcome (Won / Lost / Hold)' }).closest('li')!;
+  expect(outcome).toHaveTextContent('Lost');
+  expect(outcome).toHaveTextContent('Date unavailable');
 });

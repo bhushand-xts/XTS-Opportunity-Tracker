@@ -42,6 +42,55 @@ async function selectHoldReason(dialog: ReturnType<typeof within>) {
 }
 
 describe('persisted opportunity review actions', () => {
+  it('keeps the saved CEO estimation hold selected after reopening, alongside approve and reject', () => {
+    const held = salesReview({ stageId: 4, subStageId: 9, allowedActions: ['ESTIMATE_APPROVE', 'ESTIMATE_REJECT'] });
+    const { rerender } = mount(held);
+    const hold = screen.getByRole('button', { name: 'Put Estimation On Hold', pressed: true });
+    expect(hold).toBeVisible();
+    expect(hold).toBeDisabled();
+    expect(hold).toHaveClass('shadow-inner', 'text-amber-700');
+    expect(screen.getByRole('button', { name: 'Approve Estimation' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reject Estimation' })).toBeEnabled();
+    rerender({ ...held, allowedActions: [] });
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    rerender({ ...held, stageId: 5, subStageId: 10, allowedActions: ['BID_SUBMITTED'] });
+    expect(screen.queryByRole('button', { name: 'Put Estimation On Hold' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Proposal / Bid Submitted' })).toBeEnabled();
+  });
+
+  it('submits an estimate without a matrix and records the manual decision note', async () => {
+    const current = salesReview({ stageId: 3, subStageId: 7, allowedActions: ['SUBMIT_ESTIMATE'], estimation: null });
+    const saved = { ...current, stageId: 4, subStageId: 8, allowedActions: [] };
+    const decide = vi.fn(async () => saved);
+    const { onSaved } = mount(current, decide);
+    const dialog = openDecision('Submit Estimation to CEO');
+    fireEvent.change(dialog.getByRole('textbox'), { target: { value: 'Please review the prepared estimate.' } });
+    confirmReview(dialog);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved));
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'SUBMIT_ESTIMATE', reason: 'Please review the prepared estimate.' }));
+  });
+
+  it.each([
+    { stageId: 5, subStageId: 11, heldSubstage: 20, resume: 'RESUME_PROPOSAL', label: 'Resume Proposal Follow-up' },
+    { stageId: 6, subStageId: 12, heldSubstage: 19, resume: 'RESUME_NEGOTIATION', label: 'Resume Negotiation' },
+  ] as const)('shows outcome choices at $stageId/$subStageId and resumes the step that was held', async ({ stageId, subStageId, heldSubstage, resume, label }) => {
+    const current = salesReview({ stageId, subStageId, allowedActions: ['START_NEGOTIATION', 'MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD', 'BID_SUBMITTED'] });
+    const saved = { ...current, stageId: 10, subStageId: heldSubstage, allowedActions: [resume] };
+    const decide = vi.fn(async () => saved);
+    const { onSaved, rerender } = mount(current, decide);
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(stageId === 5 ? ['Under Negotiation', 'Won', 'Lost', 'On Hold'] : ['Won', 'Lost', 'On Hold']);
+    const dialog = openDecision('On Hold');
+    confirmReview(dialog);
+    expect(await dialog.findByRole('alert')).toHaveTextContent('Select a hold reason.');
+    await selectHoldReason(dialog);
+    fireEvent.change(dialog.getByRole('textbox'), { target: { value: 'Waiting for client budget.' } });
+    confirmReview(dialog);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved));
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'OPPORTUNITY_HOLD', reasonCodeId: 3 }));
+    rerender(saved);
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual([label]);
+  });
+
   it('removes the Sales Head action area once the opportunity moves to Qualifying', () => {
     const { container } = render(<OpportunityServiceContext.Provider value={productionOpportunityService}><ReviewActions opportunity={salesReview({ stageId: 2, subStageId: 4, allowedActions: ['CLOSE_OPPORTUNITY'] })} onSaved={vi.fn()} /></OpportunityServiceContext.Provider>);
     expect(container).toBeEmptyDOMElement();
@@ -59,8 +108,10 @@ describe('persisted opportunity review actions', () => {
     { stageId: 2, subStageId: 4, actions: ['GATE1_GO', 'SALES_APPROVE'], current: 'Approve Go', previous: 'Approve & Send to CEO' },
     { stageId: 3, subStageId: 7, actions: ['SUBMIT_ESTIMATE', 'GATE1_GO'], current: 'Submit Estimation to CEO', previous: 'Approve Go' },
     { stageId: 4, subStageId: 8, actions: ['ESTIMATE_APPROVE', 'SUBMIT_ESTIMATE'], current: 'Approve Estimation', previous: 'Submit Estimation to CEO' },
-    { stageId: 5, subStageId: 10, actions: ['BID_SUBMITTED', 'ESTIMATE_APPROVE'], current: 'Bid Submitted', previous: 'Approve Estimation' },
+    { stageId: 5, subStageId: 10, actions: ['BID_SUBMITTED', 'ESTIMATE_APPROVE'], current: 'Proposal / Bid Submitted', previous: 'Approve Estimation' },
+    { stageId: 5, subStageId: 11, actions: ['BID_SUBMITTED', 'START_NEGOTIATION'], current: 'Under Negotiation', previous: 'Proposal / Bid Submitted' },
     { stageId: 6, subStageId: 12, actions: ['MARK_WON', 'START_NEGOTIATION'], current: 'Won', previous: 'Under Negotiation' },
+    { stageId: 10, subStageId: 19, actions: ['OPPORTUNITY_HOLD', 'RESUME_NEGOTIATION'], current: 'Resume Negotiation', previous: 'On Hold' },
   ] as const)('shows only the current-stage actions at stage $stageId after reopening details', ({ stageId, subStageId, actions, current, previous }) => {
     mount(salesReview({ stageId, subStageId, allowedActions: [...actions] }));
     expect(screen.getByRole('button', { name: current })).toBeEnabled();
@@ -106,9 +157,12 @@ describe('persisted opportunity review actions', () => {
   it.each([
     ['SUBMIT_ESTIMATE', 'Submit Estimation to CEO', 3, 7, 4, 8],
     ['ESTIMATE_APPROVE', 'Approve Estimation', 4, 8, 5, 10],
-    ['BID_SUBMITTED', 'Bid Submitted', 5, 10, 5, 11],
+    ['BID_SUBMITTED', 'Proposal / Bid Submitted', 5, 10, 5, 11],
     ['START_NEGOTIATION', 'Under Negotiation', 5, 11, 6, 12],
     ['MARK_WON', 'Won', 6, 12, 7, 13], ['MARK_LOST', 'Lost', 6, 12, 8, 14],
+    ['RESUME_NEGOTIATION', 'Resume Negotiation', 10, 19, 6, 12],
+    ['RESUME_PROPOSAL', 'Resume Proposal Follow-up', 10, 20, 5, 11],
+    ['MARK_WON', 'Won', 5, 11, 7, 13], ['MARK_LOST', 'Lost', 5, 11, 8, 14],
   ] as const)('records the %s action for the current stage without a checkbox', async (decision, label, stageId, subStageId, nextStage, nextSubstage) => {
     const current = salesReview({ stageId, subStageId, allowedActions: [decision], estimation: { revision: 1, rows: [{ id: 'row', workItem: 'Engineering', hours: '2', people: 1, hourlyRate: '100' }], assumptions: '', total: '200.00' } });
     const saved = { ...current, stageId: nextStage, subStageId: nextSubstage, allowedActions: decision === 'BID_SUBMITTED' ? ['START_NEGOTIATION' as const] : [] };
@@ -120,19 +174,12 @@ describe('persisted opportunity review actions', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved));
     expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision, expectedStageId: stageId, expectedSubStageId: subStageId }));
     rerender(saved);
-    if (nextStage === stageId) {
-      const selected = screen.getByRole('button', { name: label, pressed: true });
-      expect(selected).toBeDisabled();
-      expect(selected).toHaveClass('shadow-inner');
-      fireEvent.click(selected);
-    } else {
-      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
-    }
+    expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+    if (decision === 'BID_SUBMITTED') expect(screen.getByRole('button', { name: 'Under Negotiation' })).toBeEnabled();
     expect(decide).toHaveBeenCalledTimes(1);
     cleanup();
     mount(saved);
-    if (nextStage === stageId) expect(screen.getByRole('button', { name: label, pressed: true })).toBeDisabled();
-    else expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
   });
   it.each([{ stageId: 1, subStageId: 2 }, { stageId: 2, subStageId: 5 }])('keeps the review area clear while corrections are edited at $stageId / $subStageId', ({ stageId, subStageId }) => {
     const decide = vi.fn();
@@ -223,7 +270,7 @@ describe('persisted opportunity review actions', () => {
     { stageId: 1, subStageId: 1, held: 3, approve: 'SALES_APPROVE', hold: 'SALES_HOLD', label: 'On Hold', next: 'Approve & Send to CEO' },
     { stageId: 2, subStageId: 4, held: 6, approve: 'GATE1_GO', hold: 'GATE1_HOLD', label: 'On Hold', next: 'Approve Go' },
     { stageId: 4, subStageId: 8, held: 9, approve: 'ESTIMATE_APPROVE', hold: 'ESTIMATE_HOLD', label: 'Put Estimation On Hold', next: 'Approve Estimation' },
-  ] as const)('keeps the held action visible and selected at stage $stageId', async ({ stageId, subStageId, held, approve, hold, label, next }) => {
+  ] as const)('keeps the completed hold selected at review stage $stageId', async ({ stageId, subStageId, held, approve, hold, label, next }) => {
     const warning = vi.spyOn(toast, 'warning');
     const current = salesReview({ stageId, subStageId, allowedActions: [approve, hold] });
     // Retain a stale hold grant to verify that persisted status also protects the UI.

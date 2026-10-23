@@ -2,12 +2,50 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { newDraft, pendingSaveFieldErrors } from '../lib/workflow';
 import { DECISION_ROLE_IDS } from '../lib/opportunityOptions';
 import { productionOpportunityService } from './OpportunityService';
+import { CREATE_OPPORTUNITY, UPDATE_OPPORTUNITY } from './opportunity.queries';
 
 const api = vi.hoisted(() => ({ query: vi.fn(), mutate: vi.fn() }));
 vi.mock('@xts/api-client', () => ({ getApolloClient: () => api }));
 
 describe('opportunity custom choices and client budget', () => {
   beforeEach(() => vi.resetAllMocks());
+
+  it.each([1, 2] as const)('saves questionnaire mode %s on questions, restores it, and sends a changed mode on update', async questionnaireTypeId => {
+    const form = newDraft('1');
+    form.rfp.type = 'QUESTIONNAIRE'; form.rfp.questionnaireTypeId = questionnaireTypeId;
+    form.rfp.questions = [{ id: 'q1', text: 'Describe delivery.', sourceReference: '', validated: true, category: 'Technical' }];
+    const backend = {
+      opportunityId: 1, rfpType: 1, proposalQuestions: ['Describe delivery.'],
+      proposalQuestionIds: [null], proposalQuestionCategories: ['Technical'], proposalQuestionnaireTypeIds: [questionnaireTypeId],
+    };
+    api.mutate.mockResolvedValue({ data: { createOpportunity: { opportunityId: 1 }, updateOpportunity: { opportunityId: 1 } } });
+    api.query.mockImplementation(async ({ query }) => ({ data: query.definitions.some((definition: { name?: { value: string } }) => definition.name?.value === 'GetOpportunity')
+      ? { opportunity: backend } : { userList: [], rolesList: [] } }));
+    const saved = await productionOpportunityService.save({ id: null, expectedRevision: null, idempotencyKey: 'mode-create', form });
+    expect(api.mutate.mock.calls[0][0]).toMatchObject({ mutation: CREATE_OPPORTUNITY, variables: { input: {
+      proposalQuestionSelections: [{ questionId: null, question: 'Describe delivery.', category: 'Technical', questionnaireTypeId }],
+    } } });
+    expect(api.mutate.mock.calls[0][0].variables.input).not.toHaveProperty('questionnaireTypeId');
+    expect(saved.form.rfp.questionnaireTypeId).toBe(questionnaireTypeId);
+    const nextType = questionnaireTypeId === 1 ? 2 : 1;
+    saved.form.rfp.questionnaireTypeId = nextType; backend.proposalQuestionnaireTypeIds = [nextType];
+    const updated = await productionOpportunityService.save({ id: '1', expectedRevision: 1, idempotencyKey: 'mode-update', form: saved.form });
+    expect(api.mutate.mock.calls[1][0]).toMatchObject({ mutation: UPDATE_OPPORTUNITY, variables: { input: {
+      proposalQuestionSelections: [{ questionnaireTypeId: nextType }],
+    } } });
+    expect(updated.form.rfp.questionnaireTypeId).toBe(nextType);
+  });
+
+  it('clears questionnaire mode when saving Generic RFP questions', async () => {
+    const form = newDraft('1'); form.rfp.type = 'GENERIC'; form.rfp.questionnaireTypeId = 2;
+    form.rfp.questions = [{ id: 'q1', text: 'Describe delivery.', sourceReference: '', validated: true }];
+    api.mutate.mockResolvedValue({ data: { createOpportunity: { opportunityId: 1 } } });
+    api.query.mockResolvedValueOnce({ data: { opportunity: { opportunityId: 1, rfpType: 2, proposalQuestionnaireTypeIds: [2] } } })
+      .mockResolvedValueOnce({ data: { userList: [], rolesList: [] } });
+    const saved = await productionOpportunityService.save({ id: null, expectedRevision: null, idempotencyKey: 'mode-generic', form });
+    expect(api.mutate.mock.calls[0][0].variables.input.proposalQuestionSelections[0].questionnaireTypeId).toBeNull();
+    expect(saved.form.rfp.questionnaireTypeId).toBeNull();
+  });
 
   it('requires custom service text and rejects invalid USD amounts', () => {
     const draft = newDraft('1');

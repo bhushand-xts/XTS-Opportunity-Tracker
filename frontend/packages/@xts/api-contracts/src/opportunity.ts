@@ -4,7 +4,7 @@ export type LocalDate = string;
 export type OpportunityState = 'PREPARATION_PENDING' | 'IN_PROGRESS' | 'SALES_REVIEW' | 'GATE1_PENDING' | 'GATE1_GO' | 'SALES_REJECTED' | 'GATE1_NO_GO';
 export type ResponseState = 'UNASSIGNED' | 'ASSIGNED' | 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'CHANGES_REQUESTED';
 export type Module = 'overview' | 'responses' | 'estimation' | 'scope' | 'assignment' | 'activity';
-export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
+export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
 export interface DirectoryUser { id: string; name: string; email: string; roles: string[]; active: boolean; }
 export interface Contact { id?: string; name: string; title: string; email: string; phone: string; decisionRole: string; decisionRoleOther?: string; }
 export type AdditionalContact = Contact;
@@ -28,6 +28,7 @@ export interface PreparedQuestion { id: string; text: string; sourceReference: s
 export interface ProposalSection { key: string; instructions: string; }
 export interface RfpDraft {
   type: 'QUESTIONNAIRE' | 'GENERIC' | null; source: SourceDocument | null;
+  questionnaireTypeId?: 1 | 2 | null;
   extraction: { id: string; state: 'PROCESSING' | 'SUCCEEDED' | 'FAILED'; error: string | null } | null;
   questions: PreparedQuestion[]; sections: ProposalSection[];
   submissionFormat: 'TECHNICAL_COST' | 'COMBINED'; outputFormat: 'PDF' | 'DOCX' | 'PPTX';
@@ -77,7 +78,7 @@ export interface DecisionCommand extends VersionCommand {
   packageRevision: number | null;
   expectedStageId?: number | null; expectedSubStageId?: number | null;
   reasonCodeId?: number | null;
-  decision: 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT';
+  decision: 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT';
   reason: string; confirmed: boolean;
 }
 export interface LookupOption { id: string; label: string; code?: string; }

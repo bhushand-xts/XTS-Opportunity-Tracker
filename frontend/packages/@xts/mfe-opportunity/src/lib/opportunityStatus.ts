@@ -14,6 +14,12 @@ export const STAGE_LABELS: Record<number, string> = {
   10: 'On Hold',
 };
 
+export const OPPORTUNITY_OUTCOME_LABEL = 'Outcome (Won / Lost / Hold)';
+export const PIPELINE_STAGE_IDS = [1, 2, 3, 4, 5, 6, 7, 9];
+export function isOpportunityOutcome(stageId: number | null | undefined) {
+  return [7, 8, 10].includes(stageId ?? 0);
+}
+
 const SUBSTAGES: Record<number, { stageId: number; label: string }> = {
   1: { stageId: 1, label: 'Pending Review' },
   2: { stageId: 1, label: 'Changes Requested' },
@@ -33,6 +39,8 @@ const SUBSTAGES: Record<number, { stageId: number; label: string }> = {
   16: { stageId: 9, label: 'No-Go by CEO' },
   17: { stageId: 9, label: 'Estimate Rejected by CEO' },
   18: { stageId: 9, label: 'Closed by Sales' },
+  19: { stageId: 10, label: 'Negotiation On Hold' },
+  20: { stageId: 10, label: 'Proposal Follow-up On Hold' },
 };
 
 /** Display persisted master IDs without changing the legacy workflow state. */

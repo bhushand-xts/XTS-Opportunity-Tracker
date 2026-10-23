@@ -21,10 +21,11 @@ const accepted = { document, jobId: 'job-1' };
 const success: QuestionExtractionStatus = { id: 'job-1', state: 'SUCCEEDED', completed: 1, total: 1, error: null,
   questions: [{ id: 'extracted-1', text: 'Describe security controls.', sourceReference: 'Page 1 (b1)', validated: false }] };
 
-async function mount() {
+async function mount(questionnaireTypeId?: 1 | 2) {
   function Harness() {
     const [form, setForm] = useState(() => {
       const form = newDraft('1'); form.rfp.type = 'QUESTIONNAIRE';
+      form.rfp.questionnaireTypeId = questionnaireTypeId;
       form.rfp.questions = [{ id: 'manual-1', text: 'Existing manual question', sourceReference: '', validated: false }]; return form;
     });
     const [disabled, setDisabled] = useState(false);
@@ -109,6 +110,7 @@ describe('prompt-driven question extraction', () => {
     expect(asWritten).not.toBeChecked();
     fireEvent.click(asWritten);
     expect(asWritten).toBeChecked();
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questionnaireTypeId).toBe(2);
     expect(generated).not.toBeChecked();
     // Clicking the already-checked box again can't deselect down to zero selections.
     fireEvent.click(asWritten);
@@ -116,6 +118,18 @@ describe('prompt-driven question extraction', () => {
     fireEvent.click(generated);
     expect(generated).toBeChecked();
     expect(asWritten).not.toBeChecked();
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questionnaireTypeId).toBe(1);
+  });
+  it('restores Client-Predefined from the saved form and uses that mode for extraction', async () => {
+    api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);
+    await mount(2); await upload();
+    expect(screen.getByRole('checkbox', { name: 'Client-Predefined Questionnaire' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Document-Based Questionnaire' })).not.toBeChecked();
+    expect(screen.queryByRole('button', { name: /extraction instructions/i })).not.toBeInTheDocument();
+    fireEvent.click(extractButton());
+    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), undefined, 'AS_IS'));
+    expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Describe security controls.');
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questionnaireTypeId).toBe(2);
   });
   it('imports questions as-is when "Client-Predefined Questionnaire" is checked, hiding instructions and sending none to the server', async () => {
     api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);
@@ -189,12 +203,37 @@ describe('prompt-driven question extraction', () => {
     fireEvent.change(instructionsBox(), { target: { value: 'Extract: pricing questions only.' } });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     startExtraction();
-    await waitFor(() => expect(screen.getByLabelText('Question 2 text')).toHaveValue('Provide a cost proposal.'));
+    await waitFor(() => expect(screen.getByLabelText('Question 1 text')).toHaveValue('Provide a cost proposal.'));
     expect(confirm).toHaveBeenCalled();
     expect(api.retry.mock.calls[1][3]).toBe('Extract: pricing questions only.');
     expect(screen.queryByDisplayValue('Describe security controls.')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Question 1 text')).toHaveValue('Existing manual question');
+    expect(screen.queryByDisplayValue('Existing manual question')).not.toBeInTheDocument();
     expect(api.upload).toHaveBeenCalledTimes(1);
+  });
+  it('replaces 29 extracted questions and an old manual question with 36 latest questions, then keeps a newly added question', async () => {
+    const previous = Array.from({ length: 29 }, (_, index) => ({ id: `extracted-old-${index}`, text: `Old question ${index + 1}`, sourceReference: '', validated: false }));
+    const latest = Array.from({ length: 36 }, (_, index) => ({ id: `extracted-new-${index}`, text: `Latest question ${index + 1}`, sourceReference: '', validated: false }));
+    api.retry.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ ...accepted, jobId: 'job-2' });
+    api.status.mockResolvedValueOnce({ ...success, questions: previous }).mockResolvedValueOnce({ ...success, id: 'job-2', questions: latest });
+    await mount();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove question 1' }));
+    await upload(); startExtraction();
+    const questions = () => JSON.parse(screen.getByTestId('form').textContent!).rfp.questions;
+    await waitFor(() => expect(questions()).toHaveLength(29));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
+    fireEvent.change(screen.getByLabelText('Question 30 text'), { target: { value: 'Old manually added question' } });
+    expect(questions()).toHaveLength(30);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Client-Predefined Questionnaire' }));
+    startExtraction();
+    await waitFor(() => expect(questions()).toHaveLength(36));
+    expect(questions().map((question: { text: string }) => question.text)).toEqual(latest.map(question => question.text));
+    expect(screen.queryByDisplayValue('Old manually added question')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
+    fireEvent.change(screen.getByLabelText('Question 37 text'), { target: { value: 'New manually added question' } });
+    expect(questions()).toHaveLength(37);
+    expect(questions()[36].text).toBe('New manually added question');
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questionnaireTypeId).toBe(2);
   });
   it('explains when no questions matched the instructions', async () => {
     api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue({ ...success, questions: [] });
@@ -449,7 +488,7 @@ describe('reopening a saved opportunity', () => {
     expect(screen.getByRole('button', { name: 'Extract questions' })).toBeEnabled();
     expect(screen.getByTestId('form').textContent).not.toContain('"category"');
   });
-  it('re-extracting replaces questions that came from the document and keeps manual ones', async () => {
+  it('re-extracting a saved opportunity replaces both extracted and manual questions', async () => {
     api.source.mockResolvedValue(restoredSource);
     api.retry.mockResolvedValue({ document: restoredSource.document, jobId: 'job-9' });
     api.status.mockResolvedValue({ id: 'job-9', state: 'SUCCEEDED', completed: 1, total: 1, error: null,
@@ -458,14 +497,14 @@ describe('reopening a saved opportunity', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Extract questions' })).toBeEnabled());
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Extract questions' }));
-    // The manual question is kept in its own section tab, which opens first.
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Technical (1)' })).toBeInTheDocument());
-    expect(screen.getByDisplayValue('Manual staffing question')).toBeInTheDocument();
     expect(confirm).toHaveBeenCalled();
     expect(api.retry).toHaveBeenCalledWith(restoredSource.document.id, expect.any(String), expect.any(AbortSignal), '', undefined);
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Technical (1)' }));
     await waitFor(() => expect(screen.getByDisplayValue('Describe your hosting and security approach.')).toBeInTheDocument());
     expect(screen.queryByDisplayValue('Describe your hosting environment.')).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Manual staffing question')).not.toBeInTheDocument();
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questions).toHaveLength(1);
   });
   it('still works when nothing was stored for the opportunity', async () => {
     api.source.mockRejectedValue(new Error('offline'));

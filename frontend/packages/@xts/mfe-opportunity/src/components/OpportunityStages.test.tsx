@@ -50,6 +50,8 @@ describe('persisted stage and substage display', () => {
     [9, 16, 'No-Bid / Declined', 'No-Go by CEO'],
     [9, 17, 'No-Bid / Declined', 'Estimate Rejected by CEO'],
     [9, 18, 'No-Bid / Declined', 'Closed by Sales'],
+    [10, 19, 'On Hold', 'Negotiation On Hold'],
+    [10, 20, 'On Hold', 'Proposal Follow-up On Hold'],
   ])('shows stage %s / substage %s independently of the legacy state', (stageId, subStageId, stage, substage) => {
     render(<Status state="SALES_REVIEW" stageId={Number(stageId)} subStageId={Number(subStageId)} />);
     expect(screen.getByLabelText(`${stage} — ${substage}`)).toBeVisible();
@@ -64,6 +66,26 @@ describe('persisted stage and substage display', () => {
     fireEvent.click(screen.getByRole('button', { name: 'List' }));
     const table = within(screen.getByRole('table'));
     for (const substage of ['Pending Review', 'Changes Requested', 'On Hold']) expect(table.getByLabelText(`Identified — ${substage}`)).toBeInTheDocument();
+  });
+
+  it('shows the complete pipeline in order even when later stages are empty', async () => {
+    const { container } = mount([fixtureOpportunity({ stageId: 3, subStageId: 7 })]);
+    await screen.findByRole('heading', { name: /^Solution\/Scoping Estimation/ });
+    expect(Array.from(container.querySelectorAll('.opp-lane > h3')).map(heading => heading.querySelector('.flex-1')?.textContent)).toEqual([
+      'Identified', 'Qualifying (Go/No-Go)', 'Solution/Scoping Estimation (Engineering)', 'Estimate Review & Approval',
+      'Proposal / Bid Submitted', 'Negotiation', 'Outcome (Won / Lost / Hold)', 'No-Bid / Declined',
+    ]);
+  });
+
+  it('groups won, lost and held opportunities under Outcome (Won / Lost / Hold) while keeping their actual status', async () => {
+    mount([[7, 13], [8, 14], [10, 19], [10, 20]].map(([stageId, subStageId]) => fixtureOpportunity({ id: String(subStageId), title: `Outcome ${subStageId}`, stageId, subStageId })));
+    const heading = await screen.findByRole('heading', { name: /^Outcome \(/ });
+    const lane = within(heading.closest('section')!);
+    expect(lane.getAllByRole('link')).toHaveLength(4);
+    expect(lane.getByLabelText('Closed — Won — Won')).toBeVisible();
+    expect(lane.getByLabelText('Closed — Lost — Lost')).toBeVisible();
+    expect(lane.getByLabelText('On Hold — Negotiation On Hold')).toBeVisible();
+    expect(lane.getByLabelText('On Hold — Proposal Follow-up On Hold')).toBeVisible();
   });
 
   it.each([[1, 3, 'Identified', 'On Hold'], [2, 4, 'Qualifying (Go/No-Go)', 'Pending Go/No-Go']])('shows persisted progress without duplicating it in the detail header at %s / %s', async (stageId, subStageId, stage, substage) => {

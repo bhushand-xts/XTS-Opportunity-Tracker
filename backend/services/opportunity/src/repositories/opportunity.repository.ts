@@ -59,10 +59,11 @@ export interface Opportunity {
   proposalQuestions?: string[];
   proposalQuestionIds?: number[];
   proposalQuestionCategories?: (string | null)[];
+  proposalQuestionnaireTypeIds?: (number | null)[];
 }
 
 export interface OpportunityInput {
-  proposalQuestionSelections?: { questionId: number | null; question: string; category?: string | null }[];
+  proposalQuestionSelections?: { questionId: number | null; question: string; category?: string | null; questionnaireTypeId?: number | null }[];
   opportunityName?: string | null;
   opportunityTypeId?: number | null;
   sourceTypeId?: number | null;
@@ -136,6 +137,7 @@ export interface RfpQuestionSelectionInput {
   questionId: number;
   question: string;
   category?: string | null;
+  questionnaireTypeId?: number | null;
 }
 
 export type RfpIntakeOpportunityUpdateInput = RfpIntakeOpportunityInput;
@@ -233,6 +235,10 @@ const OPPORTUNITY_LIST_COLUMNS = `
     FROM tbl_opportunity_questions_answers
     WHERE opportunity_id = o.opportunity_id AND is_active = TRUE),
     ARRAY[]::TEXT[]) AS "proposalQuestionCategories",
+  COALESCE((SELECT ARRAY_AGG(questionnaire_type_id ORDER BY qa_id)
+    FROM tbl_opportunity_questions_answers
+    WHERE opportunity_id = o.opportunity_id AND is_active = TRUE),
+    ARRAY[]::INTEGER[]) AS "proposalQuestionnaireTypeIds",
   (SELECT comment FROM tbl_opportunity_engage_tracker
    WHERE opportunity_id = o.opportunity_id ORDER BY tracker_id DESC LIMIT 1) AS "workflowComment",
   (SELECT reason_code_id FROM tbl_opportunity_engage_tracker
@@ -297,7 +303,7 @@ async function saveClientContact(
   );
 }
 
-async function recordProposalQuestionSnapshot(client: PoolClient, qaId: number): Promise<void> {
+async function recordProposalQuestionSnapshot(client: PoolClient, qaId: number, isCurrent = true): Promise<void> {
   await client.query(
     `UPDATE tbl_opportunity_questions_answers_tracker
      SET is_current = FALSE WHERE qa_id = $1 AND is_current = TRUE`,
@@ -305,19 +311,27 @@ async function recordProposalQuestionSnapshot(client: PoolClient, qaId: number):
   );
   await client.query(
     `INSERT INTO tbl_opportunity_questions_answers_tracker
-       (qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext,
+       (qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, questionnaire_type_id, answertext,
         answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, is_current)
-     SELECT qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext,
-            answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, TRUE
+     SELECT qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, questionnaire_type_id, answertext,
+            answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, ${isCurrent ? 'TRUE' : 'FALSE'}
      FROM tbl_opportunity_questions_answers WHERE qa_id = $1`,
     [qaId]
   );
+}
+
+async function archiveAndRemoveProposalQuestion(client: PoolClient, qaId: number, userId: number | null): Promise<void> {
+  await client.query(`UPDATE tbl_opportunity_questions_answers SET is_active = FALSE,
+    updated_dt = CURRENT_TIMESTAMP, updated_by = $2 WHERE qa_id = $1`, [qaId, userId]);
+  await recordProposalQuestionSnapshot(client, qaId, false);
+  await client.query('DELETE FROM tbl_opportunity_questions_answers WHERE qa_id = $1', [qaId]);
 }
 
 interface PersistedRfpQuestionSelection {
   questionId: number | null;
   question: string;
   category: string;
+  questionnaireTypeId?: number | null;
 }
 
 function getRfpQuestionSelections(input: RfpIntakeOpportunityInput): PersistedRfpQuestionSelection[] {
@@ -326,6 +340,7 @@ function getRfpQuestionSelections(input: RfpIntakeOpportunityInput): PersistedRf
       questionId: selection.questionId,
       question: selection.question.trim(),
       category: selection.category?.trim() || 'Other',
+      questionnaireTypeId: selection.questionnaireTypeId,
     }));
   }
   return input.questions.map((question) => ({ questionId: null, question: question.trim(), category: 'Other' }));
@@ -345,9 +360,10 @@ async function saveProposalQuestion(
     question: string;
     category: string | null;
     opportunityTypeId: number | null;
+    questionnaireTypeId: number | null;
   }>(
         `SELECT qa_id AS "qaId", question_id AS "questionId", questiontext AS question,
-          question_category AS category,
+          question_category AS category, questionnaire_type_id AS "questionnaireTypeId",
             opportunity_type_id AS "opportunityTypeId"
      FROM tbl_opportunity_questions_answers
      WHERE opportunity_id = $1 AND is_active = TRUE
@@ -357,18 +373,23 @@ async function saveProposalQuestion(
      LIMIT 1`,
     [opportunityId, selection.questionId, selection.question]
   );
+  const questionnaireTypeId = opportunityTypeId === 1
+    ? selection.questionnaireTypeId ?? existing.rows[0]?.questionnaireTypeId ?? 1
+    : null;
   if (existing.rows[0]) {
     const current = existing.rows[0];
     if (current.opportunityTypeId !== opportunityTypeId ||
       current.question !== selection.question ||
       current.category !== selection.category ||
+      (current.questionnaireTypeId ?? null) !== questionnaireTypeId ||
         (selection.questionId !== null && current.questionId !== selection.questionId)) {
       await client.query(
         `UPDATE tbl_opportunity_questions_answers
        SET opportunity_type_id = $2, question_id = COALESCE($3, question_id),
-         questiontext = $4, question_category = $5, updated_dt = CURRENT_TIMESTAMP, updated_by = $6
+         questiontext = $4, question_category = $5, updated_dt = CURRENT_TIMESTAMP, updated_by = $6,
+         questionnaire_type_id = $7
          WHERE qa_id = $1`,
-      [current.qaId, opportunityTypeId, selection.questionId, selection.question, selection.category, userId]
+      [current.qaId, opportunityTypeId, selection.questionId, selection.question, selection.category, userId, questionnaireTypeId]
       );
       await recordProposalQuestionSnapshot(client, current.qaId);
     }
@@ -377,10 +398,10 @@ async function saveProposalQuestion(
 
   const inserted = await client.query<{ qaId: number }>(
     `INSERT INTO tbl_opportunity_questions_answers
-       (opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext, created_by, is_active)
-     VALUES ($1, $2, $3, $4, $5, NULL, $6, TRUE)
+       (opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext, created_by, is_active, questionnaire_type_id)
+     VALUES ($1, $2, $3, $4, $5, NULL, $6, TRUE, $7)
      RETURNING qa_id AS "qaId"`,
-    [opportunityId, opportunityTypeId, selection.questionId, selection.question, selection.category, userId]
+    [opportunityId, opportunityTypeId, selection.questionId, selection.question, selection.category, userId, questionnaireTypeId]
   );
   await recordProposalQuestionSnapshot(client, inserted.rows[0].qaId);
 }
@@ -619,45 +640,9 @@ async function updateRfpIntakeOpportunity(
     );
 
     const questionSelections = getRfpQuestionSelections(input);
-    const questionIds = questionSelections.flatMap((selection) =>
-      selection.questionId === null ? [] : [selection.questionId]
-    );
-    const questionTexts = questionSelections.map((selection) => selection.question);
-    const removedQuestions = await client.query<{ qaId: number }>(
-      `UPDATE tbl_opportunity_questions_answers
-         SET opportunity_type_id = $4, is_active = FALSE,
-           updated_dt = CURRENT_TIMESTAMP, updated_by = $5
-       WHERE opportunity_id = $1 AND is_active = TRUE
-         AND NOT (
-           (question_id IS NOT NULL AND question_id = ANY($2::INTEGER[]))
-           OR questiontext = ANY($3::TEXT[])
-         )
-       RETURNING qa_id AS "qaId"`,
-      [opportunityId, questionIds, questionTexts, GENERIC_RFP_TYPE_ID, userId]
-    );
-    const removedQuestionIds = removedQuestions.rows.map((question) => question.qaId);
-    if (removedQuestionIds.length > 0) {
-      await client.query(
-        `UPDATE tbl_opportunity_questions_answers_tracker
-         SET is_current = FALSE WHERE qa_id = ANY($1::INTEGER[]) AND is_current = TRUE`,
-        [removedQuestionIds]
-      );
-      await client.query(
-        `INSERT INTO tbl_opportunity_questions_answers_tracker
-             (qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext,
-            answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, is_current)
-           SELECT qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext,
-                answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, TRUE
-         FROM tbl_opportunity_questions_answers WHERE qa_id = ANY($1::INTEGER[])`,
-        [removedQuestionIds]
-      );
-    }
-    await questionSelections.reduce<Promise<void>>(
-      (previous, selection) => previous.then(() =>
-        saveProposalQuestion(client, opportunityId, selection, userId, input.rfpType)
-      ),
-      Promise.resolve()
-    );
+    await syncProposalQuestions(client, opportunityId, {
+      proposalQuestionSelections: questionSelections, rfpType: input.rfpType,
+    }, userId);
 
     await client.query(
       `UPDATE tbl_opportunity
@@ -858,7 +843,7 @@ async function finalizeRfpIntakeOpportunity(
   });
 }
 
-export type OpportunityWorkflowAction = 'REQUEST_CHANGES' | 'HOLD' | 'APPROVE' | 'REJECT' | 'RESUBMIT' | 'SUBMIT_ESTIMATE' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'CLOSE_OPPORTUNITY';
+export type OpportunityWorkflowAction = 'REQUEST_CHANGES' | 'HOLD' | 'APPROVE' | 'REJECT' | 'RESUBMIT' | 'SUBMIT_ESTIMATE' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY';
 
 export interface WorkflowAudit {
   reasonCodeId?: number | null;
@@ -1492,16 +1477,17 @@ async function syncProposalQuestions(client: PoolClient, opportunityId: number, 
   if (input.proposalQuestionSelections === undefined) return;
   await client.query('SELECT opportunity_id FROM tbl_opportunity WHERE opportunity_id = $1 FOR UPDATE', [opportunityId]);
   const selections = input.proposalQuestionSelections;
-  const existing = await client.query<{ qaId: number; questionId: number | null; question: string }>(
-    `SELECT qa_id AS "qaId", question_id AS "questionId", questiontext AS question
-     FROM tbl_opportunity_questions_answers WHERE opportunity_id = $1 AND is_active = TRUE`, [opportunityId]);
+  const existing = await client.query<{ qaId: number; questionId: number | null; question: string; isActive: boolean }>(
+    `SELECT qa_id AS "qaId", question_id AS "questionId", questiontext AS question, is_active AS "isActive"
+     FROM tbl_opportunity_questions_answers WHERE opportunity_id = $1 ORDER BY qa_id`, [opportunityId]);
+  const retained = new Set<string>();
   for (const row of existing.rows) {
-    if (selections.some(selection => selection.questionId !== null
+    const match = selections.find(selection => selection.questionId !== null
       ? selection.questionId === row.questionId
-      : row.questionId === null && selection.question.trim() === row.question)) continue;
-    await client.query(`UPDATE tbl_opportunity_questions_answers SET is_active = FALSE,
-      updated_dt = CURRENT_TIMESTAMP, updated_by = $2 WHERE qa_id = $1`, [row.qaId, userId]);
-    await recordProposalQuestionSnapshot(client, row.qaId);
+      : row.questionId === null && selection.question.trim() === row.question);
+    const key = match ? match.questionId === null ? `text:${match.question.trim()}` : `master:${match.questionId}` : null;
+    if (row.isActive !== false && key && !retained.has(key)) { retained.add(key); continue; }
+    await archiveAndRemoveProposalQuestion(client, row.qaId, userId);
   }
   for (const selection of selections) {
     await saveProposalQuestion(client, opportunityId, {

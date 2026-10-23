@@ -59,6 +59,7 @@ const OPPORTUNITY_FIELDS = gql`
     proposalQuestions
     proposalQuestionIds
     proposalQuestionCategories
+    proposalQuestionnaireTypeIds
   }
 `;
 

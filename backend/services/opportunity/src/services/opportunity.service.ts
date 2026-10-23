@@ -51,6 +51,12 @@ async function loadAccess(ctx: any): Promise<AuditedAccess> {
   return { ...opportunityAccess(userId, access.menus, access.roleAccess, role), actorRoleId: user.roleId, actorRoleName: role?.roleName ?? null };
 }
 
+function validateQuestionnaireTypes(selections?: { questionnaireTypeId?: number | null }[]) {
+  if (selections?.some(selection => selection.questionnaireTypeId != null && ![1, 2].includes(selection.questionnaireTypeId))) {
+    throw validationFailed('Select Document-Based Questionnaire or Client-Predefined Questionnaire.');
+  }
+}
+
 function validateProposalQuestions(input: OpportunityInput) {
   if (input.proposalQuestionSelections === undefined) return;
   if (!Array.isArray(input.proposalQuestionSelections) || input.proposalQuestionSelections.some(selection =>
@@ -58,6 +64,7 @@ function validateProposalQuestions(input: OpportunityInput) {
     (selection.questionId !== null && (!Number.isInteger(selection.questionId) || selection.questionId <= 0)))) {
     throw validationFailed("Questions must contain text and valid master question IDs.");
   }
+  validateQuestionnaireTypes(input.proposalQuestionSelections);
 }
 
 function projectAllowedActions(opportunity: repository.Opportunity, access: OpportunityAccess): string[] {
@@ -82,8 +89,10 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
   }
   if (access.review) {
     if (opportunity.stageId === 5 && opportunity.subStageId === 10) actions.push('BID_SUBMITTED');
-    if (opportunity.stageId === 5 && opportunity.subStageId === 11) actions.push('START_NEGOTIATION');
-    if (opportunity.stageId === 6 && opportunity.subStageId === 12) actions.push('MARK_WON', 'MARK_LOST');
+    if (opportunity.stageId === 5 && opportunity.subStageId === 11) actions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
+    if (opportunity.stageId === 6 && opportunity.subStageId === 12) actions.push('MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
+    if (opportunity.stageId === 10 && opportunity.subStageId === 19) actions.push('RESUME_NEGOTIATION');
+    if (opportunity.stageId === 10 && opportunity.subStageId === 20) actions.push('RESUME_PROPOSAL');
     if ([1, 2, 3, 4, 5, 6].includes(opportunity.stageId ?? 0)) actions.push('CLOSE_OPPORTUNITY');
   }
   return actions;
@@ -126,6 +135,7 @@ async function create(
 }
 
 async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunityInput, ctx: any) {
+  validateQuestionnaireTypes(input.questionSelections);
   if (![1, 2].includes(input.rfpType)) {
     throw validationFailed("Select Questionnaire or Generic RFP.");
   }
@@ -184,6 +194,7 @@ async function updateRfpIntakeOpportunity(
   input: repository.RfpIntakeOpportunityUpdateInput,
   ctx: any
 ) {
+  validateQuestionnaireTypes(input.questionSelections);
   if (![1, 2].includes(input.rfpType)) {
     throw validationFailed("Select Questionnaire or Generic RFP.");
   }
@@ -331,12 +342,15 @@ async function transitionWorkflow(
   const reviewingSales = opportunity.stageId === 1 && [1, 2, 3].includes(opportunity.subStageId ?? 0) && access.review;
   const reviewingCeo = opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const reviewingEstimate = opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview;
+  const submittedBid = opportunity.stageId === 5 && opportunity.subStageId === 11;
+  const negotiating = opportunity.stageId === 6 && opportunity.subStageId === 12;
+  const holdingOpportunity = action === 'OPPORTUNITY_HOLD' && access.review && (submittedBid || negotiating);
   if (action === 'HOLD' && (reviewingSales && opportunity.subStageId === 3 || reviewingCeo && opportunity.subStageId === 6 || reviewingEstimate && opportunity.subStageId === 9)) {
     throw conflict('This opportunity is already on hold. Choose another available action.');
   }
   const closing = action === 'CLOSE_OPPORTUNITY' && access.review && [1, 2, 3, 4, 5, 6].includes(opportunity.stageId ?? 0);
-  if ((action === 'HOLD' || action === 'REJECT') && (reviewingSales || reviewingCeo || reviewingEstimate)) {
-    const reasonLabel = action === 'HOLD' ? 'hold' : 'rejection';
+  if (holdingOpportunity || (action === 'HOLD' || action === 'REJECT') && (reviewingSales || reviewingCeo || reviewingEstimate)) {
+    const reasonLabel = action === 'HOLD' || holdingOpportunity ? 'hold' : 'rejection';
     if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) throw validationFailed(`Select a ${reasonLabel} reason.`);
     if (!comment?.trim()) throw validationFailed(`Enter a ${reasonLabel} description.`);
     const reason = await holdReasonCode(reasonCodeId!);
@@ -348,10 +362,16 @@ async function transitionWorkflow(
     if (!closing) throw conflict('Only the Sales Head can close an open opportunity.');
     return persistTransition(opportunity, opportunityId, 9, 18, null, userId, comment?.trim() || null, null, audit);
   }
-  const salesTargets = { BID_SUBMITTED: [5, 10, 5, 11], START_NEGOTIATION: [5, 11, 6, 12], MARK_WON: [6, 12, 7, 13], MARK_LOST: [6, 12, 8, 14] } as const;
+  const salesTargets = {
+    BID_SUBMITTED: [5, 10, 5, 11], START_NEGOTIATION: [5, 11, 6, 12],
+    MARK_WON: [6, 12, 7, 13], MARK_LOST: [6, 12, 8, 14],
+    OPPORTUNITY_HOLD: [6, 12, 10, 19], RESUME_NEGOTIATION: [10, 19, 6, 12], RESUME_PROPOSAL: [10, 20, 5, 11],
+  } as const;
   if (action in salesTargets) {
-    const [fromStage, fromSubstage, toStage, toSubstage] = salesTargets[action as keyof typeof salesTargets];
-    if (!access.review || opportunity.stageId !== fromStage || opportunity.subStageId !== fromSubstage) throw conflict('The Sales Head role and the preceding sales workflow step are required.');
+    const [fromStage, fromSubstage, toStage, targetSubstage] = salesTargets[action as keyof typeof salesTargets];
+    const outcomeAfterBid = submittedBid && ['MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD'].includes(action);
+    if (!access.review || !outcomeAfterBid && (opportunity.stageId !== fromStage || opportunity.subStageId !== fromSubstage)) throw conflict('The Sales Head role and the preceding sales workflow step are required.');
+    const toSubstage = outcomeAfterBid && action === 'OPPORTUNITY_HOLD' ? 20 : targetSubstage;
     return persistTransition(opportunity, opportunityId, toStage, toSubstage, null, userId, comment?.trim() || null, null, audit);
   }
 
@@ -359,8 +379,6 @@ async function transitionWorkflow(
     if (!access.estimate || opportunity.stageId !== 3 || opportunity.subStageId !== 7) {
       throw conflict('The Estimation Team role and an in-progress estimate are required.');
     }
-    const estimation = await repository.findEstimation(opportunityId);
-    if (!estimation?.rows.length) throw validationFailed('Save an estimation with at least one work item before submitting for CEO approval.');
     return persistTransition(opportunity, opportunityId, 4, 8, null, userId, comment?.trim() || null, null, audit);
   }
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) {

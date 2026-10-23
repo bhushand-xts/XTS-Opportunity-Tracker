@@ -67,6 +67,7 @@ export const opportunityTypeDefs = `#graphql
     proposalQuestions: [String!]!
     proposalQuestionIds: [Int]!
     proposalQuestionCategories: [String]!
+    proposalQuestionnaireTypeIds: [Int]!
   }
 
   type OpportunityStageHistory {
@@ -135,6 +136,7 @@ export const opportunityTypeDefs = `#graphql
     questionId: Int!
     question: String!
     category: String
+    questionnaireTypeId: Int
   }
 
   input CreateRfpIntakeOpportunityInput {
@@ -300,6 +302,7 @@ export const opportunityTypeDefs = `#graphql
     questionId: Int
     question: String!
     category: String
+    questionnaireTypeId: Int
   }
 
   enum OpportunityWorkflowAction {
@@ -313,6 +316,9 @@ export const opportunityTypeDefs = `#graphql
     START_NEGOTIATION
     MARK_WON
     MARK_LOST
+    OPPORTUNITY_HOLD
+    RESUME_NEGOTIATION
+    RESUME_PROPOSAL
     CLOSE_OPPORTUNITY
   }
 

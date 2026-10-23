@@ -1,8 +1,69 @@
 import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { findStageHistory, saveEstimation, transitionWorkflow, update, updateRfpIntakeOpportunity } from './opportunity.repository';
+import { create, findStageHistory, saveEstimation, transitionWorkflow, update, updateRfpIntakeOpportunity } from './opportunity.repository';
 const db = require('../config/db');
+
+test('creation saves each questionnaire mode on questions and copies it into the first tracker snapshot', async t => {
+  for (const questionnaireTypeId of [1, 2]) {
+    const calls: { sql: string; params: unknown[] }[] = [];
+    const opportunity = { opportunityId: 10, stageId: 1, subStageId: 1 };
+    t.mock.method(db.pool, 'connect', async () => ({
+      query: async (sql: string, params: unknown[] = []) => {
+        calls.push({ sql, params });
+        if (sql.includes('FROM tbl_opportunity_questions_answers') && !sql.includes('ARRAY_AGG')) return { rows: [] };
+        if (sql.includes('INSERT INTO tbl_opportunity_questions_answers\n')) return { rows: [{ qaId: 21 }] };
+        return { rows: sql.startsWith('SELECT') || sql.includes('RETURNING') ? [opportunity] : [] };
+      }, release: () => {},
+    }));
+    await create({ rfpType: 1, proposalQuestionSelections: [{ questionId: null, question: 'Describe delivery.', category: 'Technical', questionnaireTypeId }] }, 7);
+    const question = calls.find(call => call.sql.includes('INSERT INTO tbl_opportunity_questions_answers\n'))!;
+    assert.deepEqual(question.params, [10, 1, null, 'Describe delivery.', 'Technical', 7, questionnaireTypeId]);
+    assert.match(question.sql, /questionnaire_type_id/);
+    const snapshot = calls.find(call => call.sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker'))!;
+    assert.equal(snapshot.sql.match(/questionnaire_type_id/g)?.length, 2);
+    assert.deepEqual(snapshot.params, [21]);
+    assert.ok(calls.some(call => call.sql.includes('ARRAY_AGG(questionnaire_type_id ORDER BY qa_id)')));
+    assert.equal(calls.at(-1)?.sql, 'COMMIT');
+  }
+});
+
+test('a mode-only update snapshots the new value, and an unchanged or omitted mode preserves the saved choice', async t => {
+  for (const scenario of [
+    { stored: 1, selected: 2, rfpType: 1, expected: 2, changed: true },
+    { stored: 2, selected: 1, rfpType: 1, expected: 1, changed: true },
+    { stored: 2, selected: 2, rfpType: 1, expected: 2, changed: false },
+    { stored: 2, selected: undefined, rfpType: 1, expected: 2, changed: false },
+    { stored: 2, selected: 2, rfpType: 2, expected: null, changed: true },
+  ]) {
+    const calls: { sql: string; params: unknown[] }[] = [];
+    const opportunity = { opportunityId: 10, stageId: 1, subStageId: 1, createdBy: 7 };
+    t.mock.method(db.pool, 'connect', async () => ({
+      query: async (sql: string, params: unknown[] = []) => {
+        calls.push({ sql, params });
+        if (sql.includes('FROM tbl_opportunity_questions_answers') && sql.includes('qa_id AS "qaId"')) return { rows: [{
+          qaId: 21, questionId: null, question: 'Describe delivery.', category: 'Technical', opportunityTypeId: scenario.rfpType, questionnaireTypeId: scenario.stored,
+        }] };
+        return { rows: sql.startsWith('SELECT') || sql.includes('RETURNING') ? [opportunity] : [] };
+      }, release: () => {},
+    }));
+    await update(10, { stageId: 1, subStageId: 1, rfpType: scenario.rfpType, proposalQuestionSelections: [{
+      questionId: null, question: 'Describe delivery.', category: 'Technical', questionnaireTypeId: scenario.selected,
+    }] }, 7);
+    const questionUpdates = calls.filter(call => call.sql.includes('UPDATE tbl_opportunity_questions_answers\n'));
+    const snapshots = calls.filter(call => call.sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker'));
+    assert.equal(questionUpdates.length, scenario.changed ? 1 : 0);
+    assert.equal(snapshots.length, scenario.changed ? 1 : 0);
+    if (scenario.changed) {
+      assert.equal(questionUpdates[0].params[6], scenario.expected);
+      assert.equal(snapshots[0].sql.match(/questionnaire_type_id/g)?.length, 2);
+      const closed = calls.find(call => call.sql.includes('UPDATE tbl_opportunity_questions_answers_tracker'))!;
+      assert.match(closed.sql, /is_current = FALSE/);
+      assert.ok(calls.indexOf(closed) < calls.indexOf(snapshots[0]));
+    }
+    assert.equal(calls.at(-1)?.sql, 'COMMIT');
+  }
+});
 
 test('stage history loads every recorded transition in timestamp and tracker order for only the requested opportunity', async t => {
   const rows = [{ id: 1, stageId: 1, subStageId: 1, reachedAt: new Date('2026-10-19T04:00:00Z'), comment: null }];
