@@ -1,4 +1,4 @@
-import type { Action, Decimal, DirectoryUser, EstimateRow, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
+import type { Action, Decimal, DirectoryUser, EstimateRow, LookupOption, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
 import { randomUUID } from './uuid';
 
 export const STATE_LABELS = {
@@ -21,7 +21,9 @@ export const SECTION_CATALOG = [
   { key: 'support', title: 'Support & service levels', category: 'Commercial', description: 'Support model, commitments and escalation.' },
 ] as const;
 export const CONTEXT_FIELDS = { instructions: 'Instructions', submissionRequirements: 'Submission requirements', opportunityOverview: 'Opportunity overview', scopeOfWork: 'Scope of work', requirements: 'Key technical / functional requirements', notes: 'Notes' };
-export const SCOPE_FIELDS = { objective: 'Objective', deliverables: 'Deliverables', inclusions: 'Inclusions', exclusions: 'Exclusions', dependencies: 'Dependencies / assumptions', acceptance: 'Acceptance criteria' };
+export const RISK_SEVERITIES = ['LOW', 'MEDIUM', 'HIGH'] as const;
+export const RISK_SEVERITY_LABELS = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High' };
+export const RISK_SEVERITY_OPTIONS: LookupOption[] = RISK_SEVERITIES.map(id => ({ id, label: RISK_SEVERITY_LABELS[id] }));
 
 /** Snapshot templates into this opportunity; editing copies never edits masters. */
 export function addMasterQuestionTemplates(questions: PreparedQuestion[], templates: RfpQuestion[]): PreparedQuestion[] {

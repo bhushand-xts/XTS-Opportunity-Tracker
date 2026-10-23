@@ -46,7 +46,10 @@ export interface OpportunitySummary {
 }
 export interface EstimateRow { id: string; workItem: string; hours: Decimal; people: number; hourlyRate: Decimal; }
 export interface Estimation { revision: number; rows: EstimateRow[]; assumptions: string; total: Decimal; }
-export interface Scope { revision: number; objective: string; deliverables: string; inclusions: string; exclusions: string; dependencies: string; acceptance: string; }
+export type RiskSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
+export interface AlignmentItem { id: string; text: string; }
+export interface RiskItem { id: string; description: string; severity: RiskSeverity; }
+export interface Scope { revision: number; summary: string; alignment: AlignmentItem[]; risks: RiskItem[]; }
 export interface ResponseItem {
   id: string; title: string; sourceValidated: boolean; sourceReference: string | null;
   owner: DirectoryUser | null; reviewer: DirectoryUser | null; dueDate: LocalDate | null;

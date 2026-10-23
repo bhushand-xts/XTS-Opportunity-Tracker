@@ -96,12 +96,9 @@ this is a backend handoff requirement only, with no backend implementation chang
 | Estimation | Total | estimation.total | Sum rounded row amounts; authoritative backend total | Opportunity workflow service |
 | Estimation | Assumptions | estimation.assumptions | Bounded text | Opportunity workflow service |
 | Estimation | Revision | estimation.revision | Backend-owned optimistic lock | Opportunity workflow service |
-| Scope | Objective | scope.objective | Bounded text; saved revision shown on Overview | Opportunity workflow service |
-| Scope | Deliverables | scope.deliverables | Bounded text; saved revision shown on Overview | Opportunity workflow service |
-| Scope | Inclusions | scope.inclusions | Bounded text; saved revision shown on Overview | Opportunity workflow service |
-| Scope | Exclusions | scope.exclusions | Bounded text; saved revision shown on Overview | Opportunity workflow service |
-| Scope | Dependencies/assumptions | scope.dependencies | Bounded text; saved revision shown on Overview | Opportunity workflow service |
-| Scope | Acceptance criteria | scope.acceptance | Bounded text; saved revision shown on Overview | Opportunity workflow service |
+| Scope | Scope summary | scope.summary | Unbounded text; required; saved revision shown on Overview | Opportunity workflow service |
+| Scope | Alignment | scope.alignment[].text | Nonempty text per item; add/edit/delete | Opportunity workflow service |
+| Scope | Risks | scope.risks[].description/severity | Description and severity (LOW/MEDIUM/HIGH) required per item | Opportunity workflow service |
 | Approval & progress | Sales reviewer | Server assignment; responsible.id while SALES_REVIEW | Configured active eligible user resolved automatically in atomic save; no frontend selector/input | Opportunity workflow service |
 | Approval & progress | Gate 1 approver | Server assignment; responsible.id while GATE1_PENDING | Configured active eligible CEO assigned automatically by Sales approval; no implicit Admin approval | Opportunity workflow service |
 | Approval & progress | Reviewed package | packageRevision | Immutable server snapshot revision; decision must match | Opportunity workflow service |

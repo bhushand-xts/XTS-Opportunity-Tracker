@@ -1,7 +1,7 @@
 .opportunity-root, .opp-drawer, .opp-dialog {
   --primary: 249 50% 56%; --primary-foreground: 0 0% 100%; --ring: 249 50% 56%;
   --accent: 252 100% 97%; --accent-foreground: 249 45% 36%;
-  --opp-violet: #d0c6ed; --opp-indigo: #c5ceec; --opp-teal: #b9d8ce;
+  --opp-violet: #d0c6ed; --opp-indigo: #c5ceec; --opp-teal: #b9d8ce; --opp-amber: #e8cfa0;
 }
 .opportunity-root { min-width: 0; color: hsl(var(--foreground)); background: #f5f5fc; min-height: calc(100dvh - 56px); }
 .opp-page { padding: 14px 20px; width: 100%; margin-inline: auto; min-width: 0; }
@@ -17,6 +17,14 @@
 .opp-indigo { border-color: var(--opp-indigo); }.opp-indigo > :first-child { background: linear-gradient(110deg,#eef0fd,#f9faff); border-bottom-color: var(--opp-indigo); box-shadow: inset 0 3px #7381c8; }
 .opp-teal { border-color: var(--opp-teal); }.opp-teal > :first-child { background: linear-gradient(110deg,#eaf6f1,#fbfefd); border-bottom-color: var(--opp-teal); box-shadow: inset 0 3px #65a18c; }
 .opp-neutral { border-color: hsl(var(--border)); }.opp-neutral > :first-child { background: hsl(var(--card)); box-shadow: none; }
+.opp-amber { border-color: var(--opp-amber); }.opp-amber > :first-child { background: linear-gradient(110deg,#fdf3e3,#fffcf6); border-bottom-color: var(--opp-amber); box-shadow: inset 0 3px #c9922f; }
+/* Opt-in colored icon badges (Panel's `accentIcon` prop) — distinct from the
+   neutral bg-accent badge every other Panel keeps by default. */
+.opp-panel-icon-violet { background: #ece5fb; color: #6248c4; }
+.opp-panel-icon-indigo { background: #e4e8fc; color: #4a5bc2; }
+.opp-panel-icon-teal { background: #dff3ec; color: #1f8a6b; }
+.opp-panel-icon-amber { background: #fcecd1; color: #b06a12; }
+.opp-panel-icon-neutral { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 :is(.opportunity-root, .opp-drawer, .opp-dialog) [aria-invalid="true"] { border-color: #dc2626; }
 .opp-details { border: 1px solid #d2d8ec; border-radius: 8px; background: white; overflow: hidden; }
 .opp-details > summary { cursor: pointer; padding: 8px 10px; background: #f0f3fc; color: #40568a; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
@@ -87,16 +95,6 @@
 @media (max-width: 960px) { .opp-page.opp-form-page { --opp-form-gutter: 16px; } }
 @media (max-width: 650px) { .opp-page.opp-form-page { --opp-form-gutter: 12px; } }
 .opp-form-page input, .opp-form-page textarea, .opp-form-page button { scroll-margin-bottom: 90px; }
-.opp-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
-.opp-stat { border: 1px solid #d7cef3; border-top: 3px solid #6e59cc; background: linear-gradient(120deg,#fff 45%,#f4f0ff); border-radius: 11px; padding: 10px 12px; min-width: 0; }
-.opp-stat:nth-child(2) { border-color: #c9d7ef; border-top-color: #4e70b8; background: linear-gradient(120deg,#fff 45%,#edf3ff); }
-.opp-stat:nth-child(3) { border-color: #e8d9b8; border-top-color: #b08a33; background: linear-gradient(120deg,#fff 45%,#fff8e9); }
-.opp-stat:nth-child(4) { border-color: #bddfd3; border-top-color: #3e957e; background: linear-gradient(120deg,#fff 45%,#edf9f4); }
-.opp-stat > strong { display: block; font-size: 21px; font-weight: 650; margin: 3px 0; overflow-wrap: anywhere; }
-.opp-board { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
-.opp-lane { flex: 0 1 320px; min-width: 0; background: #eef0f5; border: 1px solid #e7eaf1; border-top-width: 3px; border-radius: 11px; padding: 9px; min-height: 0; }
-.opp-pipeline-card { border: 1px solid #e1e5ed; border-radius: 9px; background: white; margin-bottom: 8px; box-shadow: 0 2px 3px #14213d03; overflow: hidden; min-width: 0; }
-.opp-pipeline-card:hover { border-color: #aaa5ee; }.opp-card-main { display: block; padding: 10px 12px; overflow-wrap: anywhere; }.opp-card-main:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -3px; }
 .opp-highlight { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; animation: opp-saved 6s forwards; }
 @keyframes opp-saved { to { outline-color: transparent; } }
 .opp-empty { background: white; border: 1px dashed #d6dbe5; border-radius: 9px; padding: 18px 14px; text-align: center; color: hsl(var(--muted-foreground)); }
@@ -104,37 +102,6 @@
 .opp-status.opp-state-PREPARATION_PENDING { background: #fff5df; color: #946512; border-color: #e8d9b8; }
 .opp-status.opp-state-GATE1_GO { background: #e7f6f0; color: #18745f; border-color: #bddfd3; }
 .opp-status.opp-state-SALES_REJECTED, .opp-status.opp-state-GATE1_NO_GO { background: #fff0ef; color: #a34242; border-color: #efcece; }
-.opp-lane.opp-state-PREPARATION_PENDING { border-top-color: #b08a33; }.opp-lane.opp-state-IN_PROGRESS { border-top-color: #4e70b8; }.opp-lane.opp-state-SALES_REVIEW { border-top-color: #8e7bd2; }.opp-lane.opp-state-GATE1_PENDING { border-top-color: #6352cc; }.opp-lane.opp-state-GATE1_GO { border-top-color: #3e957e; }
-/* Vibrant, cosmetic-only accents for the pipeline board: a colored dot per lane, a matching
-   top edge on each card, and richer colors for the type/priority pills and owner avatar. None
-   of this reflects new data — it recolors fields the card already shows. */
-.opp-lane-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: #8e7bd2; }
-.opp-lane.opp-state-PREPARATION_PENDING .opp-lane-dot { background: #d9a441; }
-.opp-lane.opp-state-IN_PROGRESS .opp-lane-dot { background: #4e70b8; }
-.opp-lane.opp-state-SALES_REVIEW .opp-lane-dot { background: #8e7bd2; }
-.opp-lane.opp-state-GATE1_PENDING .opp-lane-dot { background: #6352cc; }
-.opp-lane.opp-state-GATE1_GO .opp-lane-dot { background: #3e957e; }
-.opp-lane.opp-state-SALES_REJECTED .opp-lane-dot, .opp-lane.opp-state-GATE1_NO_GO .opp-lane-dot { background: #c15c5c; }
-.opp-pipeline-card.opp-state-PREPARATION_PENDING { border-top: 3px solid #d9a441; }
-.opp-pipeline-card.opp-state-IN_PROGRESS { border-top: 3px solid #4e70b8; }
-.opp-pipeline-card.opp-state-SALES_REVIEW { border-top: 3px solid #8e7bd2; }
-.opp-pipeline-card.opp-state-GATE1_PENDING { border-top: 3px solid #6352cc; }
-.opp-pipeline-card.opp-state-GATE1_GO { border-top: 3px solid #3e957e; }
-.opp-pipeline-card.opp-state-SALES_REJECTED, .opp-pipeline-card.opp-state-GATE1_NO_GO { border-top: 3px solid #c15c5c; }
-.opp-rfp-badge.opp-rfp-questionnaire { background: #efe9fb !important; color: #7250c5 !important; border-color: #d0c6ed !important; }
-.opp-rfp-badge.opp-rfp-generic { background: #e3f3ee !important; color: #1f8a6d !important; border-color: #b9d8ce !important; }
-.opp-priority-badge.opp-priority-high { background: #fff0ef !important; color: #b3362c !important; border-color: #f3c9c4 !important; }
-.opp-priority-badge.opp-priority-medium { background: #fff6e0 !important; color: #8a5a10 !important; border-color: #ecd9a6 !important; }
-.opp-priority-badge.opp-priority-low { background: #eaf6f1 !important; color: #1f7a63 !important; border-color: #bfe3d4 !important; }
-.opp-card-avatar { width: 20px; height: 20px; }
-.opp-card-avatar .opp-avatar-a, .opp-card-avatar .opp-avatar-b, .opp-card-avatar .opp-avatar-c,
-.opp-card-avatar .opp-avatar-d, .opp-card-avatar .opp-avatar-e, .opp-card-avatar .opp-avatar-f { color: #fff !important; font-size: 10px; font-weight: 700; }
-.opp-card-avatar .opp-avatar-a { background: #7250c5 !important; }
-.opp-card-avatar .opp-avatar-b { background: #3f6fd1 !important; }
-.opp-card-avatar .opp-avatar-c { background: #1f8a6d !important; }
-.opp-card-avatar .opp-avatar-d { background: #c9890f !important; }
-.opp-card-avatar .opp-avatar-e { background: #c24d82 !important; }
-.opp-card-avatar .opp-avatar-f { background: #2098a6 !important; }
 .opp-overview { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.3fr) minmax(220px,.7fr); gap: 12px; align-items: start; }
 .opp-values { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px 12px; margin-top: 8px; }.opp-values dt { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 2px; }.opp-values dd { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .opp-detail-heading { display: grid; gap: 8px; margin-bottom: 10px; }
@@ -212,14 +179,6 @@
 .opp-save-status { margin: 0; flex: 1 1 180px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .opp-save-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .opp-savebar > [role="alert"] { flex-basis: 100%; }
-.opp-card-title { font-size: 14px; line-height: 1.4; margin: 6px 0 3px; }
-.opp-card-value { margin-top: 8px; font-size: 14px; }
-.opp-card-meta { margin-top: 8px; padding-top: 6px; }
-.opp-card-meta > span { min-width: 0; overflow-wrap: anywhere; }
-.opp-card-actions { padding: 6px 12px; }
-.opp-card-actions a { height: 28px; }
-.opp-pipeline-card:last-child { margin-bottom: 0; }
-.opp-lane > .opp-empty { padding: 14px 10px; }
 .opp-progress li:last-child { padding-bottom: 0; }
 .opportunity-root :is(th, td) { padding: 8px 10px; }
 .opp-drawer { padding: 16px; gap: 12px; }

@@ -19,7 +19,7 @@ export function fixtureOpportunity(overrides: Partial<OpportunityDetail> = {}): 
     form, client, visibleModules: ['overview', 'responses', 'estimation', 'scope', 'assignment', 'activity'],
     responses: [{ id: '301', title: 'Describe the delivery approach.', sourceValidated: true, sourceReference: 'Page 1', owner, reviewer, dueDate: '2026-11-20', answer: 'Saved initial answer.', state: 'DRAFT', revision: 1, submittedRevision: null, approvedRevision: null, reviewComment: null, allowedActions: ['ASSIGN', 'SAVE_ANSWER', 'SUBMIT_ANSWER'] }],
     estimation: { revision: 1, rows: [{ id: '501', workItem: 'Implementation', hours: '80', people: 2, hourlyRate: '1500' }], assumptions: 'Client provides access.', total: '240000.00' },
-    scope: { revision: 1, objective: 'Modernize delivery', deliverables: 'Working platform', inclusions: 'Discovery and implementation', exclusions: 'Third-party licences', dependencies: 'Access and stakeholder input', acceptance: 'Agreed performance tests' },
+    scope: { revision: 1, summary: 'Modernize the delivery platform: discovery and implementation, excluding third-party licences.', alignment: [{ id: 'align-1', text: 'Working platform' }], risks: [{ id: 'risk-1', description: 'Access and stakeholder availability', severity: 'MEDIUM' }] },
     activity: [{ id: '601', action: 'Opportunity created', actor: owner, at: '2026-10-12T08:00:00Z', note: null, packageRevision: null }], responsible: owner, approvalAssignees: [], readiness: { ready: false, issues: ['Approve the response package.'] }, salesRecommendation: null, ...overrides,
   };
 }

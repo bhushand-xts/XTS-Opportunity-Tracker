@@ -8,7 +8,13 @@ import { OpportunityDetailsPage } from "./components/OpportunityDetailsPage";
 import { OpportunityAccessProvider } from "./hooks/useOpportunityAccess";
 import { UnsavedProvider } from "./hooks/useUnsaved";
 import { OpportunityServiceContext, productionOpportunityService } from "./services/OpportunityService";
+import { createLocalWorkflowService } from "./services/localWorkflowService";
 import "./opportunity.css";
+
+// Layers browser-local scope/estimation persistence over the real Opportunity
+// record so those tabs are usable for every user ahead of the backend
+// implementing those modules (see localWorkflowService.ts for details).
+const opportunityService = createLocalWorkflowService(productionOpportunityService);
 
 function OpportunityRoutes() {
   return (
@@ -59,7 +65,7 @@ function AuthedApp() {
 export function App() {
   return (
     <ApolloProvider client={getApolloClient()}>
-      <OpportunityServiceContext.Provider value={productionOpportunityService}><AuthGate>
+      <OpportunityServiceContext.Provider value={opportunityService}><AuthGate>
         <AuthedApp />
       </AuthGate></OpportunityServiceContext.Provider>
     </ApolloProvider>

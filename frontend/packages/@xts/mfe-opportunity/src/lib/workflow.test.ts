@@ -182,7 +182,7 @@ describe('explicit mock service on the existing Opportunity workflow', () => {
     const h = mockHarness(); let detail = await h.service.detail('401');
     detail = await h.service.saveEstimation({ ...mockVersion(detail), estimation: { revision: 0, rows: [{ id: 'row', workItem: 'Delivery', hours: '2.5', people: 2, hourlyRate: '100.25' }], assumptions: 'Restricted mock estimate', total: '999' } });
     expect(detail.estimation?.total).toBe('501.25');
-    detail = await h.service.saveScope({ ...mockVersion(detail), scope: { revision: 0, objective: 'Mock objective', deliverables: 'Mock deliverables', inclusions: '', exclusions: '', dependencies: '', acceptance: '' } });
+    detail = await h.service.saveScope({ ...mockVersion(detail), scope: { revision: 0, summary: 'Mock scope summary', alignment: [], risks: [] } });
     expect(detail.scope?.revision).toBe(1);
     h.actAs('102'); detail = await h.service.detail(detail.id); expect(detail.estimation).toBeNull(); expect(detail.responses).toEqual([]);
     await expect(h.service.saveScope({ ...mockVersion(detail), scope: detail.scope! })).rejects.toThrow('Only the opportunity owner');
