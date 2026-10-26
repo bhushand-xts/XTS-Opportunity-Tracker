@@ -187,14 +187,21 @@
 .opp-question-input .opp-question-section { position: absolute; right: 6px; bottom: 6px; width: auto; height: 24px; gap: 4px; padding: 0 8px; font-size: 11px; background: hsl(var(--muted)); border-color: transparent; }
 .opp-question-panel { max-height: 28rem; overflow-y: auto; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 8px; }
 .opp-review-actions:empty { display: none; }
-.opp-review-buttons { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); grid-auto-rows: 40px; gap: 6px; }
-.opp-review-buttons button { width: 100%; height: 100%; min-width: 0; padding: 4px 8px; white-space: normal; font-size: 12px; line-height: 16px; }
-:is(.opp-review-buttons, .opp-dialog) .opp-review-success { color: #fff; border-color: #047857; background: #047857; }
-:is(.opp-review-buttons, .opp-dialog) .opp-review-success:hover { color: #fff; border-color: #065f46; background: #065f46; }
-:is(.opp-review-buttons, .opp-dialog) .opp-review-error { color: #9f3542; border-color: #efc5cb; background: #fff1f2; }
-:is(.opp-review-buttons, .opp-dialog) .opp-review-error:hover { color: #8c2633; background: #ffe4e6; }
-:is(.opp-review-buttons, .opp-dialog) .opp-review-warning { color: #854d0e; border-color: #e8d4a2; background: #fffbeb; }
-:is(.opp-review-buttons, .opp-dialog) .opp-review-warning:hover { color: #713f12; background: #fef3c7; }
+.opp-review-buttons { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); grid-auto-rows: minmax(46px,auto); gap: 10px; }
+.opp-review-buttons button {
+  width: 100%; height: 100%; min-width: 0; padding: 10px 12px; white-space: normal;
+  font-size: 13px; font-weight: 600; line-height: 1.3; letter-spacing: 0.1px;
+  border-width: 1.5px; border-radius: 8px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+.opp-review-buttons button:hover:not(:disabled) { transform: translateY(-1px); }
+.opp-review-buttons button:active:not(:disabled) { transform: translateY(0); }
+:is(.opp-review-buttons, .opp-dialog) .opp-review-success { color: #fff; border-color: #047857; background: #047857; box-shadow: 0 1px 2px rgb(4 120 87 / 0.25); }
+:is(.opp-review-buttons, .opp-dialog) .opp-review-success:hover { color: #fff; border-color: #065f46; background: #065f46; box-shadow: 0 4px 10px rgb(4 120 87 / 0.3); }
+:is(.opp-review-buttons, .opp-dialog) .opp-review-error { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.45); background: hsl(var(--destructive) / 0.06); }
+:is(.opp-review-buttons, .opp-dialog) .opp-review-error:hover { color: hsl(var(--destructive-foreground)); border-color: hsl(var(--destructive)); background: hsl(var(--destructive)); box-shadow: 0 4px 10px hsl(var(--destructive) / 0.3); }
+:is(.opp-review-buttons, .opp-dialog) .opp-review-warning { color: #92400e; border-color: #e3b765; background: #fef3dd; }
+:is(.opp-review-buttons, .opp-dialog) .opp-review-warning:hover { color: #78350f; border-color: #d4a148; background: #fde8bc; box-shadow: 0 4px 10px rgb(146 64 14 / 0.15); }
 .opp-progress-panel > :nth-child(2) { padding: 14px; }
 .opp-stage-timeline { list-style: none; margin: 0; padding: 0; }
 .opp-timeline-stage { position: relative; display: grid; grid-template-columns: 28px minmax(0,1fr); gap: 10px; padding-bottom: 20px; }
