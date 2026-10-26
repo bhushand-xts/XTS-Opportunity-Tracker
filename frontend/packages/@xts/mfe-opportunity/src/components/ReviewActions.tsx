@@ -7,7 +7,7 @@ import { useSave, type ConfirmationTone } from '../hooks/useSave';
 import { Field, Notice } from './ui';
 import { useCallback, useId } from 'react';
 import { useResource } from '../hooks/useResource';
-import { Check } from 'lucide-react';
+import { Check, ChevronRight } from 'lucide-react';
 
 const LABELS: Record<DecisionCommand['decision'], string> = {
   SALES_APPROVE: 'Approve & Send to CEO',
@@ -70,14 +70,14 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
     GATE1_NO_GO: 'This closes the opportunity as No-Bid / Declined · No-Go by CEO.',
     ESTIMATE_REJECT: 'This closes the opportunity as No-Bid / Declined · Estimate Rejected by CEO.',
     SUBMIT_ESTIMATE: 'This sends the estimation to CEO review and records your decision note. An estimation matrix is optional.',
-    ESTIMATE_APPROVE: 'Approval moves this opportunity to Proposal / Bid Submitted · Proposal In Preparation.',
-    BID_SUBMITTED: 'This records Proposal / Bid Submitted · Bid Submitted.',
+    ESTIMATE_APPROVE: 'Approval moves this opportunity to Proposal / Bid Submission · Proposal In Preparation.',
+    BID_SUBMITTED: 'This records the proposal / bid as submitted to the client.',
     START_NEGOTIATION: 'This moves the opportunity to Negotiation · Under Negotiation.',
     MARK_WON: 'This closes the opportunity as Closed — Won · Won.',
     MARK_LOST: 'This closes the opportunity as Closed — Lost · Lost.',
     OPPORTUNITY_HOLD: 'This records On Hold as the opportunity outcome. The Sales Head can resume the client follow-up when ready.',
     RESUME_NEGOTIATION: 'This resumes the opportunity at Negotiation · Under Negotiation.',
-    RESUME_PROPOSAL: 'This returns the opportunity to Proposal / Bid Submitted for client follow-up.',
+    RESUME_PROPOSAL: 'This returns the opportunity to Proposal / Bid Submission for client follow-up.',
     CLOSE_OPPORTUNITY: 'This closes the opportunity as No-Bid / Declined · Closed by Sales.',
   };
   if (descriptions[decision]) return descriptions[decision];
@@ -137,18 +137,18 @@ export function ReviewActions({ opportunity: o, onSaved }: { opportunity: Opport
   const isPrimary = (action: DecisionCommand['decision']) => ['SALES_APPROVE', 'GATE1_GO', 'SUBMIT_ESTIMATE', 'ESTIMATE_APPROVE', 'BID_SUBMITTED', 'START_NEGOTIATION', 'RESUME_NEGOTIATION', 'RESUME_PROPOSAL', 'MARK_WON'].includes(action);
   const primary = decisions.find(isPrimary) ?? displayedDecisions.find(isPrimary);
   const secondary = displayedDecisions.filter(action => action !== primary);
-  const buttonTone = (action: DecisionCommand['decision']) => `opp-review-${confirmationTone(action)}`;
+  const buttonTone = (action: DecisionCommand['decision']) => `opp-review-${action.endsWith('_REQUEST_CHANGES') ? 'info' : confirmationTone(action)}`;
   const actionButton = (action: DecisionCommand['decision']) => {
     const selected = action === selectedDecision;
     return <Button key={action} type="button" size="sm" variant="outline"
       aria-pressed={selected} title={selected ? 'Action completed' : undefined}
-      className={`${buttonTone(action)}${selected ? ` ${CONFIRMATION_STYLES[confirmationTone(action)]} border shadow-inner ring-2 ring-inset ring-current disabled:opacity-100` : ''}`}
+      className={`${buttonTone(action)}${action === primary ? ' opp-review-primary' : ''}${selected ? ` ${CONFIRMATION_STYLES[confirmationTone(action)]} border shadow-inner ring-2 ring-inset ring-current disabled:opacity-100` : ''}`}
       disabled={mutation.saving || selected || !decisions.includes(action)} onClick={() => {
         setDecision(action); setReason(''); setHoldReasonId(''); setConfirmed(false); setValidation(undefined);
-      }}>{selected && <Check aria-hidden="true" />}{LABELS[action]}</Button>;
+      }}><span className="opp-review-button-label">{LABELS[action]}</span><span className="opp-review-button-arrow" aria-hidden="true">{selected ? <Check /> : <ChevronRight />}</span></Button>;
   };
   return <section className="opp-review-actions" aria-label="Opportunity actions">
-    {displayedDecisions.length > 0 && <div className="opp-review-buttons">{primary && actionButton(primary)}{secondary.map(actionButton)}</div>}
+    {displayedDecisions.length > 0 && <div className="opp-review-buttons">{primary && actionButton(primary)}{secondary.length > 0 && <div className="opp-review-secondary">{secondary.map(actionButton)}</div>}</div>}
     {!decision && validation && <Notice error={validation} />}
     {!decision && mutation.error && <Notice error={mutation.error} />}
     <Dialog open={Boolean(decision)} onOpenChange={open => { if (!open && !mutation.saving) setDecision(undefined); }}>

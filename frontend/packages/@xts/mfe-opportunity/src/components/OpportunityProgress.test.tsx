@@ -41,14 +41,14 @@ it('keeps the existing stage order and empty future positions after proposal sub
   render(<OpportunityProgress opportunity={fixtureOpportunity({ createdDt: createdAt, createdBy: creator, stageId: 5, subStageId: 11, stageHistory: [] })} />);
   const timeline = screen.getByRole('list', { name: 'Opportunity progress history' });
   expect(Array.from(timeline.children).map(item => item.querySelector('h3')?.textContent)).toEqual([
-    'Outcome (Won / Lost)', 'Negotiation', 'Proposal / Bid Submitted', 'Estimate Review & Approval',
+    'Outcome (Won / Lost)', 'Negotiation', 'Proposal / Bid Submission', 'Estimate Review & Approval',
     'Solution/Scoping Estimation (Engineering)', 'Qualifying (Go/No-Go)', 'Identified',
   ]);
   const outcome = stage('Outcome (Won / Lost)');
   expect(outcome).toHaveClass('upcoming');
   expect(outcome.querySelector('time')).toBeNull();
-  expect(stage('Proposal / Bid Submitted')).toHaveAttribute('aria-current', 'step');
-  expect(within(stage('Proposal / Bid Submitted')).getByText('Bid Submitted')).toBeVisible();
+  expect(stage('Proposal / Bid Submission')).toHaveAttribute('aria-current', 'step');
+  expect(within(stage('Proposal / Bid Submission')).getByText('Bid Submitted')).toBeVisible();
 });
 
 it('shows main results with the correct dates and actors, without intermediate substage history', () => {
@@ -72,7 +72,7 @@ it('shows main results with the correct dates and actors, without intermediate s
   expectResult('Qualifying (Go/No-Go)', 'Go approved', goAt, ceo);
   expectResult('Solution/Scoping Estimation (Engineering)', 'Estimation submitted', submittedAt, estimator);
   expectResult('Estimate Review & Approval', 'Estimation approved', reviewedAt, ceo);
-  expectResult('Proposal / Bid Submitted', 'Bid Submitted', bidAt, sales);
+  expectResult('Proposal / Bid Submission', 'Bid Submitted', bidAt, sales);
   expectResult('Negotiation', 'Negotiation completed', outcomeAt, sales);
   expectResult('Outcome (Won / Lost)', 'Won', outcomeAt, sales);
   expect(stage('Outcome (Won / Lost)')).toHaveAttribute('aria-current', 'step');
@@ -117,9 +117,9 @@ it('shows Bid Submitted once with its own timestamp while it is the current stag
   render(<OpportunityProgress opportunity={fixtureOpportunity({ createdDt: createdAt, createdBy: creator, stageId: 5, subStageId: 11, stageHistory: [
     ...approvedHistory, event(6, 5, 11, bidAt, sales),
   ] })} />);
-  expect(within(stage('Proposal / Bid Submitted')).getAllByText('Bid Submitted')).toHaveLength(1);
-  expect(within(stage('Proposal / Bid Submitted')).queryByText('Proposal In Preparation')).not.toBeInTheDocument();
-  expectResult('Proposal / Bid Submitted', 'Bid Submitted', bidAt, sales);
+  expect(within(stage('Proposal / Bid Submission')).getAllByText('Bid Submitted')).toHaveLength(1);
+  expect(within(stage('Proposal / Bid Submission')).queryByText('Proposal In Preparation')).not.toBeInTheDocument();
+  expectResult('Proposal / Bid Submission', 'Bid Submitted', bidAt, sales);
 });
 
 it('keeps proposal submission time when a held follow-up is resumed and negotiation starts', () => {
@@ -130,7 +130,7 @@ it('keeps proposal submission time when a held follow-up is resumed and negotiat
     event(8, 5, 11, '2026-10-20T04:27:00.000Z', sales),
     event(9, 6, 12, negotiationAt, sales),
   ] })} />);
-  expectResult('Proposal / Bid Submitted', 'Bid Submitted', bidAt, sales);
+  expectResult('Proposal / Bid Submission', 'Bid Submitted', bidAt, sales);
   const negotiation = stage('Negotiation');
   expect(within(negotiation).getByText('Under Negotiation')).toBeVisible();
   expect(negotiation.querySelector('time')).toBeNull();
@@ -146,7 +146,7 @@ it.each([[7, 13, 'Won'], [8, 14, 'Lost']] as const)('shows the actual %s outcome
     event(6, 5, 11, bidAt, sales),
     event(7, stageId, subStageId, outcomeAt, sales),
   ] })} />);
-  expectResult('Proposal / Bid Submitted', 'Bid Submitted', bidAt, sales);
+  expectResult('Proposal / Bid Submission', 'Bid Submitted', bidAt, sales);
   expectResult('Outcome (Won / Lost)', label, outcomeAt, sales);
   expect(stage('Negotiation')).toHaveClass('upcoming');
   expect(stage('Negotiation').querySelector('time')).toBeNull();

@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { SAVE_OPPORTUNITY_ESTIMATION } from './opportunity.queries';
+import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION } from './opportunity.queries';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY, type OwnerDirectoryData } from './userDirectory.queries';
 import { mapOwnerDirectory } from './useOwnerDirectory';
 import { getApolloClient } from '@xts/api-client';
@@ -47,6 +47,7 @@ import { DECISION_ROLE_IDS, SERVICE_LINES } from '../lib/opportunityOptions';
 interface BackendContact { fullName: string; titleRole: string; email: string; phone: string; roleInDecision: number | null; roleInDecisionOther?: string | null; }
 interface BackendCurrency { currencyId: number; currencyCode: string; currencySymbol?: string; }
 interface BackendOpportunity {
+  responses?: { id: string; title: string; category: string | null; answer: string; revision: number; allowedActions: Action[] }[];
   createdDt?: string | null;
   stageHistory?: { id: string; stageId: number; subStageId: number; reachedAt: string; updatedBy?: number | null; comment?: string | null }[];
   estimation?: Estimation | null;
@@ -155,7 +156,13 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
       context: { instructions: '', submissionRequirements: '', opportunityOverview: o.opportunityDescription ?? '', scopeOfWork: '', requirements: '', notes: o.workflowComment ?? '' },
       rfp: { type: rfpType(o.rfpType), questionnaireTypeId: o.rfpType === 1 ? o.proposalQuestionnaireTypeIds?.find((id): id is 1 | 2 => id === 1 || id === 2) ?? null : null, source: o.fileName ? { id: o.filePath ?? o.fileName, name: o.fileName, storagePath: o.filePath ?? undefined, downloadUrl: null } : null, extraction: null, questions: questions.filter(q => q.masterQuestionId === null), sections: questions.filter(q => q.masterQuestionId !== null).map(q => ({ key: String(q.masterQuestionId), instructions: q.text })), submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: o.evaluationBasis ?? '' },
     },
-    client, visibleModules: o.stageId != null && o.stageId >= 3 || o.estimation || actions(o).includes('EDIT_ESTIMATION') ? ['overview', 'estimation', 'activity'] : ['overview', 'activity'], responses: null, estimation: o.estimation ?? null, scope: null,
+    client, visibleModules: o.stageId != null && o.stageId >= 3 || o.estimation || actions(o).includes('EDIT_ESTIMATION') ? ['overview', 'estimation', 'activity'] : ['overview', 'activity'],
+    responses: (o.responses ?? []).map(response => ({
+      id: String(response.id), title: response.title, sourceValidated: true, sourceReference: response.category,
+      owner: null, reviewer: null, dueDate: null, answer: response.answer, revision: response.revision,
+      state: response.answer.trim() ? 'DRAFT' : 'UNASSIGNED', submittedRevision: null, approvedRevision: null,
+      reviewComment: null, allowedActions: response.allowedActions,
+    })), estimation: o.estimation ?? null, scope: null,
     activity: [], responsible: user(o.assignedTo, directory) ?? owner, approvalAssignees: o.assignedTo ? [user(o.assignedTo, directory)!] : [],
     readiness: { ready: true, issues: [] }, salesRecommendation: null,
   };
@@ -325,7 +332,16 @@ export const productionOpportunityService: OpportunityService = {
   },
   saveScope: () => unavailable('Scope persistence'),
   assign: () => unavailable('Response assignment'),
-  answer: () => unavailable('Answer persistence'),
+  async answer(command) {
+    if (command.submit) throw new Error('Save the answer directly in RFP Q&A. Answer review is not available.');
+    const { data } = await getApolloClient().mutate<{ saveOpportunityAnswer: { opportunityId: number } | null }>({
+      mutation: SAVE_OPPORTUNITY_ANSWER,
+      variables: { opportunityId: Number(command.opportunityId), responseId: Number(command.responseId), revision: command.responseRevision, answer: command.answer },
+      errorPolicy: 'none',
+    });
+    if (!data?.saveOpportunityAnswer?.opportunityId) throw new Error('No saved answer was returned. Refresh before retrying.');
+    return productionOpportunityService.detail(String(data.saveOpportunityAnswer.opportunityId));
+  },
   reviewAnswer: () => unavailable('Answer review'),
   async holdReasons() {
     const { data } = await getApolloClient().query<{ reasonCodesList: ({ id: number; reasonName: string; description: string | null; displayOrder: number | null; isActive: boolean } | null)[] | null }>({

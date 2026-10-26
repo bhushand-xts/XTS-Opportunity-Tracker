@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DecisionCommand } from '@xts/api-contracts';
 import { productionOpportunityService } from './OpportunityService';
-import { GET_OPPORTUNITY, TRANSITION_OPPORTUNITY, GET_HOLD_REASON_CODES, SAVE_OPPORTUNITY_ESTIMATION } from './opportunity.queries';
+import { GET_OPPORTUNITY, TRANSITION_OPPORTUNITY, GET_HOLD_REASON_CODES, SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION } from './opportunity.queries';
 
 const api = vi.hoisted(() => ({ query: vi.fn(), mutate: vi.fn() }));
 vi.mock('@xts/api-client', () => ({ getApolloClient: () => api }));
@@ -27,6 +27,11 @@ function opportunity(stageId: number | null, subStageId: number | null, allowedA
 beforeEach(() => vi.resetAllMocks());
 
 describe('production approval schema', () => {
+  it('validates question answers against the actual opportunity schema', () => {
+    const source = readFileSync(resolve(process.cwd(), '../backend/services/opportunity/src/graphql/typeDefs/opportunity.typeDefs.ts'), 'utf8');
+    const schema = buildSchema(`type Query { _unused: Boolean } type Mutation { _unused: Boolean } ${source.match(/`([\s\S]*)`/)![1]}`);
+    expect(validate(schema, SAVE_OPPORTUNITY_ANSWER)).toEqual([]);
+  });
   it('validates the decision mutation including reasonCodeId against the actual opportunity schema', () => {
     const source = readFileSync(resolve(process.cwd(), '../backend/services/opportunity/src/graphql/typeDefs/opportunity.typeDefs.ts'), 'utf8');
     const schema = buildSchema(`type Query { _unused: Boolean } type Mutation { _unused: Boolean } ${source.match(/`([\s\S]*)`/)![1]}`);
@@ -41,6 +46,29 @@ describe('production approval schema', () => {
 });
 
 describe('production opportunity stage data', () => {
+  it('loads saved opportunity questions and answers using question-row IDs without requiring assignments', async () => {
+    api.query.mockResolvedValueOnce({ data: { opportunity: { ...opportunity(3, 7), responses: [
+      { id: '71', title: 'Delivery approach?', category: 'Technical', answer: '', revision: 1, allowedActions: ['SAVE_ANSWER'] },
+      { id: '72', title: 'Security controls?', category: 'Security', answer: 'Encrypted storage.', revision: 3, allowedActions: [] },
+    ] } } }).mockResolvedValueOnce(directory);
+    const detail = await productionOpportunityService.detail('10');
+    expect(detail.responses).toMatchObject([
+      { id: '71', title: 'Delivery approach?', answer: '', revision: 1, owner: null, reviewer: null, allowedActions: ['SAVE_ANSWER'] },
+      { id: '72', title: 'Security controls?', answer: 'Encrypted storage.', revision: 3, owner: null, reviewer: null, allowedActions: [] },
+    ]);
+  });
+
+  it('persists a free-text answer and reloads its saved version from the server', async () => {
+    api.mutate.mockResolvedValueOnce({ data: { saveOpportunityAnswer: { opportunityId: 10 } } });
+    api.query.mockResolvedValueOnce({ data: { opportunity: { ...opportunity(3, 7), responses: [
+      { id: '71', title: 'Delivery?', answer: 'Phase 1\nPhase 2', revision: 2, allowedActions: ['SAVE_ANSWER'] },
+    ] } } }).mockResolvedValueOnce(directory);
+    const saved = await productionOpportunityService.answer({ opportunityId: '10', responseId: '71', responseRevision: 1,
+      expectedRevision: 1, idempotencyKey: 'answer-71', answer: 'Phase 1\nPhase 2', submit: false });
+    expect(api.mutate).toHaveBeenCalledWith({ mutation: SAVE_OPPORTUNITY_ANSWER, errorPolicy: 'none',
+      variables: { opportunityId: 10, responseId: 71, revision: 1, answer: 'Phase 1\nPhase 2' } });
+    expect(saved.responses?.[0]).toMatchObject({ answer: 'Phase 1\nPhase 2', revision: 2 });
+  });
   it('keeps creation and transition dates and resolves tracker users separately from the creator', async () => {
     const stageHistory = [
       { id: '1', stageId: 1, subStageId: 1, reachedAt: '2026-10-19T04:00:00.000Z', updatedBy: 11, comment: null },

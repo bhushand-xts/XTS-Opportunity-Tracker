@@ -1,6 +1,7 @@
 export const opportunityTypeDefs = `#graphql
 
   type Opportunity {
+    responses: [OpportunityResponse!]!
     estimation: OpportunityEstimation
     stageHistory: [OpportunityStageHistory!]!
     allowedActions: [String!]!
@@ -77,6 +78,15 @@ export const opportunityTypeDefs = `#graphql
     reachedAt: String!
     updatedBy: Int
     comment: String
+  }
+
+  type OpportunityResponse {
+    id: ID!
+    title: String!
+    category: String
+    answer: String!
+    revision: Int!
+    allowedActions: [String!]!
   }
 
   type OpportunityContact {
@@ -335,6 +345,7 @@ export const opportunityTypeDefs = `#graphql
   }
 
   extend type Mutation {
+    saveOpportunityAnswer(opportunityId: Int!, responseId: Int!, revision: Int!, answer: String!): Opportunity!
     saveOpportunityEstimation(opportunityId: Int!, estimation: OpportunityEstimationInput!): Opportunity!
     updateOpportunityClient(clientId: Int!, client: RfpIntakeClientInput!, contacts: [RfpIntakeContactInput!]!): OpportunityDirectoryClient!
     createOpportunityClient(client: RfpIntakeClientInput!, contacts: [RfpIntakeContactInput!]!): OpportunityDirectoryClient!

@@ -562,6 +562,26 @@ export async function getEstimation(opportunityId: number, ctx: any) {
   return repository.findEstimation(opportunityId);
 }
 
+export async function getResponses(opportunityId: number, ctx: any) {
+  await get(opportunityId, ctx);
+  const access = await accessFor(ctx);
+  return (await repository.findResponses(opportunityId)).map(response => ({
+    ...response, allowedActions: access.estimate ? ['SAVE_ANSWER'] : [],
+  }));
+}
+
+export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, ctx: any) {
+  const access = await accessFor(ctx);
+  if (!access.estimate) throw conflict('Only the Estimation Team can answer opportunity questions.');
+  await get(opportunityId, ctx);
+  if (!Number.isSafeInteger(responseId) || responseId <= 0 || !Number.isSafeInteger(revision) || revision < 0) {
+    throw validationFailed('Select a saved opportunity question and its current revision.');
+  }
+  if (typeof answer !== 'string' || answer.length > 100000) throw validationFailed('The answer must be text with at most 100,000 characters.');
+  await repository.saveAnswer(opportunityId, responseId, revision, answer, access.userId);
+  return get(opportunityId, ctx);
+}
+
 export async function getStageHistory(opportunityId: number, ctx: any) {
   await get(opportunityId, ctx);
   return repository.findStageHistory(opportunityId);
