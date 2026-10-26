@@ -1,0 +1,65 @@
+import type { OpportunitySummary } from '@xts/api-contracts';
+import { STATE_LABELS } from './workflow';
+
+export const STAGE_LABELS: Record<number, string> = {
+  1: 'Identified',
+  2: 'Qualifying (Go/No-Go)',
+  3: 'Solution/Scoping Estimation (Engineering)',
+  4: 'Estimate Review & Approval',
+  5: 'Proposal / Bid Submission',
+  6: 'Negotiation',
+  7: 'Closed — Won',
+  8: 'Closed — Lost',
+  9: 'No-Bid / Declined',
+  10: 'On Hold',
+};
+
+export const OPPORTUNITY_OUTCOME_LABEL = 'Outcome (Won / Lost)';
+export const PIPELINE_STAGE_IDS = [1, 2, 3, 4, 5, 6, 7, 9];
+export function approvalStagesForRole(roleName?: string | null): number[] {
+  const role = (roleName ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (['sh', 'sales_head'].includes(role)) return [1, 5, 6];
+  if (['ceo', 'approver_gate2', 'ceo/gate_2_approver'].includes(role)) return [2, 4];
+  return [];
+}
+
+export function workStagesForRole(roleName?: string | null): number[] {
+  return (roleName ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_') === 'estimation_team' ? [3] : [];
+}
+
+export function isOpportunityOutcome(stageId: number | null | undefined) {
+  return [7, 8, 10].includes(stageId ?? 0);
+}
+
+const SUBSTAGES: Record<number, { stageId: number; label: string }> = {
+  1: { stageId: 1, label: 'Pending Review' },
+  2: { stageId: 1, label: 'Changes Requested' },
+  3: { stageId: 1, label: 'On Hold' },
+  4: { stageId: 2, label: 'Pending Go/No-Go' },
+  5: { stageId: 2, label: 'Changes Requested' },
+  6: { stageId: 2, label: 'On Hold' },
+  7: { stageId: 3, label: 'In Progress' },
+  8: { stageId: 4, label: 'Pending Approval' },
+  9: { stageId: 4, label: 'On Hold' },
+  10: { stageId: 5, label: 'Proposal In Preparation' },
+  11: { stageId: 5, label: 'Bid Submitted' },
+  12: { stageId: 6, label: 'Under Negotiation' },
+  13: { stageId: 7, label: 'Won' },
+  14: { stageId: 8, label: 'Lost' },
+  15: { stageId: 9, label: 'Rejected by Sales Head' },
+  16: { stageId: 9, label: 'No-Go by CEO' },
+  17: { stageId: 9, label: 'Estimate Rejected by CEO' },
+  18: { stageId: 9, label: 'Closed by Sales' },
+  19: { stageId: 10, label: 'Negotiation On Hold' },
+  20: { stageId: 10, label: 'Proposal Follow-up On Hold' },
+};
+
+/** Display persisted master IDs without changing the legacy workflow state. */
+export function opportunityStatus(opportunity: Pick<OpportunitySummary, 'state' | 'stageId' | 'subStageId'>) {
+  if (opportunity.stageId == null) return { stage: STATE_LABELS[opportunity.state], substage: null };
+  const substage = opportunity.subStageId == null ? undefined : SUBSTAGES[opportunity.subStageId];
+  return {
+    stage: STAGE_LABELS[opportunity.stageId] ?? 'Status unavailable',
+    substage: substage?.stageId === opportunity.stageId ? substage.label : null,
+  };
+}

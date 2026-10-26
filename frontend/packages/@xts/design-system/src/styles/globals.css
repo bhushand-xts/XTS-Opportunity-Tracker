@@ -48,6 +48,14 @@
     --stage-3: 291.1 63.9% 57.5%;
     --stage-4: 24.6 95% 53.1%;
     --stage-5: 142.1 76.2% 36.3%;
+    /* Workflow progress ramp (slate -> blue -> cyan -> emerald -> green): colours an item by how
+       far it has advanced, so later steps read "greener". Neighbouring steps never share a hue.
+       A stopped/rejected item uses --destructive. */
+    --progress-1: 215 20% 65%;
+    --progress-2: 217 91% 60%;
+    --progress-3: 192 91% 36%;
+    --progress-4: 160 84% 39%;
+    --progress-5: 142 72% 29%;
     /* Brand accent — sidebar/top-bar (logo tile, active nav, avatar). A flat
        blue, not a gradient, to keep the chrome plain and uncluttered. */
     --brand-from: 217 91% 60%;
@@ -93,6 +101,11 @@
     --rail: var(--mauve-1);
     --rail-foreground: 270 4% 65%;
     --rail-active: 217 91% 60%;
+    --progress-1: 215 16% 47%;
+    --progress-2: 217 91% 60%;
+    --progress-3: 189 94% 43%;
+    --progress-4: 160 84% 39%;
+    --progress-5: 142 69% 45%;
   }
 }
 

@@ -48,6 +48,15 @@ export function NewOpportunityDialog({
       toast.error("Opportunity name is required");
       return;
     }
+    const clientBudget = Number(form.value);
+    if (!form.value.trim() || !Number.isFinite(clientBudget) || clientBudget <= 0) {
+      toast.error("Client budget (USD) must be greater than zero");
+      return;
+    }
+    if (!/^\d+(\.\d{1,2})?$/.test(form.value) || clientBudget >= 1e13) {
+      toast.error("Client budget (USD) must have at most two decimals and be below 10 trillion");
+      return;
+    }
     const owner = users.find((u) => u.id === form.ownerId);
     addOpportunity({
       name: form.name.trim(),
@@ -57,7 +66,7 @@ export function NewOpportunityDialog({
       team: owner?.team ?? "Enterprise West",
       source: form.source,
       type: form.type,
-      value: Number(form.value) || 0,
+      value: clientBudget,
       currency: "USD",
       probability: Number(form.probability) || 0,
       expectedClose: form.expectedClose,
@@ -143,8 +152,8 @@ export function NewOpportunityDialog({
             <AccordionTrigger className="text-[13px] font-semibold">Commercial</AccordionTrigger>
             <AccordionContent className="grid grid-cols-3 gap-4 pt-1">
               <div className="space-y-1.5">
-                <Label className="text-[13px]">Estimated value (USD)</Label>
-                <Input type="number" value={form.value} onChange={(e) => set("value", e.target.value)} placeholder="120000" />
+                <Label className="text-[13px]">Client budget (USD)</Label>
+                <Input type="number" min="0.01" step="0.01" value={form.value} onChange={(e) => set("value", e.target.value)} placeholder="120000" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-[13px]">Probability %</Label>

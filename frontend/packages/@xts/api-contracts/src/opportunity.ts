@@ -4,7 +4,7 @@ export type LocalDate = string;
 export type OpportunityState = 'PREPARATION_PENDING' | 'IN_PROGRESS' | 'SALES_REVIEW' | 'GATE1_PENDING' | 'GATE1_GO' | 'SALES_REJECTED' | 'GATE1_NO_GO';
 export type ResponseState = 'UNASSIGNED' | 'ASSIGNED' | 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'CHANGES_REQUESTED';
 export type Module = 'overview' | 'responses' | 'estimation' | 'scope' | 'assignment' | 'activity';
-export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
+export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
 export interface DirectoryUser { id: string; name: string; email: string; roles: string[]; active: boolean; }
 export interface Contact { id?: string; name: string; title: string; email: string; phone: string; decisionRole: string; decisionRoleOther?: string; }
 export type AdditionalContact = Contact;
@@ -28,6 +28,7 @@ export interface PreparedQuestion { id: string; text: string; sourceReference: s
 export interface ProposalSection { key: string; instructions: string; }
 export interface RfpDraft {
   type: 'QUESTIONNAIRE' | 'GENERIC' | null; source: SourceDocument | null;
+  questionnaireTypeId?: 1 | 2 | null;
   extraction: { id: string; state: 'PROCESSING' | 'SUCCEEDED' | 'FAILED'; error: string | null } | null;
   questions: PreparedQuestion[]; sections: ProposalSection[];
   submissionFormat: 'TECHNICAL_COST' | 'COMBINED'; outputFormat: 'PDF' | 'DOCX' | 'PPTX';
@@ -40,13 +41,17 @@ export interface OpportunityDraft {
 }
 export interface OpportunitySummary {
   id: string; number: string; title: string; estimatedValue: Decimal; estimatedValueUsd?: Decimal; currencyCode: string; currencySymbol?: string;
-  clientName: string | null; owner: DirectoryUser | null; priority: OpportunityDraft['priority'];
-  state: OpportunityState; rfpType: RfpDraft['type']; submissionDeadline: LocalDate | null;
+  clientName: string | null; owner: DirectoryUser | null; createdBy?: DirectoryUser | null; priority: OpportunityDraft['priority'];
+  createdDt?: string | null;
+  state: OpportunityState; stageId?: number | null; subStageId?: number | null; holdReasonCodeId?: number | null; rfpType: RfpDraft['type']; submissionDeadline: LocalDate | null;
   revision: number; packageRevision: number | null; allowedActions: Action[];
 }
 export interface EstimateRow { id: string; workItem: string; hours: Decimal; people: number; hourlyRate: Decimal; }
 export interface Estimation { revision: number; rows: EstimateRow[]; assumptions: string; total: Decimal; }
-export interface Scope { revision: number; objective: string; deliverables: string; inclusions: string; exclusions: string; dependencies: string; acceptance: string; }
+export type RiskSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
+export interface AlignmentItem { id: string; text: string; }
+export interface RiskItem { id: string; description: string; severity: RiskSeverity; }
+export interface Scope { revision: number; summary: string; alignment: AlignmentItem[]; risks: RiskItem[]; }
 export interface ResponseItem {
   id: string; title: string; sourceValidated: boolean; sourceReference: string | null;
   owner: DirectoryUser | null; reviewer: DirectoryUser | null; dueDate: LocalDate | null;
@@ -54,7 +59,9 @@ export interface ResponseItem {
   approvedRevision: number | null; reviewComment: string | null; allowedActions: Action[];
 }
 export interface ActivityEvent { id: string; action: string; actor: DirectoryUser; at: string; note: string | null; packageRevision: number | null; }
+export interface OpportunityStageHistory { id: string; stageId: number; subStageId: number; reachedAt: string; actor?: DirectoryUser | null; comment?: string | null; }
 export interface OpportunityDetail extends OpportunitySummary {
+  stageHistory?: OpportunityStageHistory[];
   form: OpportunityDraft; client: OpportunityClient | null; visibleModules: Module[];
   /** Restricted values must be null/redacted on the backend, not merely hidden. */
   responses: ResponseItem[] | null; estimation: Estimation | null; scope: Scope | null;
@@ -67,6 +74,12 @@ export interface ListFilter { search: string; queue: 'PIPELINE' | 'MY_WORK' | 'M
 export interface SaveCommand { id: string | null; expectedRevision: number | null; idempotencyKey: string; form: OpportunityDraft; }
 export interface VersionCommand { opportunityId: string; expectedRevision: number; idempotencyKey: string; }
 export interface ResponseCommand extends VersionCommand { responseId: string; responseRevision: number; }
-export interface DecisionCommand extends VersionCommand { packageRevision: number; decision: 'SALES_APPROVE' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_NO_GO'; reason: string; confirmed: boolean; }
+export interface DecisionCommand extends VersionCommand {
+  packageRevision: number | null;
+  expectedStageId?: number | null; expectedSubStageId?: number | null;
+  reasonCodeId?: number | null;
+  decision: 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT';
+  reason: string; confirmed: boolean;
+}
 export interface LookupOption { id: string; label: string; code?: string; }
 export interface OpportunityLookups { currencies: LookupOption[]; industries: LookupOption[]; accountTypes: LookupOption[]; }

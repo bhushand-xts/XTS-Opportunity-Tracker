@@ -46,7 +46,7 @@ describe('Opportunity menu discovery', () => {
     expect(resolveOpportunityMenus(children).map(menu => menu.menuId)).toEqual([12, 100]);
     expect(resolveOpportunityMenus(children.map(menu => ({ ...menu, isActive: menu.menuId !== 12 })))).toEqual([]);
   });
-  it('keeps root View separate from revoked Pipeline and full sibling permissions', () => {
+  it('uses root View for the pipeline without inheriting sibling CRUD or approval grants', () => {
     const menus = resolveOpportunityMenus([
       record({}),
       record({ menuId: 100, menuKey: 'pipeline', menuName: 'Pipeline', parentId: 12, routePath: '/opportunities' }),
@@ -55,15 +55,31 @@ describe('Opportunity menu discovery', () => {
     ]);
     const access = opportunityMenuPermissions(menus, (key, permission) =>
       key === 'opportunities' ? permission === 'view' : ['my_work', 'my_approvals'].includes(key));
-    expect(access).toEqual({ view: true, pipeline: false, add: false, edit: false, work: true, approvals: true, approve: true });
+    expect(access).toEqual({ view: true, pipeline: true, add: false, edit: false, work: true, approvals: false, approve: false });
   });
-  it('does not inherit parent View for any child queue or child Add/Edit for Opportunities', () => {
+  it('does not grant workflow or CRUD writes from View or child Add/Edit', () => {
     const menus = resolveOpportunityMenus([
       record({}), record({ menuId: 100, menuKey: 'pipeline', menuName: 'Pipeline', parentId: 12, routePath: '/opportunities' }),
     ]);
     expect(opportunityMenuPermissions(menus, (key, permission) => key === 'opportunities' && permission === 'view')).toEqual({
-      view: true, pipeline: false, add: false, edit: false, work: false, approvals: false, approve: false,
+      view: true, pipeline: true, add: false, edit: false, work: false, approvals: false, approve: false,
     });
     expect(opportunityMenuPermissions(menus, key => key === 'pipeline')).toMatchObject({ pipeline: true, view: false, add: false, edit: false });
+  });
+  it('shows approval navigation for Sales Head and CEO independently of permissions', () => {
+    const menus = resolveOpportunityMenus(catalog);
+    for (const role of ['Sales Head', 'CEO/Gate-2 Approver', 'CEO']) {
+      expect(opportunityMenuPermissions(menus, () => false, role)).toEqual({
+        view: false, pipeline: false, add: false, edit: false, work: false, approvals: true, approve: true,
+      });
+    }
+    for (const role of [null, 'Sales Representative', 'System Administrator']) {
+      expect(opportunityMenuPermissions(menus, () => true, role)).toMatchObject({ approvals: false, approve: false });
+    }
+  });
+  it('shows Estimation Team work navigation independently of permissions without granting CRUD', () => {
+    expect(opportunityMenuPermissions(resolveOpportunityMenus(catalog), () => false, 'Estimation Team')).toEqual({
+      view: false, pipeline: false, add: false, edit: false, work: true, approvals: false, approve: false,
+    });
   });
 });

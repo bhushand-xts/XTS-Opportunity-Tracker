@@ -1,6 +1,9 @@
 export const opportunityTypeDefs = `#graphql
 
   type Opportunity {
+    responses: [OpportunityResponse!]!
+    estimation: OpportunityEstimation
+    stageHistory: [OpportunityStageHistory!]!
     allowedActions: [String!]!
     opportunityId: Int!
     opportunityNumber: String
@@ -52,6 +55,7 @@ export const opportunityTypeDefs = `#graphql
     currencyId: Int
     rfpType: Int
     workflowComment: String
+    workflowReasonCodeId: Int
     clientName: String
     accountType: String
     sector: String
@@ -64,6 +68,25 @@ export const opportunityTypeDefs = `#graphql
     proposalQuestions: [String!]!
     proposalQuestionIds: [Int]!
     proposalQuestionCategories: [String]!
+    proposalQuestionnaireTypeIds: [Int]!
+  }
+
+  type OpportunityStageHistory {
+    id: ID!
+    stageId: Int!
+    subStageId: Int!
+    reachedAt: String!
+    updatedBy: Int
+    comment: String
+  }
+
+  type OpportunityResponse {
+    id: ID!
+    title: String!
+    category: String
+    answer: String!
+    revision: Int!
+    allowedActions: [String!]!
   }
 
   type OpportunityContact {
@@ -74,6 +97,11 @@ export const opportunityTypeDefs = `#graphql
     roleInDecision: Int
     roleInDecisionOther: String
   }
+
+  type OpportunityEstimationRow { id: String!, workItem: String!, hours: String!, people: Int!, hourlyRate: String! }
+  type OpportunityEstimation { revision: Int!, rows: [OpportunityEstimationRow!]!, assumptions: String!, total: String! }
+  input OpportunityEstimationRowInput { id: String!, workItem: String!, hours: String!, people: Int!, hourlyRate: String! }
+  input OpportunityEstimationInput { revision: Int!, rows: [OpportunityEstimationRowInput!]!, assumptions: String!, total: String }
 
   type RfpIntakeOpportunity {
     opportunityId: Int!
@@ -118,6 +146,7 @@ export const opportunityTypeDefs = `#graphql
     questionId: Int!
     question: String!
     category: String
+    questionnaireTypeId: Int
   }
 
   input CreateRfpIntakeOpportunityInput {
@@ -283,6 +312,7 @@ export const opportunityTypeDefs = `#graphql
     questionId: Int
     question: String!
     category: String
+    questionnaireTypeId: Int
   }
 
   enum OpportunityWorkflowAction {
@@ -291,6 +321,15 @@ export const opportunityTypeDefs = `#graphql
     APPROVE
     RESUBMIT
       SUBMIT_ESTIMATE
+    REJECT
+    BID_SUBMITTED
+    START_NEGOTIATION
+    MARK_WON
+    MARK_LOST
+    OPPORTUNITY_HOLD
+    RESUME_NEGOTIATION
+    RESUME_PROPOSAL
+    CLOSE_OPPORTUNITY
   }
 
   extend type Query {
@@ -306,6 +345,8 @@ export const opportunityTypeDefs = `#graphql
   }
 
   extend type Mutation {
+    saveOpportunityAnswer(opportunityId: Int!, responseId: Int!, revision: Int!, answer: String!): Opportunity!
+    saveOpportunityEstimation(opportunityId: Int!, estimation: OpportunityEstimationInput!): Opportunity!
     updateOpportunityClient(clientId: Int!, client: RfpIntakeClientInput!, contacts: [RfpIntakeContactInput!]!): OpportunityDirectoryClient!
     createOpportunityClient(client: RfpIntakeClientInput!, contacts: [RfpIntakeContactInput!]!): OpportunityDirectoryClient!
     createOpportunity(
@@ -324,6 +365,7 @@ export const opportunityTypeDefs = `#graphql
       action: OpportunityWorkflowAction!
       comment: String
       opportunityDescription: String
+      reasonCodeId: Int
     ): Opportunity!
   }
 `;

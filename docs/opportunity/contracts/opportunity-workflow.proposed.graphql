@@ -14,6 +14,7 @@ enum WorkflowQueue { PIPELINE MY_WORK MY_APPROVALS }
 enum WorkflowPurpose { OWNER REVIEWER SALES_REVIEWER GATE1_APPROVER }
 enum WorkflowMode { WORK DETAILS REVIEW }
 enum WorkflowDecision { SALES_APPROVE SALES_REJECT GATE1_GO GATE1_NO_GO }
+enum WorkflowRiskSeverity { LOW MEDIUM HIGH }
 
 type WorkflowUser { id: ID! name: String! email: String! roles: [String!]! active: Boolean! }
 type WorkflowContact { id: ID name: String! title: String! email: String! phone: String! decisionRole: String! }
@@ -30,7 +31,9 @@ type WorkflowRfp { type: WorkflowRfpType source: WorkflowDocument extraction: Wo
 type WorkflowForm { title: String! estimatedValue: String! currencyId: ID! serviceLine: String! leadSource: String! ownerId: ID! priority: WorkflowPriority! description: String! clientId: ID solicitation: WorkflowSolicitation! dates: WorkflowDates! context: WorkflowContext! rfp: WorkflowRfp! }
 type WorkflowEstimateRow { id: ID! workItem: String! hours: String! people: Int! hourlyRate: String! }
 type WorkflowEstimation { revision: Int! rows: [WorkflowEstimateRow!]! assumptions: String! total: String! }
-type WorkflowScope { revision: Int! objective: String! deliverables: String! inclusions: String! exclusions: String! dependencies: String! acceptance: String! }
+type WorkflowAlignmentItem { id: ID! text: String! }
+type WorkflowRiskItem { id: ID! description: String! severity: WorkflowRiskSeverity! }
+type WorkflowScope { revision: Int! summary: String! alignment: [WorkflowAlignmentItem!]! risks: [WorkflowRiskItem!]! }
 type WorkflowResponse { id: ID! title: String! sourceValidated: Boolean! sourceReference: String owner: WorkflowUser reviewer: WorkflowUser dueDate: String answer: String! state: WorkflowResponseState! revision: Int! submittedRevision: Int approvedRevision: Int reviewComment: String allowedActions: [WorkflowAction!]! }
 type WorkflowActivity { id: ID! action: String! actor: WorkflowUser! at: String! note: String packageRevision: Int }
 type WorkflowReadiness { ready: Boolean! issues: [String!]! }
@@ -49,7 +52,9 @@ input WorkflowContextInput { instructions: String! submissionRequirements: Strin
 input WorkflowQuestionInput { id: ID! masterQuestionId: Int text: String! sourceReference: String! validated: Boolean! }
 input WorkflowSectionInput { key: String! instructions: String! }
 input WorkflowEstimateRowInput { id: ID! workItem: String! hours: String! people: Int! hourlyRate: String! }
-input WorkflowScopeInput { revision: Int! objective: String! deliverables: String! inclusions: String! exclusions: String! dependencies: String! acceptance: String! }
+input WorkflowAlignmentItemInput { id: ID! text: String! }
+input WorkflowRiskItemInput { id: ID! description: String! severity: WorkflowRiskSeverity! }
+input WorkflowScopeInput { revision: Int! summary: String! alignment: [WorkflowAlignmentItemInput!]! risks: [WorkflowRiskItemInput!]! }
 input WorkflowEstimationInput { revision: Int! rows: [WorkflowEstimateRowInput!]! assumptions: String! total: String! }
 input WorkflowRfpInput { type: WorkflowRfpType sourceDocumentId: ID questions: [WorkflowQuestionInput!]! sections: [WorkflowSectionInput!]! submissionFormat: WorkflowSubmissionFormat! outputFormat: WorkflowOutputFormat! evaluation: String! }
 input WorkflowFormInput { title: String! estimatedValue: String! currencyId: ID! serviceLine: String! leadSource: String! ownerId: ID! priority: WorkflowPriority! description: String! clientId: ID solicitation: WorkflowSolicitationInput! dates: WorkflowDatesInput! context: WorkflowContextInput! rfp: WorkflowRfpInput! }

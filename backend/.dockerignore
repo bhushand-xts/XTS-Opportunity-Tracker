@@ -9,3 +9,7 @@ dist
 **/.env
 .git
 npm-debug.log
+# Runtime document storage — can contain restrictively-permissioned (0700)
+# directories the build user can't read, and it's never needed in the image.
+storage
+**/storage

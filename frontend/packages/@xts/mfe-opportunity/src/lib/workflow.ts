@@ -1,4 +1,4 @@
-import type { Action, Decimal, DirectoryUser, EstimateRow, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
+import type { Action, Decimal, DirectoryUser, EstimateRow, LookupOption, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
 import { randomUUID } from './uuid';
 
 export const STATE_LABELS = {
@@ -21,7 +21,9 @@ export const SECTION_CATALOG = [
   { key: 'support', title: 'Support & service levels', category: 'Commercial', description: 'Support model, commitments and escalation.' },
 ] as const;
 export const CONTEXT_FIELDS = { instructions: 'Instructions', submissionRequirements: 'Submission requirements', opportunityOverview: 'Opportunity overview', scopeOfWork: 'Scope of work', requirements: 'Key technical / functional requirements', notes: 'Notes' };
-export const SCOPE_FIELDS = { objective: 'Objective', deliverables: 'Deliverables', inclusions: 'Inclusions', exclusions: 'Exclusions', dependencies: 'Dependencies / assumptions', acceptance: 'Acceptance criteria' };
+export const RISK_SEVERITIES = ['LOW', 'MEDIUM', 'HIGH'] as const;
+export const RISK_SEVERITY_LABELS = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High' };
+export const RISK_SEVERITY_OPTIONS: LookupOption[] = RISK_SEVERITIES.map(id => ({ id, label: RISK_SEVERITY_LABELS[id] }));
 
 /** Snapshot templates into this opportunity; editing copies never edits masters. */
 export function addMasterQuestionTemplates(questions: PreparedQuestion[], templates: RfpQuestion[]): PreparedQuestion[] {
@@ -56,10 +58,11 @@ export function userLabel(user: DirectoryUser | null) { return user ? `${user.na
 export function pendingSaveFieldErrors(form: OpportunityDraft): Record<string, string> {
   const errors: Record<string, string> = {};
   if (!form.title.trim()) errors['Opportunity name / title'] = 'Please fill the Opportunity name.';
-  if (!form.estimatedValue.trim()) errors['Estimated value'] = 'Please fill the Estimated value.';
-  else if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValue)) errors['Estimated value'] = 'Please enter a non-negative Estimated value with at most two decimals.';
-  if (!form.estimatedValueUsd?.trim()) errors['Estimated value (USD)'] = 'Please fill the Estimated value (USD).';
-  else if (!/^\d+(\.\d{1,2})?$/.test(form.estimatedValueUsd) || Number(form.estimatedValueUsd) >= 1e13) errors['Estimated value (USD)'] = 'Enter a non-negative USD value with at most two decimals, below 10 trillion.';
+  for (const [label, value] of [['Client budget', form.estimatedValue], ['Client budget (USD)', form.estimatedValueUsd]] as const) {
+    if (!value?.trim()) errors[label] = `Please fill the ${label}.`;
+    else if (!Number.isFinite(Number(value)) || Number(value) <= 0) errors[label] = `${label} must be greater than zero.`;
+    else if (!/^\d+(\.\d{1,2})?$/.test(value) || Number(value) >= 1e13) errors[label] = `${label} must have at most two decimals and be below 10 trillion.`;
+  }
   if (form.serviceLine === 'Other' && !form.serviceLineOther?.trim()) errors['Other service line'] = 'Please fill the Other service line.';
   if ((form.serviceLine === 'Other' ? form.serviceLineOther ?? '' : form.serviceLine).trim().length > 255) errors[form.serviceLine === 'Other' ? 'Other service line' : 'Service line'] = 'Service line must be at most 255 characters.';
   if (!form.currencyId) errors['Currency'] = 'Please select a Currency.';
@@ -111,11 +114,51 @@ export function money(value: Decimal, code: string) {
   try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(Number(value)); }
   catch { return `${code} ${value}`; }
 }
-export function decisionError(o: OpportunityDetail, decision: Action, reason: string, confirmed: boolean): string | null {
+export function decisionError(o: OpportunityDetail, decision: Action, reason: string, confirmed: boolean, reasonCodeId?: number | null): string | null {
   if (!may(o, decision)) return 'You are not permitted to make this decision.';
+  if (o.stageId != null) {
+    if (!applicableDecisions(o).includes(decision)) return 'This opportunity is no longer awaiting this decision. Refresh the opportunity.';
+    if (decision.endsWith('_HOLD') || ['SALES_REJECT', 'GATE1_NO_GO', 'ESTIMATE_REJECT'].includes(decision)) {
+      const label = decision.endsWith('_HOLD') ? 'hold' : 'rejection';
+      if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) return `Select a ${label} reason.`;
+      if (!reason.trim()) return `Enter a ${label} description.`;
+    }
+    if (decision.endsWith('_REQUEST_CHANGES') && !reason.trim()) return 'Enter the changes requested before returning the opportunity.';
+    return null;
+  }
   if ((decision.startsWith('SALES_') && o.state !== 'SALES_REVIEW') || (decision.startsWith('GATE1_') && o.state !== 'GATE1_PENDING')) return 'This package is no longer awaiting this decision. Refresh the opportunity.';
   if (o.packageRevision === null) return 'There is no submitted package to review.';
   if (!confirmed) return 'Confirm that you reviewed this package revision.';
   if ((decision === 'SALES_REJECT' || decision === 'GATE1_NO_GO') && !reason.trim()) return 'Enter a reason for this decision.';
   return null;
+}
+
+export function applicableDecisions(o: OpportunityDetail): Action[] {
+  const stage = o.stageId, substage = o.subStageId;
+  const decisions: Action[] = [];
+  if (stage === 1 && [1, 2, 3].includes(substage ?? 0)) {
+    decisions.push('SALES_APPROVE');
+    if (substage !== 2) decisions.push('SALES_REQUEST_CHANGES');
+    if (substage !== 3) decisions.push('SALES_HOLD');
+    decisions.push('SALES_REJECT');
+  }
+  if (stage === 2 && [4, 5, 6].includes(substage ?? 0)) {
+    decisions.push('GATE1_GO');
+    if (substage !== 5) decisions.push('GATE1_REQUEST_CHANGES');
+    if (substage !== 6) decisions.push('GATE1_HOLD');
+    decisions.push('GATE1_NO_GO');
+  }
+  if (stage === 3 && substage === 7) decisions.push('SUBMIT_ESTIMATE');
+  if (stage === 4 && [8, 9].includes(substage ?? 0)) {
+    decisions.push('ESTIMATE_APPROVE');
+    if (substage === 8) decisions.push('ESTIMATE_HOLD');
+    decisions.push('ESTIMATE_REJECT');
+  }
+  if (stage === 5 && substage === 10) decisions.push('BID_SUBMITTED');
+  if (stage === 5 && substage === 11) decisions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST');
+  if (stage === 6 && substage === 12) decisions.push('MARK_WON', 'MARK_LOST');
+  if (stage === 10 && substage === 19) decisions.push('RESUME_NEGOTIATION');
+  if (stage === 10 && substage === 20) decisions.push('RESUME_PROPOSAL');
+  if ([1, 2, 3, 4, 5, 6].includes(stage ?? 0)) decisions.push('CLOSE_OPPORTUNITY');
+  return decisions;
 }

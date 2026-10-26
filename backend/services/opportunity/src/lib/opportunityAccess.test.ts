@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { opportunityAccess, type AccessMenu, type WorkflowRecord } from './opportunityAccess';
+import { opportunityAccess, type AccessMenu, type WorkflowRecord, type WorkflowRole } from './opportunityAccess';
 
 const menus: AccessMenu[] = [
   { menuId: 101, menuKey: 'opportunities', menuName: 'Opportunities', parentId: null, routePath: null, isActive: true },
@@ -12,13 +12,47 @@ const menus: AccessMenu[] = [
 ];
 const record: WorkflowRecord = { stageId: 1, subStageId: 1, createdBy: 55, ownerId: 55, assignedTo: null };
 const grant = (menuId: number, permissionKey: string) => ({ menuId, permissionKey });
+const role = (roleCode: string, roleName = roleCode): WorkflowRole => ({ id: 999, roleCode, roleName, isActive: true });
+
+test('CEO-approved opportunities enter the permitted estimation team work queue at stage 3 / substage 7', () => {
+  const ready = { ...record, stageId: 3, subStageId: 7 };
+  const estimator = opportunityAccess(1, menus, [], role('estimation_team'));
+  assert.equal(estimator.canViewInQueue(ready, 'MY_WORK'), true);
+  assert.equal(estimator.canView(ready), true);
+  assert.equal(estimator.canViewInQueue(record, 'MY_WORK'), false);
+  assert.equal(estimator.canViewInQueue({ ...ready, stageId: 2, subStageId: 4 }, 'MY_WORK'), false);
+  assert.equal(opportunityAccess(1, menus, [grant(103, 'view')]).canViewInQueue(ready, 'MY_WORK'), false);
+  assert.equal(opportunityAccess(1, menus, [grant(106, 'edit')]).canViewInQueue(ready, 'MY_WORK'), false);
+});
+
+test('estimation users retain visibility of proposal, negotiation and outcomes without sales decision access', () => {
+  const estimator = opportunityAccess(1, menus, [], role('estimation_team'));
+  for (const [stageId, subStageId] of [[5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [10, 19]]) {
+    assert.equal(estimator.canView({ ...record, stageId, subStageId }), true);
+  }
+  assert.equal(estimator.review, false);
+  assert.equal(estimator.gateReview, false);
+  assert.equal(estimator.canView(record), false);
+  assert.equal(estimator.canView({ ...record, stageId: 2, subStageId: 4 }), false);
+  assert.equal(estimator.canView({ ...record, stageId: 9, subStageId: 15 }), false);
+});
+
+test('Estimation Team My Work contains only in-progress estimation even for owned or assigned opportunities', () => {
+  const estimator = opportunityAccess(1, menus, [grant(101, 'view'), grant(103, 'view')], role('estimation_team'));
+  for (const [stageId, subStageId] of [[1, 1], [2, 4], [4, 8], [4, 9], [5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 17], [10, 19]]) {
+    const owned = { ...record, stageId, subStageId, createdBy: 1, ownerId: 1, assignedTo: 1 };
+    assert.equal(estimator.canViewInQueue(owned, 'MY_WORK'), false);
+    assert.equal(estimator.canViewInQueue(owned, 'PIPELINE'), true);
+  }
+  assert.equal(estimator.canViewInQueue({ ...record, stageId: 3, subStageId: 7 }, 'MY_WORK'), true);
+});
 
 test('uses assigned permissions with arbitrary menu IDs and no role identity', () => {
   const access = opportunityAccess(1, menus, [grant(101, 'add'), grant(101, 'edit'), grant(102, 'view'), grant(104, 'approve')]);
   assert.equal(access.create, true);
   assert.equal(access.canView(record), true);
   assert.equal(access.canEdit(record), true);
-  assert.equal(access.review, true);
+  assert.equal(access.review, false);
   assert.equal(access.gateReview, false);
   assert.equal(access.estimate, false);
 });
@@ -31,22 +65,25 @@ test('does not grant writes from view, or opportunity creation from approvals Ad
   assert.equal(access.review, false);
 });
 
-test('keeps workflow steps and creator-only returned changes intact', () => {
+test('Edit permission applies at every workflow stage without granting review decisions', () => {
   const access = opportunityAccess(1, menus, [grant(101, 'edit')]);
-  assert.equal(access.canEdit({ ...record, subStageId: 2 }), false);
+  assert.equal(access.canEdit({ ...record, subStageId: 2 }), true);
   assert.equal(access.canEdit({ ...record, subStageId: 2, createdBy: 1 }), true);
   assert.equal(access.canEdit({ ...record, stageId: 2, subStageId: 5 }), true);
-  for (const [stageId, subStageId] of [[2, 4], [3, 7], [4, 8], [5, 10]]) {
-    assert.equal(access.canEdit({ ...record, stageId, subStageId }), false);
+  for (const [stageId, subStageId] of [[2, 4], [3, 7], [4, 8], [5, 10], [6, 12], [7, 13], [8, 14], [9, 15]]) {
+    assert.equal(access.canEdit({ ...record, stageId, subStageId }), true);
+    assert.equal(opportunityAccess(1, menus, []).canEdit({ ...record, stageId, subStageId }), false);
   }
+  assert.equal(access.review, false);
+  assert.equal(access.gateReview, false);
 });
 
 test('scopes My Work to the creator, owner or assignee and gate visibility to its stages', () => {
   const work = opportunityAccess(1, menus, [grant(103, 'view')]);
   assert.equal(work.canView(record), false);
   for (const field of ['createdBy', 'ownerId', 'assignedTo']) assert.equal(work.canView({ ...record, [field]: 1 }), true);
-  const gate = opportunityAccess(1, menus, [grant(105, 'approve')]);
-  assert.equal(gate.canView(record), false);
+  const gate = opportunityAccess(1, menus, [], role('approver_gate2'));
+  assert.equal(gate.canView(record), true);
   assert.equal(gate.canView({ ...record, stageId: 2, subStageId: 4 }), true);
   assert.equal(gate.review, false);
   assert.equal(gate.gateReview, true);
@@ -68,21 +105,85 @@ test('ignores revoked grants, inactive menus, inactive ancestors, cycles and unr
   ]) assert.equal(opportunityAccess(1, changed, grants).canList, false);
 });
 
-test('root View and sibling permissions never restore revoked Pipeline or Opportunity writes', () => {
+test('root View lists all opportunities without inheriting sibling CRUD or approval grants', () => {
   const access = opportunityAccess(1, menus, [grant(101, 'view'),
     ...['view', 'add', 'edit', 'approve', 'delete'].flatMap(permission => [grant(103, permission), grant(104, permission)])]);
   assert.equal(access.create, false);
   assert.equal(access.edit, false);
-  assert.equal(access.canListQueue('PIPELINE'), false);
-  assert.equal(access.canViewInQueue(record, 'PIPELINE'), false);
+  assert.equal(access.canListQueue('PIPELINE'), true);
+  assert.equal(access.canViewInQueue(record, 'PIPELINE'), true);
   assert.equal(access.canListQueue('MY_WORK'), true);
   assert.equal(access.canViewInQueue(record, 'MY_WORK'), false);
   assert.equal(access.canViewInQueue({ ...record, ownerId: 1 }, 'MY_WORK'), true);
-  assert.equal(access.canListQueue('MY_APPROVALS'), true);
+  assert.equal(access.canListQueue('MY_APPROVALS'), false);
   assert.equal(access.canEdit(record), false);
   assert.equal(access.canView(record), true);
   const siblingsOnly = opportunityAccess(1, menus, [grant(103, 'view'), grant(103, 'add'), grant(104, 'approve')]);
   assert.equal(siblingsOnly.readClients, false);
+});
+
+test('review roles grant workflow access without CRUD or approve permissions, scoped to their stages', () => {
+  const sales = opportunityAccess(1, menus, [], role('SH'));
+  const ceo = opportunityAccess(1, menus, [], role('approver_gate2'));
+  for (const access of [sales, ceo]) {
+    assert.equal(access.canListQueue('MY_APPROVALS'), true);
+    assert.equal(access.create, false);
+    assert.equal(access.canEdit(record), false);
+    assert.equal(access.canListQueue('PIPELINE'), false);
+  }
+  assert.equal(sales.review, true);
+  assert.equal(sales.gateReview, false);
+  assert.equal(ceo.review, false);
+  assert.equal(ceo.gateReview, true);
+  assert.equal(sales.canViewInQueue(record, 'MY_APPROVALS'), true);
+  assert.equal(ceo.canViewInQueue(record, 'MY_APPROVALS'), false);
+  const qualifying = { ...record, stageId: 2, subStageId: 4 };
+  assert.equal(sales.canViewInQueue(qualifying, 'MY_APPROVALS'), false);
+  assert.equal(ceo.canViewInQueue(qualifying, 'MY_APPROVALS'), true);
+  for (const inactive of [undefined, { ...role('SH'), isActive: false }, role('custom_reviewer')]) {
+    const access = opportunityAccess(1, menus, [grant(104, 'approve'), grant(105, 'approve')], inactive);
+    assert.equal(access.review, false);
+    assert.equal(access.gateReview, false);
+  }
+});
+
+test('My Approvals includes only the current role stages even with Pipeline View, ownership or assignment', () => {
+  const records = [
+    [1, 1], [1, 2], [1, 3], [2, 4], [2, 5], [2, 6], [3, 7], [4, 8], [4, 9],
+    [5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19], [10, 20],
+  ].map(([stageId, subStageId]) => ({ ...record, stageId, subStageId, createdBy: 1, ownerId: 1, assignedTo: 1 }));
+  for (const [roleCode, expected] of [['SH', [1, 5, 6]], ['approver_gate2', [2, 4]]] as const) {
+    const access = opportunityAccess(1, menus, [grant(102, 'view')], role(roleCode));
+    assert.deepEqual(records.filter(entry => access.canViewInQueue(entry, 'MY_APPROVALS')),
+      records.filter(entry => (expected as readonly number[]).includes(entry.stageId)));
+    assert.equal(records.every(entry => access.canViewInQueue(entry, 'PIPELINE')), true);
+    assert.equal(access.canViewInQueue({ ...record, stageId: null, subStageId: null, assignedTo: 1 }, 'MY_APPROVALS'), false);
+  }
+  for (const otherRole of ['sales_representative', 'estimation_team', 'custom_role']) {
+    const access = opportunityAccess(1, menus, [grant(102, 'view'), grant(104, 'approve')], role(otherRole));
+    assert.equal(records.some(entry => access.canViewInQueue(entry, 'MY_APPROVALS')), false);
+  }
+});
+
+test('Sales Representatives with View see every creator but Edit only changes their own opportunities', () => {
+  const rep = role('sales_representative');
+  const access = opportunityAccess(1, menus, [grant(101, 'view'), grant(101, 'edit')], rep);
+  for (const other of [record, { ...record, ownerId: 1 }, { ...record, assignedTo: 1 }]) {
+    assert.equal(access.canView(other), true);
+    assert.equal(access.canViewInQueue(other, 'PIPELINE'), true);
+    assert.equal(access.canEdit(other), false);
+  }
+  assert.equal(access.canEdit({ ...record, createdBy: 1 }), true);
+  assert.equal(opportunityAccess(1, menus, [], rep).canEdit({ ...record, createdBy: 1 }), false);
+  assert.equal(access.canEdit({ ...record, createdBy: 1, stageId: 3, subStageId: 7 }), true);
+  const returned = { ...record, createdBy: 1, subStageId: 2 };
+  assert.equal(access.canEdit(returned), true);
+  assert.equal(access.canEdit({ ...returned, createdBy: 55, ownerId: 1, assignedTo: 1 }), false);
+  for (const creatorRole of ['SH', 'custom_creator']) {
+    const creator = opportunityAccess(1, menus, [grant(101, 'edit')], role(creatorRole));
+    assert.equal(creator.canEdit(returned), true);
+    assert.equal(creator.canEdit({ ...returned, createdBy: 55, ownerId: 1 }), true);
+  }
 });
 
 test('recognizes Pipeline as its own menu when its route is the opportunity root', () => {
