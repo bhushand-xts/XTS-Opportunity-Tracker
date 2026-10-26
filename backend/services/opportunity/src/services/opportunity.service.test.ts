@@ -522,11 +522,8 @@ test('complete role-based flow saves estimation, reviews it, submits a bid, nego
   await assert.rejects(service.transitionWorkflow(10, 'MARK_WON', null, null, ctx()), /preceding sales workflow step/);
   await step('BID_SUBMITTED', 5, 11);
   await step('START_NEGOTIATION', 6, 12);
-  assert.deepEqual(await service.allowedActions(current, ctx()), ['MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD', 'CLOSE_OPPORTUNITY']);
-  await step('OPPORTUNITY_HOLD', 10, 19, true);
-  assert.deepEqual(await service.allowedActions(current, ctx()), ['RESUME_NEGOTIATION']);
-  await assert.rejects(service.transitionWorkflow(10, 'MARK_WON', null, null, ctx()), /preceding sales workflow step/);
-  await step('RESUME_NEGOTIATION', 6, 12);
+  assert.deepEqual(await service.allowedActions(current, ctx()), ['MARK_WON', 'MARK_LOST', 'CLOSE_OPPORTUNITY']);
+  await assert.rejects(service.transitionWorkflow(10, 'OPPORTUNITY_HOLD', 'Client update', null, ctx(), 3), /Hold is not available/);
   await step('MARK_WON', 7, 13);
   assert.deepEqual(await service.allowedActions(current, ctx()), []);
   await assert.rejects(service.transitionWorkflow(10, 'CLOSE_OPPORTUNITY', null, null, ctx()), /open opportunity/);
@@ -534,7 +531,7 @@ test('complete role-based flow saves estimation, reviews it, submits a bid, nego
   await step('MARK_LOST', 8, 14);
 });
 
-test('Sales Head can negotiate or record an outcome only after bid submission, and hold resumes bid follow-up', async t => {
+test('Sales Head can negotiate or record Won/Lost after bid submission and resume a previously held bid', async t => {
   let current = { ...record, stageId: 5, subStageId: 11 };
   let actorRole = 'SH';
   t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
@@ -542,7 +539,7 @@ test('Sales Head can negotiate or record an outcome only after bid submission, a
   t.mock.method(admin, 'holdReasonCode', async () => ({ id: 3, isActive: true }));
   t.mock.method(repository, 'findById', async () => current);
   const transition = t.mock.method(repository, 'transitionWorkflow', async (...args: unknown[]) => args);
-  const actions = ['START_NEGOTIATION', 'MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD'] as const;
+  const actions = ['START_NEGOTIATION', 'MARK_WON', 'MARK_LOST'] as const;
   assert.deepEqual(await service.allowedActions(current, ctx()), [...actions, 'CLOSE_OPPORTUNITY']);
   for (const roleCode of ['estimation_team', 'approver_gate2', 'sales_representative']) {
     actorRole = roleCode;
@@ -554,12 +551,12 @@ test('Sales Head can negotiate or record an outcome only after bid submission, a
   assert.deepEqual(await service.allowedActions(current, ctx()), ['BID_SUBMITTED', 'CLOSE_OPPORTUNITY']);
   for (const action of actions) await assert.rejects(service.transitionWorkflow(10, action, 'Client update', null, ctx(), 3), /preceding sales workflow step/);
   current = { ...current, subStageId: 11 };
-  for (const [action, stageId, subStageId] of [['MARK_WON', 7, 13], ['MARK_LOST', 8, 14], ['OPPORTUNITY_HOLD', 10, 20]] as const) {
+  for (const [action, stageId, subStageId] of [['MARK_WON', 7, 13], ['MARK_LOST', 8, 14]] as const) {
     await service.transitionWorkflow(10, action, 'Client update', null, ctx(), 3);
     assert.deepEqual(transition.mock.calls.at(-1)?.arguments.slice(0, 3), [10, stageId, subStageId]);
     assert.deepEqual(transition.mock.calls.at(-1)?.arguments[8], { stageId: 5, subStageId: 11 });
   }
-  await assert.rejects(service.transitionWorkflow(10, 'OPPORTUNITY_HOLD', 'Waiting for client', null, ctx()), /hold reason/);
+  await assert.rejects(service.transitionWorkflow(10, 'OPPORTUNITY_HOLD', 'Waiting for client', null, ctx(), 3), /Hold is not available/);
   current = { ...current, stageId: 10, subStageId: 20 };
   assert.deepEqual(await service.allowedActions(current, ctx()), ['RESUME_PROPOSAL']);
   await assert.rejects(service.transitionWorkflow(10, 'RESUME_NEGOTIATION', null, null, ctx()), /preceding sales workflow step/);
@@ -589,7 +586,7 @@ test('estimation can be submitted manually without a matrix and preserves the de
   assert.equal(transition.mock.calls.length, 1);
 });
 
-test('only Sales Head can hold and resume negotiation, with an active hold reason and audit', async t => {
+test('post-bid Hold is rejected without writes and only Sales Head can resume existing held negotiation', async t => {
   let current = { ...record, stageId: 6, subStageId: 12 };
   let actorRole = 'estimation_team';
   t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
@@ -597,16 +594,15 @@ test('only Sales Head can hold and resume negotiation, with an active hold reaso
   t.mock.method(admin, 'holdReasonCode', async () => ({ id: 3, isActive: true }));
   t.mock.method(repository, 'findById', async () => current);
   const transition = t.mock.method(repository, 'transitionWorkflow', async (...args: unknown[]) => args);
-  for (const roleCode of ['estimation_team', 'approver_gate2', 'sales_representative']) {
-    actorRole = roleCode;
-    assert.deepEqual(await service.allowedActions(current, ctx()), []);
-    await assert.rejects(service.transitionWorkflow(10, 'OPPORTUNITY_HOLD', 'Waiting for client', null, ctx(), 3), /Sales Head role/);
+  for (const [stageId, subStageId] of [[5, 11], [6, 12]]) {
+    current = { ...current, stageId, subStageId };
+    for (const roleCode of ['SH', 'estimation_team', 'approver_gate2', 'sales_representative']) {
+      actorRole = roleCode;
+      assert.equal((await service.allowedActions(current, ctx())).includes('OPPORTUNITY_HOLD'), false);
+      await assert.rejects(service.transitionWorkflow(10, 'OPPORTUNITY_HOLD', 'Waiting for client', null, ctx(), 3), /Hold is not available/);
+    }
   }
-  actorRole = 'SH';
-  await assert.rejects(service.transitionWorkflow(10, 'OPPORTUNITY_HOLD', 'Waiting for client', null, ctx()), /hold reason/);
-  await assert.rejects(service.transitionWorkflow(10, 'OPPORTUNITY_HOLD', '', null, ctx(), 3), /hold description/);
-  await service.transitionWorkflow(10, 'OPPORTUNITY_HOLD', 'Waiting for client', null, ctx(), 3);
-  assert.equal((transition.mock.calls.at(-1)?.arguments[7] as any).reasonCodeId, 3);
+  assert.equal(transition.mock.calls.length, 0);
   current = { ...current, stageId: 10, subStageId: 19 };
   actorRole = 'approver_gate2';
   await assert.rejects(service.transitionWorkflow(10, 'RESUME_NEGOTIATION', null, null, ctx()), /Sales Head role/);

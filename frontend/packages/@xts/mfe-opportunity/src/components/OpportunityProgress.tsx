@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react';
-import type { DirectoryUser, OpportunityDetail } from '@xts/api-contracts';
+import type { DirectoryUser, OpportunityDetail, OpportunityStageHistory } from '@xts/api-contracts';
 import { isOpportunityOutcome, OPPORTUNITY_OUTCOME_LABEL, opportunityStatus, STAGE_LABELS } from '../lib/opportunityStatus';
 import { Panel } from './ui';
 
@@ -21,27 +21,33 @@ const COMPLETIONS: Record<string, { stageId: number; label: string }> = {
   '3/7': { stageId: 2, label: 'Go approved' },
   '4/8': { stageId: 3, label: 'Estimation submitted' },
   '5/10': { stageId: 4, label: 'Estimation approved' },
-  '6/12': { stageId: 5, label: 'Moved to negotiation' },
-  '7/13': { stageId: 6, label: 'Won' },
-  '8/14': { stageId: 6, label: 'Lost' },
 };
 
 export function OpportunityProgress({ opportunity: o }: { opportunity: OpportunityDetail }) {
   const history = [...(o.stageHistory ?? [])].sort((a, b) =>
     Date.parse(b.reachedAt) - Date.parse(a.reachedAt) || Number(b.id) - Number(a.id));
-  const latest = history[0];
-  const currentRecorded = Boolean(latest && latest.stageId === o.stageId && latest.subStageId === o.subStageId);
   const chronological = [...history].reverse();
-  const completions = chronological.flatMap((event, index) => {
+  const results = new Map<number, { label: string; event: OpportunityStageHistory }>();
+  chronological.forEach((event, index) => {
     const completion = COMPLETIONS[`${event.stageId}/${event.subStageId}`];
     const previous = chronological[index - 1];
     // Resubmitting or resuming the same review must not overwrite the approval time.
-    if (isOpportunityOutcome(event.stageId)) {
-      if (event.stageId === 10) return [];
-      if (previous?.stageId === 5 && previous.subStageId === 11) return [{ stageId: 5, label: completion?.label ?? 'Outcome recorded', event }];
-      return completion && previous?.stageId === 6 ? [{ ...completion, event }] : [];
+    if (completion && (!previous || previous.stageId === completion.stageId)) {
+      results.set(completion.stageId, { label: completion.label, event });
     }
-    return completion && (!previous || previous.stageId === completion.stageId) ? [{ ...completion, event }] : [];
+    // A resumed client follow-up is not a new proposal submission.
+    if (event.stageId === 5 && event.subStageId === 11 && previous?.stageId !== 10 && !results.has(5)) {
+      results.set(5, { label: 'Bid Submitted', event });
+    }
+    if ([7, 8].includes(event.stageId) && previous?.stageId === 6) {
+      results.set(6, { label: 'Negotiation completed', event });
+    }
+    if (isOpportunityOutcome(event.stageId) && event.stageId === o.stageId && event.subStageId === o.subStageId) {
+      results.set(7, { label: event.stageId === 10 ? 'On Hold' : opportunityStatus({ ...o, ...event }).substage ?? 'Outcome recorded', event });
+    }
+    if (event.stageId === 9) {
+      results.set(9, { label: opportunityStatus({ ...o, ...event }).substage ?? 'Opportunity declined', event });
+    }
   });
   // Outcome choices share one position after Negotiation; only recorded choices have details.
   const stageIds = [...new Set([1, 2, 3, 4, 5, 6, 7, ...(o.stageId != null ? [o.stageId] : []), ...history.map(event => event.stageId)]
@@ -53,24 +59,18 @@ export function OpportunityProgress({ opportunity: o }: { opportunity: Opportuni
         const outcome = id === 7;
         const events = history.filter(event => outcome ? isOpportunityOutcome(event.stageId) : event.stageId === id);
         const current = outcome ? isOpportunityOutcome(o.stageId) : id === o.stageId;
-        const completion = completions.filter(item => item.stageId === id).slice(-1)[0];
-        const reached = current || Boolean(completion) || events.length > 0 || id === 1 && Boolean(o.createdDt);
+        const currentHasResult = outcome || id === 9 || id === 5 && o.subStageId === 11;
+        const result = !current || currentHasResult ? results.get(id) : undefined;
+        const substage = outcome && o.stageId === 10 ? 'On Hold' : opportunityStatus(o).substage ?? 'Status unavailable';
+        const reached = current || Boolean(result) || !outcome && events.length > 0 || id === 1;
         const name = outcome ? OPPORTUNITY_OUTCOME_LABEL : STAGE_LABELS[id] ?? 'Status unavailable';
         return <li key={id} className={`opp-timeline-stage ${current ? 'current' : reached ? 'reached' : 'upcoming'}`} aria-current={current ? 'step' : undefined}>
           <span className="opp-timeline-marker" aria-hidden="true">{reached && !current ? <Check size={13} /> : <span className="opp-timeline-dot" />}</span>
           <div className="opp-timeline-body">
             <div className="opp-timeline-heading"><h3>{name}</h3>{current && <span className="opp-timeline-state">Current</span>}</div>
-            {completion && <div className="opp-stage-completion"><strong>{completion.label}</strong><ProgressDetails at={completion.event.reachedAt} actor={completion.event.actor} /></div>}
-            {current && !currentRecorded && <div className="opp-substage-current"><strong>{outcome && o.stageId === 10 ? 'On Hold' : opportunityStatus(o).substage ?? 'Status unavailable'}</strong><ProgressDetails /></div>}
-            {(events.length > 0 || id === 1 && o.createdDt) && <ol className="opp-substage-history" aria-label={`${name} history`}>{events.map(event => {
-              const active = currentRecorded && event.id === latest.id;
-              const { substage } = opportunityStatus({ state: o.state, stageId: event.stageId, subStageId: event.subStageId });
-              return <li key={event.id} className={active ? 'active' : undefined}>
-                <strong>{outcome && event.stageId === 10 ? 'On Hold' : substage}</strong>
-                {completions.some(item => item.stageId === 1 && item.event.id === event.id) && <span className="opp-progress-detail-label">Opportunity approved</span>}
-                <ProgressDetails at={event.reachedAt} actor={event.actor} />
-              </li>;
-            })}{id === 1 && o.createdDt && <li className="opp-progress-created"><strong>Opportunity created</strong><ProgressDetails at={o.createdDt} actor={o.createdBy} /></li>}</ol>}
+            {result && <div className={current ? 'opp-substage-current' : 'opp-stage-completion'}><strong>{result.label}</strong><ProgressDetails at={result.event.reachedAt} actor={result.event.actor} /></div>}
+            {current && !result && <div className="opp-substage-current"><strong>{substage}</strong>{currentHasResult && <ProgressDetails />}</div>}
+            {id === 1 && <div className="opp-stage-completion opp-progress-created"><strong>Opportunity created</strong><ProgressDetails at={o.createdDt} actor={o.createdBy} /></div>}
           </div>
         </li>;
       })}</ol>}

@@ -73,11 +73,11 @@ describe('persisted stage and substage display', () => {
     await screen.findByRole('heading', { name: /^Solution\/Scoping Estimation/ });
     expect(Array.from(container.querySelectorAll('.opp-lane > h3')).map(heading => heading.querySelector('.flex-1')?.textContent)).toEqual([
       'Identified', 'Qualifying (Go/No-Go)', 'Solution/Scoping Estimation (Engineering)', 'Estimate Review & Approval',
-      'Proposal / Bid Submitted', 'Negotiation', 'Outcome (Won / Lost / Hold)', 'No-Bid / Declined',
+      'Proposal / Bid Submitted', 'Negotiation', 'Outcome (Won / Lost)', 'No-Bid / Declined',
     ]);
   });
 
-  it('groups won, lost and held opportunities under Outcome (Won / Lost / Hold) while keeping their actual status', async () => {
+  it('groups won, lost and held opportunities under Outcome (Won / Lost) while keeping their actual status', async () => {
     mount([[7, 13], [8, 14], [10, 19], [10, 20]].map(([stageId, subStageId]) => fixtureOpportunity({ id: String(subStageId), title: `Outcome ${subStageId}`, stageId, subStageId })));
     const heading = await screen.findByRole('heading', { name: /^Outcome \(/ });
     const lane = within(heading.closest('section')!);

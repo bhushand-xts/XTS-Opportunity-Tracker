@@ -89,8 +89,8 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
   }
   if (access.review) {
     if (opportunity.stageId === 5 && opportunity.subStageId === 10) actions.push('BID_SUBMITTED');
-    if (opportunity.stageId === 5 && opportunity.subStageId === 11) actions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
-    if (opportunity.stageId === 6 && opportunity.subStageId === 12) actions.push('MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
+    if (opportunity.stageId === 5 && opportunity.subStageId === 11) actions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST');
+    if (opportunity.stageId === 6 && opportunity.subStageId === 12) actions.push('MARK_WON', 'MARK_LOST');
     if (opportunity.stageId === 10 && opportunity.subStageId === 19) actions.push('RESUME_NEGOTIATION');
     if (opportunity.stageId === 10 && opportunity.subStageId === 20) actions.push('RESUME_PROPOSAL');
     if ([1, 2, 3, 4, 5, 6].includes(opportunity.stageId ?? 0)) actions.push('CLOSE_OPPORTUNITY');
@@ -339,18 +339,17 @@ async function transitionWorkflow(
   if (!opportunity) throw notFound('Opportunity not found.');
   const audit = workflowAudit(access);
   if (action === 'RESUBMIT') throw validationFailed('Use Update Opportunity to save corrections and send the opportunity for review.');
+  if (action === 'OPPORTUNITY_HOLD') throw validationFailed('Hold is not available after bid submission. Choose Under Negotiation, Won or Lost.');
   const reviewingSales = opportunity.stageId === 1 && [1, 2, 3].includes(opportunity.subStageId ?? 0) && access.review;
   const reviewingCeo = opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const reviewingEstimate = opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const submittedBid = opportunity.stageId === 5 && opportunity.subStageId === 11;
-  const negotiating = opportunity.stageId === 6 && opportunity.subStageId === 12;
-  const holdingOpportunity = action === 'OPPORTUNITY_HOLD' && access.review && (submittedBid || negotiating);
   if (action === 'HOLD' && (reviewingSales && opportunity.subStageId === 3 || reviewingCeo && opportunity.subStageId === 6 || reviewingEstimate && opportunity.subStageId === 9)) {
     throw conflict('This opportunity is already on hold. Choose another available action.');
   }
   const closing = action === 'CLOSE_OPPORTUNITY' && access.review && [1, 2, 3, 4, 5, 6].includes(opportunity.stageId ?? 0);
-  if (holdingOpportunity || (action === 'HOLD' || action === 'REJECT') && (reviewingSales || reviewingCeo || reviewingEstimate)) {
-    const reasonLabel = action === 'HOLD' || holdingOpportunity ? 'hold' : 'rejection';
+  if ((action === 'HOLD' || action === 'REJECT') && (reviewingSales || reviewingCeo || reviewingEstimate)) {
+    const reasonLabel = action === 'HOLD' ? 'hold' : 'rejection';
     if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) throw validationFailed(`Select a ${reasonLabel} reason.`);
     if (!comment?.trim()) throw validationFailed(`Enter a ${reasonLabel} description.`);
     const reason = await holdReasonCode(reasonCodeId!);
@@ -365,13 +364,12 @@ async function transitionWorkflow(
   const salesTargets = {
     BID_SUBMITTED: [5, 10, 5, 11], START_NEGOTIATION: [5, 11, 6, 12],
     MARK_WON: [6, 12, 7, 13], MARK_LOST: [6, 12, 8, 14],
-    OPPORTUNITY_HOLD: [6, 12, 10, 19], RESUME_NEGOTIATION: [10, 19, 6, 12], RESUME_PROPOSAL: [10, 20, 5, 11],
+    RESUME_NEGOTIATION: [10, 19, 6, 12], RESUME_PROPOSAL: [10, 20, 5, 11],
   } as const;
   if (action in salesTargets) {
-    const [fromStage, fromSubstage, toStage, targetSubstage] = salesTargets[action as keyof typeof salesTargets];
-    const outcomeAfterBid = submittedBid && ['MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD'].includes(action);
+    const [fromStage, fromSubstage, toStage, toSubstage] = salesTargets[action as keyof typeof salesTargets];
+    const outcomeAfterBid = submittedBid && ['MARK_WON', 'MARK_LOST'].includes(action);
     if (!access.review || !outcomeAfterBid && (opportunity.stageId !== fromStage || opportunity.subStageId !== fromSubstage)) throw conflict('The Sales Head role and the preceding sales workflow step are required.');
-    const toSubstage = outcomeAfterBid && action === 'OPPORTUNITY_HOLD' ? 20 : targetSubstage;
     return persistTransition(opportunity, opportunityId, toStage, toSubstage, null, userId, comment?.trim() || null, null, audit);
   }
 

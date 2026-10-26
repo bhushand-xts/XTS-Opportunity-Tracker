@@ -172,9 +172,9 @@ describe('production opportunity decisions', () => {
     ['ESTIMATE_APPROVE', 'APPROVE', 4, 9, 5, 10], ['SUBMIT_ESTIMATE', 'SUBMIT_ESTIMATE', 3, 7, 4, 8],
     ['BID_SUBMITTED', 'BID_SUBMITTED', 5, 10, 5, 11], ['START_NEGOTIATION', 'START_NEGOTIATION', 5, 11, 6, 12],
     ['MARK_WON', 'MARK_WON', 6, 12, 7, 13], ['MARK_LOST', 'MARK_LOST', 6, 12, 8, 14],
-    ['OPPORTUNITY_HOLD', 'OPPORTUNITY_HOLD', 6, 12, 10, 19], ['RESUME_NEGOTIATION', 'RESUME_NEGOTIATION', 10, 19, 6, 12],
+    ['RESUME_NEGOTIATION', 'RESUME_NEGOTIATION', 10, 19, 6, 12],
     ['MARK_WON', 'MARK_WON', 5, 11, 7, 13], ['MARK_LOST', 'MARK_LOST', 5, 11, 8, 14],
-    ['OPPORTUNITY_HOLD', 'OPPORTUNITY_HOLD', 5, 11, 10, 20], ['RESUME_PROPOSAL', 'RESUME_PROPOSAL', 10, 20, 5, 11],
+    ['RESUME_PROPOSAL', 'RESUME_PROPOSAL', 10, 20, 5, 11],
     ['CLOSE_OPPORTUNITY', 'CLOSE_OPPORTUNITY', 1, 2, 9, 18],
   ] as const)('persists %s to the matching master status', async (decision, action, stage, substage, nextStage, nextSubstage) => {
     api.query.mockResolvedValueOnce({ data: { opportunity: opportunity(stage, substage) } })

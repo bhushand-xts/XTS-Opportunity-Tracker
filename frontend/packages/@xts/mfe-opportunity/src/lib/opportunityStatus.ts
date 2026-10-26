@@ -14,7 +14,7 @@ export const STAGE_LABELS: Record<number, string> = {
   10: 'On Hold',
 };
 
-export const OPPORTUNITY_OUTCOME_LABEL = 'Outcome (Won / Lost / Hold)';
+export const OPPORTUNITY_OUTCOME_LABEL = 'Outcome (Won / Lost)';
 export const PIPELINE_STAGE_IDS = [1, 2, 3, 4, 5, 6, 7, 9];
 export function isOpportunityOutcome(stageId: number | null | undefined) {
   return [7, 8, 10].includes(stageId ?? 0);
