@@ -23,6 +23,44 @@ const record = { ...input, opportunityId: 10, createdBy: 7, stageId: 1, subStage
 const ctx = () => ({ user: { id: 7 } });
 const role = (id: number, roleCode: string) => ({ id, roleCode, roleName: roleCode === 'SH' ? 'Sales Head' : roleCode === 'approver_gate2' ? 'CEO/Gate-2 Approver' : roleCode === 'estimation_team' ? 'Estimation Team' : roleCode === 'sales_representative' ? 'Sales Representative' : 'Custom Role', isActive: true });
 
+test('only the Estimation Team can save answers; all other permitted roles can read them', async t => {
+  let roleCode = 'estimation_team';
+  const current = { ...record, stageId: 3, subStageId: 7 };
+  const responses = [{ id: 21, title: 'Delivery approach?', answer: 'Discovery then delivery.', revision: 2 }];
+  t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: [{ menuId: 1, permissionKey: 'view' }, { menuId: 1, permissionKey: 'edit' }], role: role(999, roleCode) }));
+  t.mock.method(repository, 'findById', async () => current);
+  t.mock.method(repository, 'findResponses', async () => responses);
+  const save = t.mock.method(repository, 'saveAnswer', async () => {});
+  assert.deepEqual(await service.getResponses(10, ctx()), [{ ...responses[0], allowedActions: ['SAVE_ANSWER'] }]);
+  await service.saveAnswer(10, 21, 2, 'A free-text\nanswer.', ctx());
+  assert.deepEqual(save.mock.calls[0].arguments, [10, 21, 2, 'A free-text\nanswer.', 7]);
+  for (const code of ['SH', 'approver_gate2', 'sales_representative', 'custom_role']) {
+    roleCode = code;
+    assert.deepEqual(await service.getResponses(10, ctx()), [{ ...responses[0], allowedActions: [] }]);
+    await assert.rejects(service.saveAnswer(10, 21, 2, 'Not allowed', ctx()), /Only the Estimation Team/);
+  }
+  assert.equal(save.mock.calls.length, 1);
+});
+
+test('question answers require opportunity visibility and a valid saved question version', async t => {
+  let stageId = 3;
+  t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: [], role: role(999, 'estimation_team') }));
+  t.mock.method(repository, 'findById', async () => ({ ...record, stageId }));
+  const save = t.mock.method(repository, 'saveAnswer', async () => {});
+  for (const [responseId, revision] of [[0, 1], [-1, 1], [1.5, 1], [21, -1], [21, 1.5]]) {
+    await assert.rejects(service.saveAnswer(10, responseId, revision, 'Answer', ctx()), /saved opportunity question/);
+  }
+  await assert.rejects(service.saveAnswer(10, 21, 1, 'x'.repeat(100001), ctx()), /100,000 characters/);
+  stageId = 1;
+  await assert.rejects(service.saveAnswer(10, 21, 1, 'Answer', ctx()), /permission to view/);
+  const read = t.mock.method(repository, 'findResponses', async () => []);
+  await assert.rejects(service.getResponses(10, ctx()), /permission to view/);
+  assert.equal(save.mock.calls.length, 0);
+  assert.equal(read.mock.calls.length, 0);
+});
+
 test('invalid questionnaire type IDs are rejected before creating or updating an opportunity', async () => {
   for (const questionnaireTypeId of [0, 3, 1.5]) {
     const command = { ...input, proposalQuestionSelections: [{ questionId: null, question: 'Describe delivery.', questionnaireTypeId }] };
@@ -640,7 +678,7 @@ test('rejections require an active reason and description and retain the correct
   await assert.rejects(service.transitionWorkflow(10, 'REJECT', 'Not suitable', null, ctx(), 3), /Sales Head role/);
 });
 
-test('Sales Head and CEO both see all stages while Sales Head alone can close any open opportunity', async t => {
+test('My Approvals is scoped to reviewer stages while details remain visible and only Sales Head can close an open opportunity', async t => {
   let actorRole = 'SH';
   let current = { ...record };
   const records = [[1, 1], [2, 4], [3, 7], [4, 8], [5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18]].map(([stageId, subStageId]) => ({ ...record, stageId, subStageId }));
@@ -651,7 +689,9 @@ test('Sales Head and CEO both see all stages while Sales Head alone can close an
   const transition = t.mock.method(repository, 'transitionWorkflow', async (...args: unknown[]) => args);
   for (const reviewer of ['SH', 'approver_gate2']) {
     actorRole = reviewer;
-    assert.equal((await service.list(ctx(), 'MY_APPROVALS')).length, records.length);
+    const stages = reviewer === 'SH' ? [1, 5, 6] : [2, 4];
+    assert.deepEqual((await service.list(ctx(), 'MY_APPROVALS')).map(entry => [entry.stageId, entry.subStageId]),
+      records.filter(entry => stages.includes(entry.stageId)).map(entry => [entry.stageId, entry.subStageId]));
     for (const entry of records) { current = entry; assert.equal((await service.get(10, ctx())).opportunityId, 10); }
   }
   for (const entry of records.filter(entry => entry.stageId! <= 6)) {

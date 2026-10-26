@@ -76,6 +76,7 @@ export const GET_OPPORTUNITY = gql`
   query GetOpportunity($opportunityId: Int!) {
     opportunity(opportunityId: $opportunityId) {
       ...OpportunityFields
+      responses { id title category answer revision allowedActions }
       stageHistory { id stageId subStageId reachedAt updatedBy comment }
       estimation { revision rows { id workItem hours people hourlyRate } assumptions total }
     }
@@ -86,6 +87,12 @@ export const GET_OPPORTUNITY = gql`
 export const SAVE_OPPORTUNITY_ESTIMATION = gql`
   mutation SaveOpportunityEstimation($opportunityId: Int!, $estimation: OpportunityEstimationInput!) {
     saveOpportunityEstimation(opportunityId: $opportunityId, estimation: $estimation) { opportunityId }
+  }
+`;
+
+export const SAVE_OPPORTUNITY_ANSWER = gql`
+  mutation SaveOpportunityAnswer($opportunityId: Int!, $responseId: Int!, $revision: Int!, $answer: String!) {
+    saveOpportunityAnswer(opportunityId: $opportunityId, responseId: $responseId, revision: $revision, answer: $answer) { opportunityId }
   }
 `;
 

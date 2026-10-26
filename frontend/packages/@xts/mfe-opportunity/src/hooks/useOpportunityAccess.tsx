@@ -5,8 +5,9 @@ import { Loading, Notice } from '../components/ui';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource } from './useResource';
 import { AccessUnavailable } from '../components/AccessUnavailable';
+import { approvalStagesForRole, workStagesForRole } from '../lib/opportunityStatus';
 
-export interface OpportunityAccess { userId?: string; view: boolean; pipeline?: boolean; add: boolean; edit: boolean; approvals: boolean; work: boolean; clientCreate?: boolean; clientUpdate?: boolean; }
+export interface OpportunityAccess { userId?: string; view: boolean; pipeline?: boolean; add: boolean; edit: boolean; approvals: boolean; approvalStageIds?: number[]; work: boolean; workStageIds?: number[]; clientCreate?: boolean; clientUpdate?: boolean; }
 export const OpportunityAccessContext = createContext<OpportunityAccess>({ view: false, add: false, edit: false, approvals: false, work: false });
 export function OpportunityAccessProvider({ children }: { children: ReactNode }) {
   const auth = useAuth();
@@ -23,6 +24,6 @@ export function OpportunityAccessProvider({ children }: { children: ReactNode })
   if (error) return <Notice error={error} retry={() => void refetch()} />;
   if (!menus.length) return <Notice title="Opportunities menu unavailable" error="No active Opportunity menu is configured for this backend. Contact your administrator." />;
   if (!entry) return <AccessUnavailable page="Opportunities" changed={visited.current} />;
-  return <OpportunityAccessContext.Provider value={{ userId: auth.session?.userId, view: entry, pipeline: permissions.pipeline, add: permissions.add, edit: permissions.edit, work: permissions.work, approvals: permissions.approvals, clientCreate: permissions.add && (actions.data?.includes('CLIENT_CREATE') ?? false), clientUpdate: permissions.edit && (actions.data?.includes('CLIENT_UPDATE') ?? false) }}>{children}</OpportunityAccessContext.Provider>;
+  return <OpportunityAccessContext.Provider value={{ userId: auth.session?.userId, view: entry, pipeline: permissions.pipeline, add: permissions.add, edit: permissions.edit, work: permissions.work, workStageIds: permissions.work ? workStagesForRole(auth.roleName) : [], approvals: permissions.approvals, approvalStageIds: permissions.approvals ? approvalStagesForRole(auth.roleName) : [], clientCreate: permissions.add && (actions.data?.includes('CLIENT_CREATE') ?? false), clientUpdate: permissions.edit && (actions.data?.includes('CLIENT_UPDATE') ?? false) }}>{children}</OpportunityAccessContext.Provider>;
 }
 export function useOpportunityAccess() { return useContext(OpportunityAccessContext); }

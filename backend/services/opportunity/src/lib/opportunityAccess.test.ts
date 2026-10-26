@@ -37,6 +37,16 @@ test('estimation users retain visibility of proposal, negotiation and outcomes w
   assert.equal(estimator.canView({ ...record, stageId: 9, subStageId: 15 }), false);
 });
 
+test('Estimation Team My Work contains only in-progress estimation even for owned or assigned opportunities', () => {
+  const estimator = opportunityAccess(1, menus, [grant(101, 'view'), grant(103, 'view')], role('estimation_team'));
+  for (const [stageId, subStageId] of [[1, 1], [2, 4], [4, 8], [4, 9], [5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 17], [10, 19]]) {
+    const owned = { ...record, stageId, subStageId, createdBy: 1, ownerId: 1, assignedTo: 1 };
+    assert.equal(estimator.canViewInQueue(owned, 'MY_WORK'), false);
+    assert.equal(estimator.canViewInQueue(owned, 'PIPELINE'), true);
+  }
+  assert.equal(estimator.canViewInQueue({ ...record, stageId: 3, subStageId: 7 }, 'MY_WORK'), true);
+});
+
 test('uses assigned permissions with arbitrary menu IDs and no role identity', () => {
   const access = opportunityAccess(1, menus, [grant(101, 'add'), grant(101, 'edit'), grant(102, 'view'), grant(104, 'approve')]);
   assert.equal(access.create, true);
@@ -126,14 +136,32 @@ test('review roles grant workflow access without CRUD or approve permissions, sc
   assert.equal(ceo.review, false);
   assert.equal(ceo.gateReview, true);
   assert.equal(sales.canViewInQueue(record, 'MY_APPROVALS'), true);
-  assert.equal(ceo.canViewInQueue(record, 'MY_APPROVALS'), true);
+  assert.equal(ceo.canViewInQueue(record, 'MY_APPROVALS'), false);
   const qualifying = { ...record, stageId: 2, subStageId: 4 };
-  assert.equal(sales.canViewInQueue(qualifying, 'MY_APPROVALS'), true);
+  assert.equal(sales.canViewInQueue(qualifying, 'MY_APPROVALS'), false);
   assert.equal(ceo.canViewInQueue(qualifying, 'MY_APPROVALS'), true);
   for (const inactive of [undefined, { ...role('SH'), isActive: false }, role('custom_reviewer')]) {
     const access = opportunityAccess(1, menus, [grant(104, 'approve'), grant(105, 'approve')], inactive);
     assert.equal(access.review, false);
     assert.equal(access.gateReview, false);
+  }
+});
+
+test('My Approvals includes only the current role stages even with Pipeline View, ownership or assignment', () => {
+  const records = [
+    [1, 1], [1, 2], [1, 3], [2, 4], [2, 5], [2, 6], [3, 7], [4, 8], [4, 9],
+    [5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19], [10, 20],
+  ].map(([stageId, subStageId]) => ({ ...record, stageId, subStageId, createdBy: 1, ownerId: 1, assignedTo: 1 }));
+  for (const [roleCode, expected] of [['SH', [1, 5, 6]], ['approver_gate2', [2, 4]]] as const) {
+    const access = opportunityAccess(1, menus, [grant(102, 'view')], role(roleCode));
+    assert.deepEqual(records.filter(entry => access.canViewInQueue(entry, 'MY_APPROVALS')),
+      records.filter(entry => (expected as readonly number[]).includes(entry.stageId)));
+    assert.equal(records.every(entry => access.canViewInQueue(entry, 'PIPELINE')), true);
+    assert.equal(access.canViewInQueue({ ...record, stageId: null, subStageId: null, assignedTo: 1 }, 'MY_APPROVALS'), false);
+  }
+  for (const otherRole of ['sales_representative', 'estimation_team', 'custom_role']) {
+    const access = opportunityAccess(1, menus, [grant(102, 'view'), grant(104, 'approve')], role(otherRole));
+    assert.equal(records.some(entry => access.canViewInQueue(entry, 'MY_APPROVALS')), false);
   }
 });
 

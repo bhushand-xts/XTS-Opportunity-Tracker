@@ -66,8 +66,13 @@ export function opportunityAccess(userId: number, menus: AccessMenu[], grants: A
   }
   function canViewInQueue(record: WorkflowRecord, queue: string) {
     if (!canListQueue(queue)) return false;
-    if (queue === 'MY_WORK') return own(record) || (record.stageId === 3 && record.subStageId === 7 && (estimate || has(['estimation'], 'view')));
-    if (queue === 'MY_APPROVALS') return true;
+    if (queue === 'MY_WORK') {
+      const inEstimation = record.stageId === 3 && record.subStageId === 7;
+      if (estimate) return inEstimation;
+      return own(record) || (inEstimation && has(['estimation'], 'view'));
+    }
+    if (queue === 'MY_APPROVALS') return (review && [1, 5, 6].includes(record.stageId ?? 0)) ||
+      (gateReview && [2, 4].includes(record.stageId ?? 0));
     return true;
   }
   function canView(record: WorkflowRecord) {
