@@ -79,6 +79,14 @@ module.exports = {
   				4: 'hsl(var(--stage-4))',
   				5: 'hsl(var(--stage-5))'
   			},
+  			// Workflow progress ramp — see --progress-* in design-system globals.css
+  			progress: {
+  				1: 'hsl(var(--progress-1))',
+  				2: 'hsl(var(--progress-2))',
+  				3: 'hsl(var(--progress-3))',
+  				4: 'hsl(var(--progress-4))',
+  				5: 'hsl(var(--progress-5))'
+  			},
   			brand: {
   				from: 'hsl(var(--brand-from))',
   				to: 'hsl(var(--brand-to))',

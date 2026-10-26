@@ -70,8 +70,8 @@ function mockResponse(detail: OpportunityDetail, index = 0): ResponseCommand { c
 describe('explicit mock service on the existing Opportunity workflow', () => {
   it('queues a minimal new opportunity to Sales immediately and automatically routes approval to CEO', async () => {
     const h = mockHarness(), form = newDraft('101');
-    Object.assign(form, { title: 'New mock workflow', estimatedValue: '10.00', currencyId: '1', serviceLine: 'Mock consulting', clientId: '201' });
-    Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
+    Object.assign(form, { title: 'New mock workflow', estimatedValue: '10.00', estimatedValueUsd: '10.00', priority: 'MEDIUM', currencyId: '1', serviceLine: 'Mock consulting', clientId: '201' });
+    Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement', submissionMethod: 'PORTAL' });
     form.dates.submissionDeadline = '2026-11-25'; form.rfp.type = 'GENERIC';
     h.store.reset(false);
     let detail = await h.service.save({ id: null, expectedRevision: null, idempotencyKey: 'create-mock', form });
@@ -182,7 +182,7 @@ describe('explicit mock service on the existing Opportunity workflow', () => {
     const h = mockHarness(); let detail = await h.service.detail('401');
     detail = await h.service.saveEstimation({ ...mockVersion(detail), estimation: { revision: 0, rows: [{ id: 'row', workItem: 'Delivery', hours: '2.5', people: 2, hourlyRate: '100.25' }], assumptions: 'Restricted mock estimate', total: '999' } });
     expect(detail.estimation?.total).toBe('501.25');
-    detail = await h.service.saveScope({ ...mockVersion(detail), scope: { revision: 0, objective: 'Mock objective', deliverables: 'Mock deliverables', inclusions: '', exclusions: '', dependencies: '', acceptance: '' } });
+    detail = await h.service.saveScope({ ...mockVersion(detail), scope: { revision: 0, summary: 'Mock scope summary', alignment: [], risks: [] } });
     expect(detail.scope?.revision).toBe(1);
     h.actAs('102'); detail = await h.service.detail(detail.id); expect(detail.estimation).toBeNull(); expect(detail.responses).toEqual([]);
     await expect(h.service.saveScope({ ...mockVersion(detail), scope: detail.scope! })).rejects.toThrow('Only the opportunity owner');
@@ -263,8 +263,8 @@ function realLoginHarness() {
   let freshLoads = 0;
   const session = () => createLocalOpportunityService(createLocalOpportunityStore(storage, directory, 'test-gateway'), async fresh => { if (fresh) freshLoads++; return { ...directory, actorId }; });
   const form = newDraft(actorId);
-  Object.assign(form, { title: 'Opportunity across real logins', estimatedValue: '100.00', currencyId: '14', serviceLine: 'Managed services', clientId: 'local-test-client' });
-  Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement' });
+  Object.assign(form, { title: 'Opportunity across real logins', estimatedValue: '100.00', estimatedValueUsd: '100.00', priority: 'MEDIUM', currencyId: '14', serviceLine: 'Managed services', clientId: 'local-test-client' });
+  Object.assign(form.solicitation, { reference: 'RFP-TEST-1', issuingAgency: 'Test procurement', submissionMethod: 'PORTAL' });
   form.dates.submissionDeadline = '2026-11-25'; form.rfp.type = 'GENERIC';
   return { directory, entries, form, session, signInAs: (id: string) => { actorId = id; }, freshLoads: () => freshLoads };
 }

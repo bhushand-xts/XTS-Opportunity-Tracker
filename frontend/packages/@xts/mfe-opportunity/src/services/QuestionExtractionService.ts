@@ -24,6 +24,7 @@ const errors: Record<string, string> = {
   INSTRUCTIONS_MISSING: 'The extraction instructions could not be found. Extract again.',
   INSTRUCTIONS_TOO_LONG: 'Extraction instructions are limited to 4,000 characters.',
   INVALID_INSTRUCTIONS: 'The extraction instructions are invalid.',
+  INVALID_EXTRACTION_MODE: 'The extraction request was invalid. Please try again.',
   CANCELLED: 'Extraction was cancelled.',
   INSTRUCTIONS_TOO_SHORT: "Describe what to extract in a few words, e.g. 'pricing and technical questions'.",
   ACCESS_DENIED: 'You do not have permission to upload documents or extract questions. Contact your administrator.',
@@ -80,9 +81,11 @@ export const questionExtractionService = {
     return request<{ id: string; state: QuestionExtractionStatus['state'] }>(`/documents/${encodeURIComponent(documentId)}/extractions/${encodeURIComponent(jobId)}/cancel`, { method: 'POST', keepalive: true });
   },
   status(id: string, signal: AbortSignal) { return request<QuestionExtractionStatus>(`/${encodeURIComponent(id)}`, { signal }); },
-  retry(documentId: string, key: string, signal: AbortSignal, instructions?: string) {
+  // mode defaults to the AI flow; pass 'AS_IS' to copy the file's own questions verbatim, with no AI involved.
+  retry(documentId: string, key: string, signal: AbortSignal, instructions?: string, mode?: 'AI' | 'AS_IS') {
     return request<QuestionExtractionAccepted>(`/documents/${encodeURIComponent(documentId)}/extractions`, { method: 'POST', signal,
-      headers: { 'x-idempotency-key': key, 'content-type': 'application/json' }, body: JSON.stringify({ instructions: instructions ?? '' }) });
+      headers: { 'x-idempotency-key': key, 'content-type': 'application/json' },
+      body: JSON.stringify({ instructions: instructions ?? '', ...(mode ? { mode } : {}) }) });
   },
   // A saved opportunity's linked document and, per saved question text, its recovered category.
   source(opportunityId: string) {
@@ -104,10 +107,13 @@ export function mergeExtractedQuestions(current: PreparedQuestion[], incoming: P
 export function extractionCandidateKeys(question: PreparedQuestion) {
   return [question.id, `${question.text.replace(/\s+/g, ' ').trim()}|${question.sourceReference}`];
 }
-export function extractionProgress(result: QuestionExtractionStatus) {
+export function extractionProgress(result: QuestionExtractionStatus, asIs = false) {
   const batches = result.total ? ` ${result.completed}/${result.total} sections` : '';
   const pages = result.totalPages ? ` (${result.coveredPages ?? 0}/${result.totalPages} pages)` : '';
-  if (result.state === 'SUCCEEDED' && !result.questions.length) return 'No questions matched these instructions. Try broader instructions.';
+  if (result.state === 'SUCCEEDED' && !result.questions.length) {
+    return asIs ? 'No questions were found written as-is in this file. Try "Document-Based Questionnaire" instead.'
+      : 'No questions matched these instructions. Try broader instructions.';
+  }
   if (result.state === 'SUCCEEDED') return `${result.questions.length} questions extracted. Review them before saving.`;
   if (result.state === 'PARTIAL') return `Extraction incomplete${batches}${pages}. Available questions are ready for review; retry to finish.`;
   if (result.stage === 'RATE_LIMITED') {

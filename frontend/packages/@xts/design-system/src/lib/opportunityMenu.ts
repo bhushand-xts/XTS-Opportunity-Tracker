@@ -83,17 +83,19 @@ export function opportunityMenuArea(menu: OpportunityMenuRecord): 'opportunities
   return null;
 }
 
-/** Each grant applies to its own menu; parent and sibling grants are not inherited. */
-export function opportunityMenuPermissions(menus: OpportunityMenuRecord[], hasPermission: (key: string, permission: string) => boolean) {
+/** CRUD uses menu grants; the approval queue follows the signed-in reviewer role. */
+export function opportunityMenuPermissions(menus: OpportunityMenuRecord[], hasPermission: (key: string, permission: string) => boolean, roleName?: string | null) {
   const granted = (area: ReturnType<typeof opportunityMenuArea>, permission: string) =>
     menus.some(menu => opportunityMenuArea(menu) === area && hasPermission(menu.menuKey, permission));
+  const reviewer = ['sales_head', 'ceo', 'ceo/gate_2_approver'].includes(normalize(roleName ?? ''));
+  const estimator = normalize(roleName ?? '') === 'estimation_team';
   return {
     view: granted('opportunities', 'view'),
     add: granted('opportunities', 'add'),
     edit: granted('opportunities', 'edit'),
-    pipeline: granted('pipeline', 'view'),
-    work: granted('work', 'view'),
-    approvals: granted('approvals', 'view'),
-    approve: granted('approvals', 'approve'),
+    pipeline: granted('opportunities', 'view') || granted('pipeline', 'view'),
+    work: estimator || granted('work', 'view'),
+    approvals: reviewer,
+    approve: reviewer,
   };
 }

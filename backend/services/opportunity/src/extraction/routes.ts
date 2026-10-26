@@ -124,18 +124,25 @@ extractionRouter.get('/source/:opportunityId', wrap(async (req, res) => {
   res.json({ document: rows[0] ? { id: rows[0].id, name: rows[0].original_name, downloadUrl: null } : null, questions, categories });
 }));
 extractionRouter.post('/documents/:documentId/extractions', wrap(async (req, res) => {
-  if (env.extraction.aiExtraction && !aiReady()) throw new ExtractionError('EXTRACTION_NOT_CONFIGURED', 503);
-  const raw = (req.body as { instructions?: unknown } | undefined)?.instructions;
+  const body = req.body as { instructions?: unknown; mode?: unknown } | undefined;
+  if (body?.mode !== undefined && body.mode !== 'AI' && body.mode !== 'AS_IS') throw new ExtractionError('INVALID_EXTRACTION_MODE');
+  // "As-is" copies questions verbatim via deterministic local rules; it needs no AI
+  // and so is available regardless of AI configuration/readiness.
+  const asIs = body?.mode === 'AS_IS';
+  if (!asIs && env.extraction.aiExtraction && !aiReady()) throw new ExtractionError('EXTRACTION_NOT_CONFIGURED', 503);
+  const raw = body?.instructions;
   if (raw != null && typeof raw !== 'string') throw new ExtractionError('INVALID_INSTRUCTIONS');
   if (typeof raw === 'string' && raw.length > MAX_INSTRUCTIONS) throw new ExtractionError('INSTRUCTIONS_TOO_LONG');
   // edit=true already re-runs mayUpload's exact same check (same userId, same
   // opportunity_id) internally — a second explicit call here would just repeat it.
   const doc = await mayRead(await repo.document(uuid(req.params.documentId)), user(req), true);
-  // Instructions only steer AI extraction; local rule matching ignores them.
-  const instructions = aiReady() ? normalizeInstructions(raw as string | undefined) : '';
+  // Instructions only steer AI extraction; as-is and local rule matching ignore them.
+  const instructions = !asIs && aiReady() ? normalizeInstructions(raw as string | undefined) : '';
   if (instructions && instructionsTooShort(instructions)) throw new ExtractionError('INSTRUCTIONS_TOO_SHORT');
   const version = instructions ? promptVersion(await saveInstructions(doc.id, instructions)) : promptVersion();
-  const job = await repo.retryDocument(doc, user(req), uuid(req.header('x-idempotency-key')), version);
+  const job = asIs
+    ? await repo.retryDocument(doc, user(req), uuid(req.header('x-idempotency-key')), version, 'local-rules-v1')
+    : await repo.retryDocument(doc, user(req), uuid(req.header('x-idempotency-key')), version);
   res.status(202).json({ document: documentView(doc), jobId: job.id });
 }));
 extractionRouter.post('/documents/:documentId/extractions/:jobId/cancel', wrap(async (req, res) => {

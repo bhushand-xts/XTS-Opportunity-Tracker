@@ -58,7 +58,11 @@ export async function createUploadedDocument(doc: DocumentRecord) {
 }
 // version identifies the prompt (see promptVersion); the instructions file must
 // already be saved, so the worker can never claim a job whose prompt is missing.
-export async function retryDocument(doc: DocumentRecord, owner: number, requestKey: string, version = EXTRACTOR_VERSION) {
+// model defaults to the configured AI model; callers pass 'local-rules-v1' to force a
+// deterministic, zero-token, verbatim extraction regardless of server AI configuration
+// (the "import as-is" mode). Scoping every lookup below by model keeps an AI extraction
+// and an as-is extraction of the same document independent of one another.
+export async function retryDocument(doc: DocumentRecord, owner: number, requestKey: string, version = EXTRACTOR_VERSION, model = env.extraction.model) {
   return transaction(async client => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`upload-owner:${owner}`]);
     const prior = (await client.query<Job>('SELECT * FROM question_extraction_jobs WHERE owner_id=$1 AND request_key=$2', [owner, requestKey])).rows[0];
@@ -71,18 +75,18 @@ export async function retryDocument(doc: DocumentRecord, owner: number, requestK
     const cached = (await client.query<Job>(`SELECT j.* FROM question_extraction_jobs j WHERE j.document_id=$1 AND j.state='SUCCEEDED'
       AND j.model=$2 AND j.prompt_version=$3 AND EXISTS (SELECT 1 FROM question_extraction_chunks c
       WHERE c.job_id=j.id AND coalesce(jsonb_array_length(c.candidates),0)>0) ORDER BY j.created_at DESC LIMIT 1`,
-    [doc.id, env.extraction.model, version])).rows[0];
+    [doc.id, model, version])).rows[0];
     if (cached) return cached;
-    const active = (await client.query<Job>(`SELECT * FROM question_extraction_jobs WHERE document_id=$1 AND state IN ('QUEUED','PROCESSING') ORDER BY created_at DESC LIMIT 1`, [doc.id])).rows[0];
+    const active = (await client.query<Job>(`SELECT * FROM question_extraction_jobs WHERE document_id=$1 AND model=$2 AND state IN ('QUEUED','PROCESSING') ORDER BY created_at DESC LIMIT 1`, [doc.id, model])).rows[0];
     if (active && active.prompt_version === version) return active;
-    // A new prompt replaces an in-flight extraction of the same document. Clearing
+    // A new prompt replaces an in-flight extraction of the same document and model. Clearing
     // the lease makes any worker still holding it stop at its next heartbeat.
     if (active) await client.query(`UPDATE question_extraction_jobs SET state='FAILED',error_code='SUPERSEDED',lease_token=NULL,lease_until=NULL,updated_at=now()
-      WHERE document_id=$1 AND state IN ('QUEUED','PROCESSING')`, [doc.id]);
+      WHERE document_id=$1 AND model=$2 AND state IN ('QUEUED','PROCESSING')`, [doc.id, model]);
     const pending = (await client.query(`SELECT count(*)::int AS count FROM question_extraction_jobs WHERE owner_id=$1 AND state IN ('QUEUED','PROCESSING')`, [owner])).rows[0].count;
     if (pending >= 3) throw new ExtractionError('TOO_MANY_PENDING_EXTRACTIONS', 429);
     return (await client.query<Job>(`INSERT INTO question_extraction_jobs(id,document_id,owner_id,request_key,model,prompt_version)
-      VALUES($1,$2,$3,$4,$5,$6) RETURNING *`, [randomUUID(), doc.id, owner, requestKey, env.extraction.model, version])).rows[0];
+      VALUES($1,$2,$3,$4,$5,$6) RETURNING *`, [randomUUID(), doc.id, owner, requestKey, model, version])).rows[0];
   });
 }
 export async function job(id: string) { return (await query<Job>('SELECT * FROM question_extraction_jobs WHERE id=$1', [id]))[0]; }

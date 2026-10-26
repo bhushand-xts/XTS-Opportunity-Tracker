@@ -1,6 +1,6 @@
 import { gql } from '@apollo/client';
 
-// Implemented master-data operations only. No proposed workflow is sent live.
+// These operations use the existing production schema.
 export const GET_OPPORTUNITY_LOOKUPS = gql`
   query OpportunityLookups {
     currencies { currencyId currencyName currencyCode currencySymbol isActive }
@@ -20,6 +20,8 @@ const OPPORTUNITY_FIELDS = gql`
     stageId
     subStageId
     ownerId
+    createdBy
+    createdDt
     assignedTo
     priority
     serviceLine
@@ -44,6 +46,7 @@ const OPPORTUNITY_FIELDS = gql`
     currencyId
     rfpType
     workflowComment
+    workflowReasonCodeId
     clientName
     accountType
     sector
@@ -56,6 +59,7 @@ const OPPORTUNITY_FIELDS = gql`
     proposalQuestions
     proposalQuestionIds
     proposalQuestionCategories
+    proposalQuestionnaireTypeIds
   }
 `;
 
@@ -70,8 +74,18 @@ export const LIST_OPPORTUNITIES = gql`
 export const GET_OPPORTUNITY = gql`
   ${OPPORTUNITY_FIELDS}
   query GetOpportunity($opportunityId: Int!) {
-    opportunity(opportunityId: $opportunityId) { ...OpportunityFields }
+    opportunity(opportunityId: $opportunityId) {
+      ...OpportunityFields
+      stageHistory { id stageId subStageId reachedAt updatedBy comment }
+      estimation { revision rows { id workItem hours people hourlyRate } assumptions total }
+    }
     currencies { currencyId currencyCode currencySymbol }
+  }
+`;
+
+export const SAVE_OPPORTUNITY_ESTIMATION = gql`
+  mutation SaveOpportunityEstimation($opportunityId: Int!, $estimation: OpportunityEstimationInput!) {
+    saveOpportunityEstimation(opportunityId: $opportunityId, estimation: $estimation) { opportunityId }
   }
 `;
 
@@ -138,5 +152,21 @@ export const UPDATE_OPPORTUNITY = gql`
   ${OPPORTUNITY_FIELDS}
   mutation UpdateOpportunity($opportunityId: Int!, $input: UpdateOpportunityInput!) {
     updateOpportunity(opportunityId: $opportunityId, input: $input) { ...OpportunityFields }
+  }
+`;
+
+export const TRANSITION_OPPORTUNITY = gql`
+  mutation TransitionOpportunity($opportunityId: Int!, $action: OpportunityWorkflowAction!, $comment: String, $reasonCodeId: Int) {
+    transitionOpportunity(opportunityId: $opportunityId, action: $action, comment: $comment, reasonCodeId: $reasonCodeId) {
+      opportunityId
+      stageId
+      subStageId
+    }
+  }
+`;
+
+export const GET_HOLD_REASON_CODES = gql`
+  query OpportunityHoldReasonCodes {
+    reasonCodesList { id reasonName description displayOrder isActive }
   }
 `;

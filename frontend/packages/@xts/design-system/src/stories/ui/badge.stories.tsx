@@ -8,8 +8,9 @@ const meta = {
   argTypes: {
     variant: {
       control: "select",
-      options: ["default", "secondary", "destructive", "outline", "brand", "success", "muted"],
+      options: ["default", "secondary", "destructive", "outline", "brand", "success", "warning", "muted", "info", "violet", "critical"],
     },
+    size: { control: "select", options: ["default", "sm"] },
   },
   args: { children: "Badge" },
 } satisfies Meta<typeof Badge>;
@@ -40,6 +41,20 @@ export const AllVariants: Story = {
       <Badge variant="brand">Main Menu</Badge>
       <Badge variant="success">Active</Badge>
       <Badge variant="muted">Inactive</Badge>
+      <Badge variant="info">Generic RFP</Badge>
+      <Badge variant="violet">Questionnaire</Badge>
+      <Badge variant="critical">High</Badge>
+    </div>
+  ),
+};
+/** size="sm" for dense layouts such as pipeline cards and table rows. */
+export const Small: Story = {
+  render: () => (
+    <div className="flex flex-wrap gap-1">
+      <Badge size="sm" variant="violet">Questionnaire</Badge>
+      <Badge size="sm" variant="critical">High</Badge>
+      <Badge size="sm" variant="warning">Medium</Badge>
+      <Badge size="sm" variant="success">Low</Badge>
     </div>
   ),
 };

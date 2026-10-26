@@ -21,10 +21,11 @@ const accepted = { document, jobId: 'job-1' };
 const success: QuestionExtractionStatus = { id: 'job-1', state: 'SUCCEEDED', completed: 1, total: 1, error: null,
   questions: [{ id: 'extracted-1', text: 'Describe security controls.', sourceReference: 'Page 1 (b1)', validated: false }] };
 
-async function mount() {
+async function mount(questionnaireTypeId?: 1 | 2) {
   function Harness() {
     const [form, setForm] = useState(() => {
       const form = newDraft('1'); form.rfp.type = 'QUESTIONNAIRE';
+      form.rfp.questionnaireTypeId = questionnaireTypeId;
       form.rfp.questions = [{ id: 'manual-1', text: 'Existing manual question', sourceReference: '', validated: false }]; return form;
     });
     const [disabled, setDisabled] = useState(false);
@@ -96,9 +97,49 @@ describe('prompt-driven question extraction', () => {
     api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);
     await mount(); await upload();
     fireEvent.click(extractButton());
-    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), ''));
+    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), '', undefined));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Extraction instructions')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Describe security controls.');
+  });
+  it('defaults to Document-Based Questionnaire, and the two extraction-mode checkboxes are mutually exclusive', async () => {
+    await mount(); await upload();
+    const generated = screen.getByRole('checkbox', { name: 'Document-Based Questionnaire' });
+    const asWritten = screen.getByRole('checkbox', { name: 'Client-Predefined Questionnaire' });
+    expect(generated).toBeChecked();
+    expect(asWritten).not.toBeChecked();
+    fireEvent.click(asWritten);
+    expect(asWritten).toBeChecked();
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questionnaireTypeId).toBe(2);
+    expect(generated).not.toBeChecked();
+    // Clicking the already-checked box again can't deselect down to zero selections.
+    fireEvent.click(asWritten);
+    expect(asWritten).toBeChecked();
+    fireEvent.click(generated);
+    expect(generated).toBeChecked();
+    expect(asWritten).not.toBeChecked();
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questionnaireTypeId).toBe(1);
+  });
+  it('restores Client-Predefined from the saved form and uses that mode for extraction', async () => {
+    api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);
+    await mount(2); await upload();
+    expect(screen.getByRole('checkbox', { name: 'Client-Predefined Questionnaire' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Document-Based Questionnaire' })).not.toBeChecked();
+    expect(screen.queryByRole('button', { name: /extraction instructions/i })).not.toBeInTheDocument();
+    fireEvent.click(extractButton());
+    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), undefined, 'AS_IS'));
+    expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Describe security controls.');
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questionnaireTypeId).toBe(2);
+  });
+  it('imports questions as-is when "Client-Predefined Questionnaire" is checked, hiding instructions and sending none to the server', async () => {
+    api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);
+    await mount(); await upload();
+    fireEvent.change(instructionsBox(), { target: { value: 'Extract: staffing questions.' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Client-Predefined Questionnaire' }));
+    expect(screen.queryByLabelText('Extraction instructions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /extraction instructions/i })).not.toBeInTheDocument();
+    fireEvent.click(extractButton());
+    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), undefined, 'AS_IS'));
     expect(await screen.findByLabelText('Question 2 text')).toHaveValue('Describe security controls.');
   });
   it('keeps typed instructions when the box is hidden and shows Edit on the button', async () => {
@@ -109,7 +150,7 @@ describe('prompt-driven question extraction', () => {
     expect(instructionsToggle()).toHaveTextContent('Edit extraction instructions');
     api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue(success);
     fireEvent.click(extractButton());
-    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), 'Extract: staffing questions.'));
+    await waitFor(() => expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), 'Extract: staffing questions.', undefined));
   });
   it('rejects instructions too short to mean anything, without starting an extraction', async () => {
     await mount(); await upload();
@@ -129,7 +170,7 @@ describe('prompt-driven question extraction', () => {
     fireEvent.change(instructionsBox(), { target: { value: 'Extract: security questions only.' } });
     startExtraction();
     await waitFor(() => expect(api.status).toHaveBeenCalled());
-    expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), 'Extract: security questions only.');
+    expect(api.retry).toHaveBeenCalledWith(document.id, expect.any(String), expect.any(AbortSignal), 'Extract: security questions only.', undefined);
     // No percentage before progress; a spinner shows instead.
     expect(progress()).toHaveTextContent('Reading the document...');
     expect(progress()).not.toHaveTextContent('%');
@@ -162,12 +203,37 @@ describe('prompt-driven question extraction', () => {
     fireEvent.change(instructionsBox(), { target: { value: 'Extract: pricing questions only.' } });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     startExtraction();
-    await waitFor(() => expect(screen.getByLabelText('Question 2 text')).toHaveValue('Provide a cost proposal.'));
+    await waitFor(() => expect(screen.getByLabelText('Question 1 text')).toHaveValue('Provide a cost proposal.'));
     expect(confirm).toHaveBeenCalled();
     expect(api.retry.mock.calls[1][3]).toBe('Extract: pricing questions only.');
     expect(screen.queryByDisplayValue('Describe security controls.')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Question 1 text')).toHaveValue('Existing manual question');
+    expect(screen.queryByDisplayValue('Existing manual question')).not.toBeInTheDocument();
     expect(api.upload).toHaveBeenCalledTimes(1);
+  });
+  it('replaces 29 extracted questions and an old manual question with 36 latest questions, then keeps a newly added question', async () => {
+    const previous = Array.from({ length: 29 }, (_, index) => ({ id: `extracted-old-${index}`, text: `Old question ${index + 1}`, sourceReference: '', validated: false }));
+    const latest = Array.from({ length: 36 }, (_, index) => ({ id: `extracted-new-${index}`, text: `Latest question ${index + 1}`, sourceReference: '', validated: false }));
+    api.retry.mockResolvedValueOnce(accepted).mockResolvedValueOnce({ ...accepted, jobId: 'job-2' });
+    api.status.mockResolvedValueOnce({ ...success, questions: previous }).mockResolvedValueOnce({ ...success, id: 'job-2', questions: latest });
+    await mount();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove question 1' }));
+    await upload(); startExtraction();
+    const questions = () => JSON.parse(screen.getByTestId('form').textContent!).rfp.questions;
+    await waitFor(() => expect(questions()).toHaveLength(29));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
+    fireEvent.change(screen.getByLabelText('Question 30 text'), { target: { value: 'Old manually added question' } });
+    expect(questions()).toHaveLength(30);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Client-Predefined Questionnaire' }));
+    startExtraction();
+    await waitFor(() => expect(questions()).toHaveLength(36));
+    expect(questions().map((question: { text: string }) => question.text)).toEqual(latest.map(question => question.text));
+    expect(screen.queryByDisplayValue('Old manually added question')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+ Add question' }));
+    fireEvent.change(screen.getByLabelText('Question 37 text'), { target: { value: 'New manually added question' } });
+    expect(questions()).toHaveLength(37);
+    expect(questions()[36].text).toBe('New manually added question');
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questionnaireTypeId).toBe(2);
   });
   it('explains when no questions matched the instructions', async () => {
     api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue({ ...success, questions: [] });
@@ -292,6 +358,44 @@ describe('prompt-driven question extraction', () => {
       expect(screen.getByRole('region', { name: 'Extracted questions' })).toHaveClass('opp-question-panel');
       expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the technology platform.');
     });
+    it('shows no scroll arrows when the tab row fits, and shows them (with correct enabled state) once it overflows', async () => {
+      await extractCategorized();
+      expect(screen.queryByRole('button', { name: /Scroll categories/ })).not.toBeInTheDocument();
+      // jsdom never lays out real scroll dimensions; simulate overflow directly on the tab list.
+      const tabs = screen.getByRole('tablist');
+      Object.defineProperty(tabs, 'scrollWidth', { value: 500, configurable: true });
+      Object.defineProperty(tabs, 'clientWidth', { value: 200, configurable: true });
+      Object.defineProperty(tabs, 'scrollLeft', { value: 0, configurable: true, writable: true });
+      const scrollBy = vi.fn(); tabs.scrollBy = scrollBy;
+      fireEvent.scroll(tabs);
+      const left = await screen.findByRole('button', { name: 'Scroll categories left' });
+      const right = screen.getByRole('button', { name: 'Scroll categories right' });
+      expect(left).toBeDisabled();
+      expect(right).toBeEnabled();
+      fireEvent.click(right);
+      expect(scrollBy).toHaveBeenCalledWith({ left: 160, behavior: 'smooth' });
+      // Scrolled away from the start: the left arrow enables, and at the end the right arrow disables.
+      tabs.scrollLeft = 300;
+      fireEvent.scroll(tabs);
+      expect(left).toBeEnabled();
+      expect(right).toBeDisabled();
+    });
+    it('shows a verbatim file section (e.g. from "Client-Predefined Questionnaire") as its own tab, not forced into Other', async () => {
+      api.retry.mockResolvedValue(accepted); api.status.mockResolvedValue({ ...success, questions: [
+        { id: 'extracted-sec', text: 'Have you ever experienced a data breach? If so, how was it managed?', sourceReference: 'Sheet row 4', validated: false, category: 'Information Security and Compliance', sourceOrder: 10 },
+        { id: 'extracted-tech', text: 'Describe your hosting environment.', sourceReference: 'Sheet row 9', validated: false, category: 'Technical', sourceOrder: 20 },
+      ] });
+      await mount(); await upload();
+      startExtraction();
+      await screen.findByRole('tab', { name: /^Information Security and Compliance/ });
+      const tabs = screen.getAllByRole('tab');
+      // Fixed categories ("Technical", then "Other" for the uncategorized manual question) keep
+      // their defined order; the file's own section is appended after them, verbatim.
+      expect(tabs.map(t => t.textContent)).toEqual(['Technical (1)', 'Other (1)', 'Information Security and Compliance (1)']);
+      fireEvent.mouseDown(tab(/^Information Security and Compliance/));
+      await waitFor(() => expect(tab(/^Information Security and Compliance/)).toHaveAttribute('data-state', 'active'));
+      expect(screen.getByLabelText('Question 1 text')).toHaveValue('Have you ever experienced a data breach? If so, how was it managed?');
+    });
     it('filters a tab to its questions in document order', async () => {
       await extractCategorized();
       fireEvent.mouseDown(tab(/^Technical/));
@@ -299,6 +403,26 @@ describe('prompt-driven question extraction', () => {
       expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the technology platform.');
       expect(screen.getByLabelText('Question 2 text')).toHaveValue('Describe your hosting environment.');
       expect(screen.queryByLabelText('Question 3 text')).not.toBeInTheDocument();
+    });
+    it('searches across every category, not just the active tab, and clearing it restores the tabs', async () => {
+      await extractCategorized();
+      expect(tab(/^Technical/)).toHaveAttribute('data-state', 'active');
+      fireEvent.change(screen.getByRole('textbox', { name: 'Search all questions' }), { target: { value: 'cost proposal' } });
+      // Tabs are hidden while searching; the match from the (inactive) Pricing & Commercial tab shows up anyway.
+      expect(screen.queryAllByRole('tab')).toHaveLength(0);
+      expect(screen.getByText('1 of 4 questions match "cost proposal".')).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Search results' })).toHaveTextContent('Pricing & Commercial');
+      expect(screen.getByLabelText('Question 1 text')).toHaveValue('Provide a detailed cost proposal.');
+      fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+      expect(screen.getByRole('textbox', { name: 'Search all questions' })).toHaveValue('');
+      await waitFor(() => expect(tab(/^Technical/)).toHaveAttribute('data-state', 'active'));
+      expect(screen.getByLabelText('Question 1 text')).toHaveValue('Describe the technology platform.');
+    });
+    it('shows a no-match message when the search finds nothing', async () => {
+      await extractCategorized();
+      fireEvent.change(screen.getByRole('textbox', { name: 'Search all questions' }), { target: { value: 'nonexistent topic' } });
+      expect(screen.getByText('No questions match "nonexistent topic".')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Question 1 text')).not.toBeInTheDocument();
     });
     it('adds a manual question to the open tab with a section picker inside its box', async () => {
       await extractCategorized();
@@ -364,7 +488,7 @@ describe('reopening a saved opportunity', () => {
     expect(screen.getByRole('button', { name: 'Extract questions' })).toBeEnabled();
     expect(screen.getByTestId('form').textContent).not.toContain('"category"');
   });
-  it('re-extracting replaces questions that came from the document and keeps manual ones', async () => {
+  it('re-extracting a saved opportunity replaces both extracted and manual questions', async () => {
     api.source.mockResolvedValue(restoredSource);
     api.retry.mockResolvedValue({ document: restoredSource.document, jobId: 'job-9' });
     api.status.mockResolvedValue({ id: 'job-9', state: 'SUCCEEDED', completed: 1, total: 1, error: null,
@@ -373,14 +497,14 @@ describe('reopening a saved opportunity', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Extract questions' })).toBeEnabled());
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Extract questions' }));
-    // The manual question is kept in its own section tab, which opens first.
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Technical (1)' })).toBeInTheDocument());
-    expect(screen.getByDisplayValue('Manual staffing question')).toBeInTheDocument();
     expect(confirm).toHaveBeenCalled();
-    expect(api.retry).toHaveBeenCalledWith(restoredSource.document.id, expect.any(String), expect.any(AbortSignal), '');
+    expect(api.retry).toHaveBeenCalledWith(restoredSource.document.id, expect.any(String), expect.any(AbortSignal), '', undefined);
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Technical (1)' }));
     await waitFor(() => expect(screen.getByDisplayValue('Describe your hosting and security approach.')).toBeInTheDocument());
     expect(screen.queryByDisplayValue('Describe your hosting environment.')).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Manual staffing question')).not.toBeInTheDocument();
+    expect(JSON.parse(screen.getByTestId('form').textContent!).rfp.questions).toHaveLength(1);
   });
   it('still works when nothing was stored for the opportunity', async () => {
     api.source.mockRejectedValue(new Error('offline'));

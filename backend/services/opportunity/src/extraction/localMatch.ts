@@ -37,6 +37,37 @@ function startsNewItem(unit: SourceUnit): boolean {
 
 export interface LocalMatch { candidates: Candidate[]; coveredBlockIds: Set<string>; }
 
+// A heading often repeats its outline number ("1 Vendor Profile", "2. Functional Requirements",
+// "Section 3: Integration and Data") — stripped so the category is just the title. Never strips
+// down to nothing: a heading that's only a number keeps it rather than becoming an empty category.
+const HEADING_NUMBER = /^(?:(?:section|part|chapter)\s+)?\d+(?:\.\d+)*[.):]?\s+/i;
+function stripHeadingNumber(text: string): string {
+  return text.replace(HEADING_NUMBER, '').trim() || text.trim();
+}
+
+// A question's own text sometimes repeats a letter-prefixed ID label inline ("Q1.1 What is
+// your...", "REQ2.3 Describe..."), since the source (unlike a spreadsheet's own "Question ID"
+// column) has nowhere else to put it. Stripped from the final text only — detection itself is
+// untouched, so this never changes which text is found, only what prefix it keeps. Requires a
+// LETTER prefix specifically: a purely numeric lead-in ("3.2 Describe...") is deliberately left
+// alone, since that's the document's own clause/outline numbering, not a redundant label — see
+// the NUMBERING-based span-detection tests, which already depend on that text being kept as-is.
+const QUESTION_LABEL = /^[a-zA-Z]{1,4}\d+(?:\.\d+)*[.):]?\s+/;
+function stripQuestionLabel(span: SourceUnit[], verbatim: Candidate): Candidate {
+  const text = verbatim.text.replace(QUESTION_LABEL, '').trim();
+  if (!text || text === verbatim.text) return verbatim;
+  return buildCandidate(span, text) ?? verbatim;
+}
+
+// A short, standalone line that isn't itself a question or request reads as a section title.
+// Exported so the parser's PDF (font-size) and plain-text heading heuristics use the same
+// "is this actually a heading, not a requirement" rule as everything else in this pipeline.
+export function looksLikeHeading(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 80 || trimmed.endsWith('?')) return false;
+  return !STRONG_VERB.test(trimmed) && !WEAK_VERB.test(trimmed);
+}
+
 // Deterministic, zero-token question identification: explicit interrogatives and
 // response-request imperatives (Describe/Explain/Provide/...), grown to include
 // their own wrapped continuation text. Conservative by design — it only grows a
@@ -48,6 +79,16 @@ export function matchLocal(blocks: Block[]): LocalMatch {
   const source = prepareSource(blocks);
   const candidates: Candidate[] = [];
   const coveredBlockIds = new Set<string>();
+  // The verbatim heading most recently seen (a block the parser tagged structure:'heading' —
+  // a DOCX heading style, or a font-size/standalone-line heuristic for PDF/text), carried onto
+  // every question found afterward until the next heading. The same rule used for spreadsheet
+  // banner rows (see directQuestions), extended to documents that carry their own heading markup.
+  const headingAt = new Map<number, string | undefined>();
+  let heading: string | undefined;
+  blocks.forEach((block, blockIndex) => {
+    if (block.structure === 'heading' && block.kind !== 'coverage' && block.text.trim()) heading = stripHeadingNumber(block.text);
+    headingAt.set(blockIndex, heading);
+  });
   let index = 0;
   while (index < source.units.length) {
     if (!startsQuestion(source.units[index])) { index++; continue; }
@@ -59,8 +100,13 @@ export function matchLocal(blocks: Block[]): LocalMatch {
       end++;
     }
     const span = source.units.slice(index, end + 1);
-    const candidate = buildCandidate(span);
-    if (candidate) { candidates.push(candidate); span.forEach(unit => coveredBlockIds.add(unit.block.id)); }
+    const verbatim = buildCandidate(span);
+    if (verbatim) {
+      const candidate = stripQuestionLabel(span, verbatim);
+      const category = headingAt.get(span[0].blockIndex) || categoryFor(undefined, candidate.text);
+      candidates.push({ ...candidate, category });
+      span.forEach(unit => coveredBlockIds.add(unit.block.id));
+    }
     index = end + 1;
   }
   return { candidates, coveredBlockIds };
@@ -87,12 +133,16 @@ export function categoryFor(section: string | undefined, question: string): stri
 }
 
 // Spreadsheet rows whose question column already holds the question: same id, reference and
-// ordering scheme as every other candidate, categorised by keyword rules.
+// ordering scheme as every other candidate. When the row carries its own section (its own
+// column, or a banner heading row above it), that section is used verbatim as the category —
+// the file's own sectioning is kept as-is rather than re-bucketed by keyword guessing. Keyword
+// rules only run as a fallback for rows with no section at all.
 export function directQuestions(blocks: Block[]): Candidate[] {
   return blocks.flatMap(block => {
     if (!block.rowQuestion) return [];
     const candidate = buildCandidate(prepareSource([block]).units, block.rowQuestion.text);
-    return candidate ? [{ ...candidate, category: categoryFor(block.rowQuestion.section, block.rowQuestion.text) }] : [];
+    const section = block.rowQuestion.section?.trim();
+    return candidate ? [{ ...candidate, category: section || categoryFor(undefined, block.rowQuestion.text) }] : [];
   });
 }
 

@@ -78,14 +78,21 @@ function validateOpportunity(
       errors.push(`${key} must be at most ${max} characters.`);
     }
   }
-  if (input.estimatedValue != null &&
-    (!Number.isFinite(input.estimatedValue) || Math.round(input.estimatedValue * 100) / 100 >= 1e13)) {
-    errors.push('Estimated Value must fit numeric(15,2).');
+  if (input.estimatedValue == null) {
+    errors.push('Client budget is required.');
+  } else if (!Number.isFinite(input.estimatedValue) || input.estimatedValue <= 0 ||
+    Math.round(input.estimatedValue * 100) / 100 <= 0) {
+    errors.push('Client budget must be greater than zero.');
+  } else if (Math.round(input.estimatedValue * 100) / 100 >= 1e13) {
+    errors.push('Client budget must fit numeric(15,2).');
   }
 
-  if (input.estimatedValueUsd == null) errors.push('Estimated Value USD is required.');
-  else if (!Number.isFinite(input.estimatedValueUsd) || input.estimatedValueUsd < 0 || input.estimatedValueUsd >= 1e13 || Math.abs(input.estimatedValueUsd * 100 - Math.round(input.estimatedValueUsd * 100)) > 0.001) {
-    errors.push('Estimated Value USD must be non-negative, fit numeric(15,2), and have at most two decimals.');
+  if (input.estimatedValueUsd == null) errors.push('Client budget (USD) is required.');
+  else if (!Number.isFinite(input.estimatedValueUsd) || input.estimatedValueUsd <= 0 ||
+    Math.round(input.estimatedValueUsd * 100) / 100 <= 0) {
+    errors.push('Client budget (USD) must be greater than zero.');
+  } else if (input.estimatedValueUsd >= 1e13 || Math.abs(input.estimatedValueUsd * 100 - Math.round(input.estimatedValueUsd * 100)) > 0.001) {
+    errors.push('Client budget (USD) must fit numeric(15,2) and have at most two decimals.');
   }
 
   errors.push(
@@ -136,16 +143,6 @@ function validateOpportunity(
       "Service Line is required."
     )
   );
-
-  if (
-    input.estimatedValue !== null &&
-    input.estimatedValue !== undefined &&
-    input.estimatedValue < 0
-  ) {
-    errors.push(
-      "Estimated Value cannot be negative."
-    );
-  }
 
   return errors;
 }
