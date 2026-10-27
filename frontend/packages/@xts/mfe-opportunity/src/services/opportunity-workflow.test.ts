@@ -53,8 +53,8 @@ describe('production opportunity stage data', () => {
     ] } } }).mockResolvedValueOnce(directory);
     const detail = await productionOpportunityService.detail('10');
     expect(detail.responses).toMatchObject([
-      { id: '71', title: 'Delivery approach?', answer: '', revision: 1, owner: null, reviewer: null, allowedActions: ['SAVE_ANSWER'] },
-      { id: '72', title: 'Security controls?', answer: 'Encrypted storage.', revision: 3, owner: null, reviewer: null, allowedActions: [] },
+      { id: '71', title: 'Delivery approach?', category: 'Technical', answer: '', revision: 1, owner: null, reviewer: null, allowedActions: ['SAVE_ANSWER'] },
+      { id: '72', title: 'Security controls?', category: 'Security', answer: 'Encrypted storage.', revision: 3, owner: null, reviewer: null, allowedActions: [] },
     ]);
   });
 

@@ -57,9 +57,9 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
   if (resource.loading) return <Loading />;
   if (resource.error) return <Notice error={resource.error} retry={resource.reload} />;
   if (!o) return <Notice error="This opportunity was not returned. It may have been removed or be outside your permitted scope." />;
-  // All 6 tabs always show: no backend today sends per-role visibleModules
-  // restrictions, so gating on that field only hid tabs without protecting
-  // anything. Revisit once a real backend can send actual redaction.
+  // Keep the full workflow visible, with preparation content available after
+  // the CEO's Go/No-Go approval moves the opportunity into estimation.
+  const awaitingEstimation = o.stageId === 1 || o.stageId === 2;
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'qa', label: 'RFP Q&A' },
@@ -82,6 +82,19 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
       </div>
     </header>
     <div className="opp-workspace-strip"><div><small>Client budget</small><strong>{money(o.estimatedValue, o.currencyCode)}</strong></div><div><small>Owner</small><strong>{userLabel(o.owner)}</strong></div><div><small>Submission deadline</small><div className="opp-deadline-value"><strong>{o.form.dates.submissionDeadline || 'Not provided'}</strong><small>{o.form.solicitation.submissionTimezone}</small></div></div></div>
-    <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}><TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>)}</TabsList>{tabs.map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-3">{tab.key === 'overview' ? <Overview opportunity={o} onSaved={resource.setData} /> : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} /> : tab.key === 'scope' ? <ScopeModule opportunity={o} onSaved={resource.setData} readOnly={review} /> : tab.key === 'documents' ? <Documents opportunity={o} /> : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} readOnly={review} /> : <Activity opportunity={o} />}</TabsContent>)}</Tabs>
+    <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}>
+      <TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>)}</TabsList>
+      {tabs.map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-3">
+        {tab.key !== 'overview' && awaitingEstimation ? <div role="status" className="rounded-lg border bg-background px-6 py-8 text-center">
+          <h3 className="text-sm font-semibold">Available after CEO approval</h3>
+          <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">{tab.label} will be available once the CEO approves this opportunity and it enters the Solution/Scoping Estimation (Engineering) stage.</p>
+        </div> : tab.key === 'overview' ? <Overview opportunity={o} onSaved={resource.setData} />
+          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} />
+          : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={review} />
+          : tab.key === 'documents' ? <Documents opportunity={o} />
+          : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />
+          : <Activity opportunity={o} />}
+      </TabsContent>)}
+    </Tabs>
   </div>;
 }

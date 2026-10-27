@@ -49,7 +49,7 @@ test('revoked parent or child menu View denies role-only queues and direct workf
       for (const queue of ['PIPELINE', 'MY_WORK', 'MY_APPROVALS']) await assert.rejects(service.list(ctx(), queue), /permission/);
       await assert.rejects(service.get(10, ctx()), /permission to view/);
       await assert.rejects(service.transitionWorkflow(10, action, null, null, ctx()), /role/i);
-      await assert.rejects(service.saveAnswer(10, 21, 0, 'Answer', ctx()), /Only the Estimation Team/);
+      await assert.rejects(service.saveAnswer(10, 21, 0, 'Answer', ctx()), /permission to view/);
       await assert.rejects(service.saveEstimation(10, { revision: 0, rows: [], assumptions: '', total: '' }, ctx()), /Only the Estimation Team/);
       await assert.rejects(service.create(input, ctx()), /permission/);
       await assert.rejects(service.update(10, { opportunityName: 'Changed' }, ctx()), /cannot edit/);
@@ -58,19 +58,19 @@ test('revoked parent or child menu View denies role-only queues and direct workf
     }
     grants = navigationGrants.filter(grant => grant.menuId !== childId);
     assert.equal((await service.get(10, ctx())).opportunityId, 10, 'Pipeline View retains read access');
-    assert.deepEqual(await service.allowedActions(current, ctx()), []);
+    assert.deepEqual(await service.allowedActions(current, ctx()), stageId === 3 ? ['EDIT_SCOPE'] : []);
     await assert.rejects(service.transitionWorkflow(10, action, null, null, ctx()), /role/i);
     await assert.rejects(service.list(ctx(), childId === 2 ? 'MY_APPROVALS' : 'MY_WORK'), /permission/);
   }
   for (const method of [records, transition, saveAnswer, saveEstimation, create, update]) assert.equal(method.mock.calls.length, 0);
 });
 
-test('only the Estimation Team can save answers; all other permitted roles can read them', async t => {
+test('every active role with opportunity visibility can answer without Edit or My Work permission', async t => {
   let roleCode = 'estimation_team';
   const current = { ...record, stageId: 3, subStageId: 7 };
   const responses = [{ id: 21, title: 'Delivery approach?', answer: 'Discovery then delivery.', revision: 2 }];
   t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
-  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: [...navigationGrants, { menuId: 1, permissionKey: 'edit' }], role: role(999, roleCode) }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: navigationGrants.filter(grant => [1, 5].includes(grant.menuId)), role: role(999, roleCode) }));
   t.mock.method(repository, 'findById', async () => current);
   t.mock.method(repository, 'findResponses', async () => responses);
   const save = t.mock.method(repository, 'saveAnswer', async () => {});
@@ -79,10 +79,25 @@ test('only the Estimation Team can save answers; all other permitted roles can r
   assert.deepEqual(save.mock.calls[0].arguments, [10, 21, 2, 'A free-text\nanswer.', 7]);
   for (const code of ['SH', 'approver_gate2', 'sales_representative', 'custom_role']) {
     roleCode = code;
-    assert.deepEqual(await service.getResponses(10, ctx()), [{ ...responses[0], allowedActions: [] }]);
-    await assert.rejects(service.saveAnswer(10, 21, 2, 'Not allowed', ctx()), /Only the Estimation Team/);
+    assert.deepEqual(await service.getResponses(10, ctx()), [{ ...responses[0], allowedActions: ['SAVE_ANSWER'] }]);
+    await service.saveAnswer(10, 21, 2, `Answer by ${code}`, ctx());
+    assert.deepEqual(save.mock.calls.at(-1)?.arguments, [10, 21, 2, `Answer by ${code}`, 7]);
   }
-  assert.equal(save.mock.calls.length, 1);
+  assert.equal(save.mock.calls.length, 5);
+});
+
+test('answer access still requires a signed-in active user and active role', async t => {
+  let active = false;
+  let activeRole = true;
+  t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: active }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: navigationGrants, role: { ...role(999, 'custom_role'), isActive: activeRole } }));
+  const save = t.mock.method(repository, 'saveAnswer', async () => {});
+  await assert.rejects(service.saveAnswer(10, 21, 1, 'Answer', {}), /signed-in user/);
+  await assert.rejects(service.saveAnswer(10, 21, 1, 'Answer', ctx()), /active user/);
+  active = true;
+  activeRole = false;
+  await assert.rejects(service.saveAnswer(10, 21, 1, 'Answer', ctx()), /active assigned role/);
+  assert.equal(save.mock.calls.length, 0);
 });
 
 test('question answers require opportunity visibility and a valid saved question version', async t => {
@@ -262,7 +277,8 @@ test('projects review actions only for the matching role and active review step'
     actorRole = scenario.actorRole;
     for (const [stageId, subStageId] of steps) {
       const step = `${stageId}/${subStageId}`;
-      assert.deepEqual(await service.allowedActions({ ...record, stageId, subStageId }, ctx()), scenario.expected.get(step) ?? [],
+      const expected = scenario.expected.get(step) ?? [];
+      assert.deepEqual(await service.allowedActions({ ...record, stageId, subStageId }, ctx()), step === '3/7' && grants.some(grant => grant.menuId === 1 && grant.permissionKey === 'view') ? ['EDIT_SCOPE', ...expected] : expected,
         `Unexpected actions at ${step} for ${JSON.stringify(grants)}`);
     }
   }
@@ -294,7 +310,7 @@ test('list, detail and GraphQL action projection agree while preserving edit and
     ['EDIT', 'SALES_APPROVE', 'SALES_HOLD', 'SALES_REJECT', 'CLOSE_OPPORTUNITY'],
     ['EDIT', 'CLOSE_OPPORTUNITY'],
     ['EDIT', 'CLOSE_OPPORTUNITY'],
-    ['EDIT', 'CLOSE_OPPORTUNITY'], ['EDIT', 'CLOSE_OPPORTUNITY'],
+    ['EDIT', 'CLOSE_OPPORTUNITY'], ['EDIT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'],
   ];
   const listed = await service.list(ctx());
   assert.deepEqual(listed.map(opportunity => opportunity.allowedActions), expected);
@@ -589,7 +605,7 @@ test('complete role-based flow saves estimation, reviews it, submits a bid, nego
   await step('HOLD', 2, 6, true);
   await step('APPROVE', 3, 7);
   actorRole = 'estimation_team';
-  assert.deepEqual(await service.allowedActions(current, ctx()), ['EDIT_ESTIMATION', 'SUBMIT_ESTIMATE']);
+  assert.deepEqual(await service.allowedActions(current, ctx()), ['EDIT_ESTIMATION', 'SUBMIT_ESTIMATE', 'EDIT_SCOPE']);
   await service.saveEstimation(10, { revision: 0, rows: [{ id: 'row', workItem: 'Engineering', hours: '1.25', people: 2, hourlyRate: '100.10' }], assumptions: 'One phase', total: '0.01' }, ctx());
   assert.equal((estimation as any).total, '250.25'); // Server calculates; caller's total is ignored.
   await step('SUBMIT_ESTIMATE', 4, 8);

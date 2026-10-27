@@ -37,6 +37,40 @@ test('saving a question answer records its author and history atomically without
   assert.equal(calls.at(-1)?.sql, 'COMMIT');
 });
 
+test('answer updates retain previous text and authors, including questions without existing history', async t => {
+  for (const existingHistory of [true, false]) {
+    const current = { id: 21, opportunityId: 10, answer: 'Original answer.', answeredBy: 3 };
+    const history = existingHistory ? [{ ...current, isCurrent: true }] : [];
+    t.mock.method(db.pool, 'connect', async () => ({
+      query: async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('FROM tbl_opportunity_questions_answers q')) {
+          assert.deepEqual(params, [10, 21]);
+          return { rows: [{ ...current, revision: history.length }] };
+        }
+        if (sql.includes('UPDATE tbl_opportunity_questions_answers_tracker')) {
+          history.forEach(snapshot => { snapshot.isCurrent = false; });
+        } else if (sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker')) {
+          history.push({ ...current, isCurrent: true });
+        } else if (sql.startsWith('UPDATE tbl_opportunity_questions_answers\n')) {
+          assert.deepEqual(params.slice(0, 2), [10, 21]);
+          current.answer = params[2] as string;
+          current.answeredBy = params[3] as number;
+        }
+        return { rows: sql.startsWith('SELECT') ? [{ opportunity_id: 10 }] : [] };
+      }, release: () => {},
+    }));
+    await saveAnswer(10, 21, history.length, 'First update.', 7);
+    await saveAnswer(10, 21, history.length, 'Second update.', 8);
+    assert.deepEqual(current, { id: 21, opportunityId: 10, answer: 'Second update.', answeredBy: 8 });
+    assert.deepEqual(history.map(snapshot => [snapshot.answer, snapshot.answeredBy, snapshot.isCurrent]), [
+      ['Original answer.', 3, false], ['First update.', 7, false], ['Second update.', 8, true],
+    ]);
+    const count = history.length;
+    await saveAnswer(10, 21, count, 'Second update.', 8);
+    assert.equal(history.length, count, 'An unchanged answer does not create duplicate history.');
+  }
+});
+
 test('stale, removed or cross-opportunity question answers roll back before any write', async t => {
   for (const current of [null, { id: 21, answer: 'Another answer', revision: 3 }]) {
     const calls: string[] = [];

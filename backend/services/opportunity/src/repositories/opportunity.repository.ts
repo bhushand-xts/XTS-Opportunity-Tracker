@@ -372,6 +372,9 @@ export async function saveAnswer(opportunityId: number, responseId: number, revi
     if (!current) throw notFound('This question is no longer available for this opportunity.');
     if (current.revision !== revision) throw conflict('This answer or question has changed. Refresh the opportunity before saving again.');
     if (current.answer === answer) return;
+    // Older questions may predate tracker snapshots. Preserve their previous
+    // answer before replacing it, just as for questions created by this service.
+    if (current.revision === 0) await recordProposalQuestionSnapshot(client, responseId);
     await client.query(`UPDATE tbl_opportunity_questions_answers
       SET answertext = $3, answered_by = $4, answered_dt = CURRENT_TIMESTAMP,
           updated_by = $4, updated_dt = CURRENT_TIMESTAMP

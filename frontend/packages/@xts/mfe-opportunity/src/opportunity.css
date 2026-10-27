@@ -240,7 +240,7 @@
 .opp-substage-current { margin-top: 7px; }
 .opp-substage-history strong, .opp-substage-current > strong { display: block; margin: 0 0 1px; font-size: 12px; font-weight: 500; line-height: 18px; }
 .opp-substage-history > li.active > strong, .opp-substage-current > strong { color: hsl(var(--primary)); }
-.opp-assignment { display: grid; grid-template-columns: minmax(220px,.65fr) minmax(0,1.35fr); gap: 12px; align-items: start; }.opp-task { white-space: normal; height: auto; width: 100%; text-align: left; justify-content: start; padding: 9px 10px; }
+.opp-assignment { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,.9fr); gap: 12px; align-items: start; }.opp-task { white-space: normal; height: auto; width: 100%; text-align: left; justify-content: start; padding: 9px 10px; }
 .opp-estimation-scroll { overflow-x: auto; max-width: 100%; }.opp-estimation-scroll table { min-width: 720px; }.opp-estimation-scroll td:first-child { min-width: 200px; }.opp-estimation-scroll td { min-width: 110px; }
 /* Keep compact controls scoped to this MFE and its portalled drawers/dialogs. */
 :is(.opportunity-root, .opp-drawer, .opp-dialog) .opp-field > label { font-size: 14px; line-height: 20px; }

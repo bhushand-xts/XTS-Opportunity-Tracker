@@ -79,6 +79,7 @@ export const GET_OPPORTUNITY = gql`
       responses { id title category answer revision allowedActions }
       stageHistory { id stageId subStageId reachedAt updatedBy comment }
       estimation { revision rows { id workItem hours people hourlyRate } assumptions total }
+      scope { revision summary risks { id description severity } alignment { id text } }
     }
     currencies { currencyId currencyCode currencySymbol }
   }
@@ -87,6 +88,12 @@ export const GET_OPPORTUNITY = gql`
 export const SAVE_OPPORTUNITY_ESTIMATION = gql`
   mutation SaveOpportunityEstimation($opportunityId: Int!, $estimation: OpportunityEstimationInput!) {
     saveOpportunityEstimation(opportunityId: $opportunityId, estimation: $estimation) { opportunityId }
+  }
+`;
+
+export const SAVE_OPPORTUNITY_SCOPE = gql`
+  mutation SaveOpportunityScope($opportunityId: Int!, $scope: OpportunityScopeInput!, $section: OpportunityAssessmentSection = ALL) {
+    saveOpportunityScope(opportunityId: $opportunityId, scope: $scope, section: $section) { opportunityId }
   }
 `;
 

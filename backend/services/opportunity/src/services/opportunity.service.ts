@@ -1,4 +1,5 @@
 import * as repository from "../repositories/opportunity.repository";
+import * as scopeRepository from '../repositories/scope.repository';
 import * as validator from "../validators/opportunity.validator";
 import * as userService from "../integrations/userService";
 import { roleAccess, holdReasonCode } from '../integrations/adminService';
@@ -127,6 +128,7 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
     actions.push('GATE1_NO_GO');
   }
   if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('EDIT_ESTIMATION', 'SUBMIT_ESTIMATE');
+  if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.canView(opportunity)) actions.push('EDIT_SCOPE');
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) {
     actions.push('ESTIMATE_APPROVE');
     if (opportunity.subStageId === 8) actions.push('ESTIMATE_HOLD');
@@ -564,15 +566,42 @@ export async function getEstimation(opportunityId: number, ctx: any) {
 
 export async function getResponses(opportunityId: number, ctx: any) {
   await get(opportunityId, ctx);
-  const access = await accessFor(ctx);
   return (await repository.findResponses(opportunityId)).map(response => ({
-    ...response, allowedActions: access.estimate ? ['SAVE_ANSWER'] : [],
+    // Temporarily allow every user who can view this opportunity to answer it.
+    ...response, allowedActions: ['SAVE_ANSWER'],
   }));
+}
+
+export async function getScope(opportunityId: number, ctx: any) {
+  await get(opportunityId, ctx);
+  return scopeRepository.findScope(opportunityId);
+}
+
+export async function saveScope(opportunityId: number, scope: scopeRepository.OpportunityScope, section: scopeRepository.AssessmentSection = 'ALL', ctx: any) {
+  const opportunity = await get(opportunityId, ctx), access = await accessFor(ctx);
+  if (opportunity.stageId !== 3 || opportunity.subStageId !== 7) throw conflict('Scope and assessment can only be updated during engineering estimation.');
+  if (!scope || !Number.isSafeInteger(scope.revision) || scope.revision < 0 || !['ALL', 'SCOPE', 'RISKS', 'ALIGNMENT'].includes(section)) throw validationFailed('Provide a valid assessment revision and section.');
+  const text = (value: unknown) => typeof value === 'string' && value.trim().length > 0 && value.length <= 100000;
+  if (section === 'ALL' && !text(scope.summary) || section === 'SCOPE' && (typeof scope.summary !== 'string' || scope.summary.length > 100000)) throw validationFailed('Enter the project scope (maximum 100,000 characters).');
+  const validateItems = (items: { id: string }[] | undefined, description: (item: any) => unknown) => {
+    const ids = new Set<string>();
+    if (!Array.isArray(items) || items.length > 500) throw validationFailed('Provide at most 500 assessment items per section.');
+    for (const item of items) {
+      if (!item || typeof item.id !== 'string' || !/^(?:[1-9]\d{0,9}|draft-[a-zA-Z0-9-]{1,100})$/.test(item.id) || ids.has(item.id) || !text(description(item))) throw validationFailed('Each assessment item needs a unique saved or draft ID and a description (maximum 100,000 characters).');
+      ids.add(item.id);
+    }
+  };
+  if (section === 'ALL' || section === 'RISKS') {
+    validateItems(scope.risks, item => item.description);
+    if (scope.risks.some(item => !['LOW', 'MEDIUM', 'HIGH'].includes(item.severity))) throw validationFailed('Select Low, Medium or High risk severity.');
+  }
+  if (section === 'ALL' || section === 'ALIGNMENT') validateItems(scope.alignment, item => item.text);
+  await scopeRepository.saveScope(opportunityId, scope, section, access.userId);
+  return get(opportunityId, ctx);
 }
 
 export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, ctx: any) {
   const access = await accessFor(ctx);
-  if (!access.estimate) throw conflict('Only the Estimation Team can answer opportunity questions.');
   await get(opportunityId, ctx);
   if (!Number.isSafeInteger(responseId) || responseId <= 0 || !Number.isSafeInteger(revision) || revision < 0) {
     throw validationFailed('Select a saved opportunity question and its current revision.');
