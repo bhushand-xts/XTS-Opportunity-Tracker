@@ -255,7 +255,7 @@ describe('Opportunity UI using test-only service fixtures', () => {
     expect(main).toHaveAttribute('href', '/opportunity/401/details');
     expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument();
     fireEvent.click(main);
-    const edit = await screen.findByRole('link', { name: 'Edit Opportunity' });
+    const edit = await screen.findByRole('link', { name: 'Edit opportunity' });
     expect(edit).toHaveAttribute('href', '/opportunity/401/edit');
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(edit);
@@ -264,9 +264,9 @@ describe('Opportunity UI using test-only service fixtures', () => {
   it('allows a Sales Head creator to correct returned details from the review page', async () => {
     const current = fixtureOpportunity({ stageId: 1, subStageId: 2, allowedActions: ['EDIT'] });
     mount(testService(current), '/opportunity/401/review');
-    expect(await screen.findByRole('link', { name: 'Edit Opportunity' })).toHaveAttribute('href', '/opportunity/401/edit');
+    expect(await screen.findByRole('link', { name: 'Edit opportunity' })).toHaveAttribute('href', '/opportunity/401/edit');
     expect(screen.queryByRole('button', { name: 'Resubmit for Review' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: 'Edit Opportunity' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Edit opportunity' }));
     expect(await screen.findByLabelText(/Opportunity name/)).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Update Opportunity' })).toBeEnabled();
   });

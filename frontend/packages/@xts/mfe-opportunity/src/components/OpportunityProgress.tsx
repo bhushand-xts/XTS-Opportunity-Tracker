@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react';
+import { Badge } from '@xts/design-system';
 import type { DirectoryUser, OpportunityDetail } from '@xts/api-contracts';
 import { isOpportunityOutcome, OPPORTUNITY_OUTCOME_LABEL, opportunityStatus, STAGE_LABELS } from '../lib/opportunityStatus';
 import { Panel } from './ui';
@@ -47,7 +48,7 @@ export function OpportunityProgress({ opportunity: o }: { opportunity: Opportuni
   const stageIds = [...new Set([1, 2, 3, 4, 5, 6, 7, ...(o.stageId != null ? [o.stageId] : []), ...history.map(event => event.stageId)]
     .map(id => isOpportunityOutcome(id) ? 7 : id))].sort((a, b) => b - a);
 
-  return <Panel title="Opportunity progress" tone="violet" className="opp-progress-panel">
+  return <Panel title="Opportunity progress" tone="emerald" accentIcon className="opp-progress-panel">
     {o.stageId == null ? <div className="opp-timeline-body"><h3>{opportunityStatus(o).stage}</h3><strong>Opportunity created</strong><ProgressDetails at={o.createdDt} actor={o.createdBy} /></div> :
       <ol className="opp-stage-timeline" aria-label="Opportunity progress history">{stageIds.map(id => {
         const outcome = id === 7;
@@ -59,7 +60,7 @@ export function OpportunityProgress({ opportunity: o }: { opportunity: Opportuni
         return <li key={id} className={`opp-timeline-stage ${current ? 'current' : reached ? 'reached' : 'upcoming'}`} aria-current={current ? 'step' : undefined}>
           <span className="opp-timeline-marker" aria-hidden="true">{reached && !current ? <Check size={13} /> : <span className="opp-timeline-dot" />}</span>
           <div className="opp-timeline-body">
-            <div className="opp-timeline-heading"><h3>{name}</h3>{current && <span className="opp-timeline-state">Current</span>}</div>
+            <div className="opp-timeline-heading"><h3>{name}</h3>{current && <Badge variant="violet" size="sm">Current</Badge>}</div>
             {completion && <div className="opp-stage-completion"><strong>{completion.label}</strong><ProgressDetails at={completion.event.reachedAt} actor={completion.event.actor} /></div>}
             {current && !currentRecorded && <div className="opp-substage-current"><strong>{outcome && o.stageId === 10 ? 'On Hold' : opportunityStatus(o).substage ?? 'Status unavailable'}</strong><ProgressDetails /></div>}
             {(events.length > 0 || id === 1 && o.createdDt) && <ol className="opp-substage-history" aria-label={`${name} history`}>{events.map(event => {

@@ -79,6 +79,10 @@ export function pendingSaveFieldErrors(form: OpportunityDraft): Record<string, s
     const value = form.dates[field];
     if (value && !validDate(value)) errors[field === 'questionsDue' ? 'Questions due' : 'Submission deadline'] = 'Please enter a valid date.';
   }
+  const { questionsDue, submissionDeadline } = form.dates;
+  if (questionsDue && validDate(questionsDue) && submissionDeadline && validDate(submissionDeadline) && questionsDue >= submissionDeadline) {
+    errors['Questions due'] = 'Questions due must be earlier than the Submission deadline.';
+  }
   return errors;
 }
 export function pendingSaveErrors(form: OpportunityDraft): string[] {

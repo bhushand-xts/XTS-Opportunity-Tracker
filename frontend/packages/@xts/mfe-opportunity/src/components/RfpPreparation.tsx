@@ -35,6 +35,13 @@ const extractedQuestion = (question: PreparedQuestion) => question.id.startsWith
 // Same fixed list the backend asks the AI to choose from, in tab order.
 const QUESTION_CATEGORIES = ['Company & Qualifications', 'Team', 'Approach & Delivery', 'Technical', 'Security & Compliance', 'Pricing & Commercial', 'References', 'Other'];
 const normalizeQuestion = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
+/** Shifts an ISO (YYYY-MM-DD) date by `days`; used to cap the native date pickers so Questions due can't land on or after Submission deadline. */
+function shiftDate(value: string, days: number): string | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const d = new Date(`${value}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 function extractionState(state: QuestionExtractionStatus['state']): NonNullable<RfpDraft['extraction']>['state'] {
   if (state === 'SUCCEEDED') return 'SUCCEEDED';
   if (state === 'QUEUED' || state === 'PROCESSING') return 'PROCESSING';
@@ -357,7 +364,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
       <Choice label="Pre-bid meeting" value={form.solicitation.preBidMeeting} options={[{ id: 'UNCONFIRMED', label: 'To be confirmed' }, { id: 'YES', label: 'Yes' }, { id: 'NO', label: 'No' }]} onChange={v => solicitation('preBidMeeting', v as Solicitation['preBidMeeting'])} disabled={locked} />
       </>}
     </div></details>
-    <details className="opp-details" open><summary>Important dates</summary><div className="opp-fields p-3">{(['questionsDue', 'submissionDeadline'] as const).map((key, i) => <Field key={key} label={['Questions due', 'Submission deadline'][i]} value={form.dates[key]} type="date" onChange={v => date(key, v)} disabled={locked} required={key === 'submissionDeadline'} />)}</div></details>
+    <details className="opp-details" open><summary>Important dates</summary><div className="opp-fields p-3">{(['questionsDue', 'submissionDeadline'] as const).map((key, i) => <Field key={key} label={['Questions due', 'Submission deadline'][i]} value={form.dates[key]} type="date" onChange={v => date(key, v)} disabled={locked} required={key === 'submissionDeadline'} max={key === 'questionsDue' ? shiftDate(form.dates.submissionDeadline, -1) : undefined} min={key === 'submissionDeadline' ? shiftDate(form.dates.questionsDue, 1) : undefined} />)}</div></details>
     {rfp.type && <>
       <div className="opp-upload">
         <Label htmlFor="opportunity-source" className={tabbed ? 'sr-only' : undefined}>{rfp.type === 'GENERIC' ? 'Source document / brief' : 'Source questionnaire'}</Label>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMasterQuestionTemplates, canAnswer, canReview, decisionError, estimateTotal, newDraft, pendingSaveErrors, readinessErrors, SECTION_CATALOG, validDate } from './workflow';
+import { addMasterQuestionTemplates, canAnswer, canReview, decisionError, estimateTotal, newDraft, pendingSaveErrors, pendingSaveFieldErrors, readinessErrors, SECTION_CATALOG, validDate } from './workflow';
 import type { OpportunityDetail, ResponseCommand, RfpQuestion, VersionCommand } from '@xts/api-contracts';
 import { createLocalOpportunityService, createLocalOpportunityStore, createMockOpportunityService, createMockOpportunityStore, fixtureOpportunity, MOCK_STORAGE_KEY, type LocalWorkflowDirectory, type MockStorage } from '../testing/fixtures';
 
@@ -53,6 +53,16 @@ describe('workflow boundaries', () => {
   it('preserves date-only values and validates calendars without UTC conversions', () => {
     expect(validDate('2028-02-29')).toBe(true); expect(validDate('2026-02-29')).toBe(false);
     expect(validDate('2026-11-25T00:00:00Z')).toBe(false);
+  });
+  it('rejects a Questions due date that is on or after the Submission deadline', () => {
+    const form = newDraft('101');
+    form.dates.submissionDeadline = '2026-11-25';
+    form.dates.questionsDue = '2026-11-26';
+    expect(pendingSaveFieldErrors(form)['Questions due']).toBe('Questions due must be earlier than the Submission deadline.');
+    form.dates.questionsDue = '2026-11-25';
+    expect(pendingSaveFieldErrors(form)['Questions due']).toBe('Questions due must be earlier than the Submission deadline.');
+    form.dates.questionsDue = '2026-11-24';
+    expect(pendingSaveFieldErrors(form)['Questions due']).toBeUndefined();
   });
   it('includes all original and restored proposal sections', () => {
     expect(SECTION_CATALOG).toHaveLength(12);
