@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@apollo/client';
 import { AlertTriangle, CheckCircle2, ClipboardList, X } from 'lucide-react';
-import { Badge, Button, cn, DonutChart, DonutChartLegend, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, useAuth } from '@xts/design-system';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, Badge, Button, cn, DonutChart, DonutChartLegend, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, useAuth } from '@xts/design-system';
 import type { Currency, Estimation, EstimationPhase, OpportunityDetail, RateMaster, RiskSeverity, Scope } from '@xts/api-contracts';
 import { ReviewActions } from './ReviewActions';
 import { useOpportunityService } from '../services/OpportunityService';
@@ -152,22 +152,37 @@ function InlineEditableText({ value, editable, disabled, onCommit, ariaLabel }: 
     if (e.key === 'Enter') { e.preventDefault(); commit(); }
     else if (e.key === 'Escape') { e.preventDefault(); setDraft(value); setEditing(false); }
   }} className="h-7 flex-1 px-1.5 py-0 text-sm" />;
-  return <span className={cn('flex-1 break-words text-sm', editable && 'cursor-text')} onDoubleClick={start} title={editable ? 'Double-click to edit' : undefined}>{value}</span>;
+  return <span className={cn('min-w-0 flex-1 break-words text-sm', editable && 'cursor-text')} onDoubleClick={start} title={editable ? 'Double-click to edit' : undefined}>{value}</span>;
+}
+/** Confirms a Risk/Alignment removal before it happens — a single reusable dialog instance driven by whichever item is pending deletion. */
+function ConfirmRemoveDialog({ open, label, onCancel, onConfirm }: { open: boolean; label: string; onCancel: () => void; onConfirm: () => void }) {
+  return <AlertDialog open={open} onOpenChange={value => { if (!value) onCancel(); }}>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Remove this item?</AlertDialogTitle>
+        <AlertDialogDescription>“{label}” will be removed from the scope. This can't be undone.</AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+        <AlertDialogAction onClick={onConfirm}>Remove</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>;
 }
 /** Read-only Risks/Alignment presentation shared with the Overview drawer — same whole-card accent border as the editable Scope tab, minus the add/remove/edit controls. */
 export function ScopeReadOnly({ scope }: { scope: Scope }) {
   return <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
+    <Panel title="Alignment" tone="teal" icon={CheckCircle2} accentIcon headerRight={<span className="text-xs text-muted-foreground">{scope.alignment.length} item{scope.alignment.length === 1 ? '' : 's'}</span>}>
+      <ul className="space-y-1">{scope.alignment.map(item => <li key={item.id} className="flex items-center gap-2 rounded-md bg-teal-50/70 px-2 py-1.5 transition-colors hover:bg-teal-100 dark:bg-teal-950/10 dark:hover:bg-teal-950/30"><span className="size-1.5 shrink-0 rounded-sm bg-teal-500" aria-hidden="true" /><span className="min-w-0 flex-1 break-words text-sm">{item.text}</span></li>)}</ul>
+      {!scope.alignment.length && <p className="text-sm text-muted-foreground">No alignment items logged.</p>}
+    </Panel>
     <Panel title="Risks" tone="amber" icon={AlertTriangle} accentIcon headerRight={<span className="text-xs text-muted-foreground">{scope.risks.length} item{scope.risks.length === 1 ? '' : 's'}</span>}>
       <ul className="space-y-1">{scope.risks.map(risk => <li key={risk.id} className="flex items-center gap-2 rounded-md bg-amber-50/70 px-2 py-1.5 transition-colors hover:bg-amber-100 dark:bg-amber-950/10 dark:hover:bg-amber-950/30">
         <span className="size-1.5 shrink-0 rounded-sm bg-muted-foreground/50" aria-hidden="true" />
-        <span className="flex-1 break-words text-sm">{risk.description}</span>
+        <span className="min-w-0 flex-1 break-words text-sm">{risk.description}</span>
         <RiskSeverityBadge severity={risk.severity} editable={false} />
       </li>)}</ul>
       {!scope.risks.length && <p className="text-sm text-muted-foreground">No risks logged.</p>}
-    </Panel>
-    <Panel title="Alignment" tone="teal" icon={CheckCircle2} accentIcon headerRight={<span className="text-xs text-muted-foreground">{scope.alignment.length} item{scope.alignment.length === 1 ? '' : 's'}</span>}>
-      <ul className="space-y-1">{scope.alignment.map(item => <li key={item.id} className="flex items-center gap-2 rounded-md bg-teal-50/70 px-2 py-1.5 transition-colors hover:bg-teal-100 dark:bg-teal-950/10 dark:hover:bg-teal-950/30"><span className="size-1.5 shrink-0 rounded-sm bg-teal-500" aria-hidden="true" /><span className="flex-1 break-words text-sm">{item.text}</span></li>)}</ul>
-      {!scope.alignment.length && <p className="text-sm text-muted-foreground">No alignment items logged.</p>}
     </Panel>
   </div>;
 }
@@ -176,6 +191,13 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
   const [draft, setDraft] = useState<Scope>(o.scope ?? emptyScope), [baseline, setBaseline] = useState(JSON.stringify(o.scope ?? emptyScope));
   const [newAlignment, setNewAlignment] = useState(''), [newRisk, setNewRisk] = useState<{ description: string; severity: RiskSeverity }>({ description: '', severity: 'HIGH' });
   const [validation, setValidation] = useState<string>();
+  const [recentlyUpdated, setRecentlyUpdated] = useState<Set<string>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<{ kind: 'risk' | 'alignment'; id: string; label: string } | null>(null);
+  // Brief "Updated" badge confirming an inline edit was registered — fades on its own rather than needing a dismissal.
+  function flagUpdated(id: string) {
+    setRecentlyUpdated(prev => new Set(prev).add(id));
+    setTimeout(() => setRecentlyUpdated(prev => { if (!prev.has(id)) return prev; const next = new Set(prev); next.delete(id); return next; }), 3000);
+  }
   const baselineScope = JSON.parse(baseline) as Scope;
   const editable = !readOnly && isPreparing(o) && o.allowedActions.includes('EDIT_SCOPE');
   const dirty = JSON.stringify(draft) !== baseline;
@@ -208,8 +230,13 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
   }
   function removeRisk(id: string) { void persist({ ...draft, risks: draft.risks.filter(item => item.id !== id) }, 'Risk removed.'); }
   function updateRiskSeverity(id: string, severity: RiskSeverity) { void persist({ ...draft, risks: draft.risks.map(item => item.id === id ? { ...item, severity } : item) }, 'Risk severity updated.'); }
-  function updateRiskDescription(id: string, description: string) { void persist({ ...draft, risks: draft.risks.map(item => item.id === id ? { ...item, description } : item) }, 'Risk updated.'); }
-  function updateAlignmentText(id: string, text: string) { void persist({ ...draft, alignment: draft.alignment.map(item => item.id === id ? { ...item, text } : item) }, 'Alignment item updated.'); }
+  function updateRiskDescription(id: string, description: string) { flagUpdated(id); void persist({ ...draft, risks: draft.risks.map(item => item.id === id ? { ...item, description } : item) }, 'Risk updated.'); }
+  function updateAlignmentText(id: string, text: string) { flagUpdated(id); void persist({ ...draft, alignment: draft.alignment.map(item => item.id === id ? { ...item, text } : item) }, 'Alignment item updated.'); }
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    if (pendingDelete.kind === 'risk') removeRisk(pendingDelete.id); else removeAlignment(pendingDelete.id);
+    setPendingDelete(null);
+  }
 
   return <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[2fr_1fr]">
     <div className="space-y-3">
@@ -221,22 +248,24 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
         </div>
       </Panel>
       <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
+        <Panel title="Alignment" tone="teal" icon={CheckCircle2} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.alignment.length} item{draft.alignment.length === 1 ? '' : 's'}</span>}>
+          <ul className="space-y-1">{draft.alignment.map(item => <li key={item.id} className="flex items-center gap-2 rounded-md bg-teal-50/70 px-2 py-1.5 transition-colors hover:bg-teal-100 dark:bg-teal-950/10 dark:hover:bg-teal-950/30"><span className="size-1.5 shrink-0 rounded-sm bg-teal-500" aria-hidden="true" /><InlineEditableText value={item.text} editable={editable} disabled={mutation.saving} ariaLabel={`Edit alignment item: ${item.text}`} onCommit={text => updateAlignmentText(item.id, text)} />{recentlyUpdated.has(item.id) && <Badge variant="info" size="sm" className="shrink-0">Updated</Badge>}{editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${item.text || 'alignment item'}`} disabled={mutation.saving} onClick={() => setPendingDelete({ kind: 'alignment', id: item.id, label: item.text || 'this alignment item' })}><X className="size-4" /></Button>}</li>)}</ul>
+          {!draft.alignment.length && <p className="text-sm text-muted-foreground">No alignment items yet.</p>}
+          {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add alignment item" placeholder="Add alignment item (e.g. tech stack, standard, pricing model)" value={newAlignment} onChange={e => setNewAlignment(e.target.value)} disabled={mutation.saving} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAlignment(); } }} /><Button type="button" variant="outline" disabled={mutation.saving || !newAlignment.trim()} onClick={addAlignment}>Add</Button></div>}
+        </Panel>
         <Panel title="Risks" tone="amber" icon={AlertTriangle} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.risks.length} item{draft.risks.length === 1 ? '' : 's'}</span>}>
           <ul className="space-y-1">{draft.risks.map(risk => <li key={risk.id} className="flex items-center gap-2 rounded-md bg-amber-50/70 px-2 py-1.5 transition-colors hover:bg-amber-100 dark:bg-amber-950/10 dark:hover:bg-amber-950/30">
             <span className="size-1.5 shrink-0 rounded-sm bg-muted-foreground/50" aria-hidden="true" />
             <InlineEditableText value={risk.description} editable={editable} disabled={mutation.saving} ariaLabel={`Edit risk: ${risk.description}`} onCommit={text => updateRiskDescription(risk.id, text)} />
+            {recentlyUpdated.has(risk.id) && <Badge variant="info" size="sm" className="shrink-0">Updated</Badge>}
             <RiskSeverityBadge severity={risk.severity} editable={editable} disabled={mutation.saving} onChange={severity => updateRiskSeverity(risk.id, severity)} />
-            {editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${risk.description || 'risk'}`} disabled={mutation.saving} onClick={() => removeRisk(risk.id)}><X className="size-4" /></Button>}
+            {editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${risk.description || 'risk'}`} disabled={mutation.saving} onClick={() => setPendingDelete({ kind: 'risk', id: risk.id, label: risk.description || 'this risk' })}><X className="size-4" /></Button>}
           </li>)}</ul>
           {!draft.risks.length && <p className="text-sm text-muted-foreground">No risks logged yet.</p>}
           {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add risk" placeholder="Add risk…" value={newRisk.description} onChange={e => setNewRisk(r => ({ ...r, description: e.target.value }))} disabled={mutation.saving} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRisk(); } }} /><SeveritySelect label="New risk severity" value={newRisk.severity} onChange={severity => setNewRisk(r => ({ ...r, severity }))} disabled={mutation.saving} /><Button type="button" variant="outline" disabled={mutation.saving || !newRisk.description.trim()} onClick={addRisk}>Add</Button></div>}
         </Panel>
-        <Panel title="Alignment" tone="teal" icon={CheckCircle2} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.alignment.length} item{draft.alignment.length === 1 ? '' : 's'}</span>}>
-          <ul className="space-y-1">{draft.alignment.map(item => <li key={item.id} className="flex items-center gap-2 rounded-md bg-teal-50/70 px-2 py-1.5 transition-colors hover:bg-teal-100 dark:bg-teal-950/10 dark:hover:bg-teal-950/30"><span className="size-1.5 shrink-0 rounded-sm bg-teal-500" aria-hidden="true" /><InlineEditableText value={item.text} editable={editable} disabled={mutation.saving} ariaLabel={`Edit alignment item: ${item.text}`} onCommit={text => updateAlignmentText(item.id, text)} />{editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${item.text || 'alignment item'}`} disabled={mutation.saving} onClick={() => removeAlignment(item.id)}><X className="size-4" /></Button>}</li>)}</ul>
-          {!draft.alignment.length && <p className="text-sm text-muted-foreground">No alignment items yet.</p>}
-          {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add alignment item" placeholder="Add alignment item (e.g. tech stack, standard, pricing model)" value={newAlignment} onChange={e => setNewAlignment(e.target.value)} disabled={mutation.saving} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAlignment(); } }} /><Button type="button" variant="outline" disabled={mutation.saving || !newAlignment.trim()} onClick={addAlignment}>Add</Button></div>}
-        </Panel>
       </div>
+      <ConfirmRemoveDialog open={pendingDelete !== null} label={pendingDelete?.label ?? ''} onCancel={() => setPendingDelete(null)} onConfirm={confirmDelete} />
       {(validation || mutation.error) && <Notice error={validation ?? mutation.error!} />}
     </div>
     <aside className="space-y-3" aria-label="Assessment summary">

@@ -2,13 +2,13 @@ import { QuestionViewer } from './QuestionViewer';
 import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Pencil, Wallet } from 'lucide-react';
 import { useCallback } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Avatar, AvatarFallback, Badge, type BadgeProps, Button, Card, cn, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
+import { Avatar, AvatarFallback, Badge, type BadgeProps, Button, Card, cn, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
 import type { OpportunityDetail, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource } from '../hooks/useResource';
 import { useUnsaved } from '../hooks/useUnsaved';
 import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
-import { CONTEXT_FIELDS, money, RESPONSE_LABELS, STATE_LABELS, userLabel } from '../lib/workflow';
+import { CONTEXT_FIELDS, money, RESPONSE_LABELS, rowAmount, STATE_LABELS, userLabel } from '../lib/workflow';
 import { LEAD_SOURCES } from '../lib/opportunityOptions';
 import { opportunityStatus } from '../lib/opportunityStatus';
 import { avatarAccent, DetailDrawer, formatLocalDate, initials, Loading, Notice, Panel, PRIORITY_BADGE, Values } from './ui';
@@ -70,7 +70,19 @@ function ScopeSummaryPanel({ o }: { o: OpportunityDetail }) {
 function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
   const estimation = o.estimation;
   return <Panel title="Saved estimation summary" description={`Revision ${estimation?.revision ?? 0}`} tone="amber" accentIcon headerRight={estimation && <DetailDrawer title="Estimation matrix" description="Saved matrix rows and assumptions.">
-    <Panel title="Matrix rows" tone="amber" icon={Calculator} accentIcon><div className="space-y-2">{estimation.rows.map(row => <p key={row.id} className="text-sm">{row.workItem} · {row.hours} hours × {row.people} people × {money(row.hourlyRate, o.currencyCode)} / hour</p>)}</div></Panel>
+    <Panel title="Matrix rows" tone="amber" icon={Calculator} accentIcon><div className="overflow-x-auto"><Table><TableHeader><TableRow>
+      <TableHead className="px-2 py-1.5 text-[11px]">Work item</TableHead>
+      <TableHead className="px-2 py-1.5 text-[11px] text-right">Hours</TableHead>
+      <TableHead className="px-2 py-1.5 text-[11px] text-right">People</TableHead>
+      <TableHead className="px-2 py-1.5 text-[11px] text-right">Rate / hr</TableHead>
+      <TableHead className="px-2 py-1.5 text-[11px] text-right">Amount</TableHead>
+    </TableRow></TableHeader><TableBody>{estimation.rows.map(row => { let amount = '—'; try { amount = money(rowAmount(row), o.currencyCode); } catch { /* shown as — */ } return <TableRow key={row.id}>
+      <TableCell className="px-2 py-1.5 text-sm">{row.workItem}</TableCell>
+      <TableCell className="px-2 py-1.5 text-right text-sm">{row.hours}</TableCell>
+      <TableCell className="px-2 py-1.5 text-right text-sm">{row.people}</TableCell>
+      <TableCell className="px-2 py-1.5 text-right text-sm">{money(row.hourlyRate, o.currencyCode)}</TableCell>
+      <TableCell className="px-2 py-1.5 text-right text-sm font-medium">{amount}</TableCell>
+    </TableRow>; })}</TableBody></Table></div></Panel>
     <div className="mt-4"><Panel title="Assumptions" tone="indigo" accentIcon><p className="whitespace-pre-wrap break-words text-sm">{estimation.assumptions || 'Not provided'}</p></Panel></div>
   </DetailDrawer>}>{estimation ? <><strong className="text-2xl">{money(estimation.total, o.currencyCode)}</strong><p className="mt-2 text-sm text-muted-foreground">{estimation.rows.length} saved matrix rows</p></> : <p>Not provided</p>}</Panel>;
 }
