@@ -1,8 +1,55 @@
-import { useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useMutation, useQuery } from '@apollo/client';
-import { AlertTriangle, CheckCircle2, ClipboardList, X } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, Badge, Button, cn, DonutChart, DonutChartLegend, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, useAuth } from '@xts/design-system';
-import type { Currency, Estimation, EstimationPhase, OpportunityDetail, RateMaster, RiskSeverity, Scope } from '@xts/api-contracts';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  Info,
+  X,
+} from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Badge,
+  Button,
+  cn,
+  DonutChart,
+  DonutChartLegend,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+  useAuth,
+} from '@xts/design-system';
+import type {
+  AssessmentSection,
+  Currency,
+  Estimation,
+  EstimationPhase,
+  OpportunityDetail,
+  RateMaster,
+  RiskSeverity,
+  Scope,
+} from '@xts/api-contracts';
 import { ReviewActions } from './ReviewActions';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useSave } from '../hooks/useSave';
@@ -26,36 +73,111 @@ function weeklyRate(rate: RateMaster): number {
 function gridRowId(phaseId: number, roleCode: string) { return `grid-${phaseId}-${roleCode}`; }
 function trimDecimal(value: number) { return String(Math.round(value * 100) / 100); }
 
-export function EstimationModule({ opportunity: o, onSaved, readOnly }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void; readOnly: boolean }) {
-  const service = useOpportunityService(), mutation = useSave(), auth = useAuth();
-  const { data: masters } = useQuery<{ estimationPhasesList: (EstimationPhase | null)[] | null; rateMasters: (RateMaster | null)[] | null; currencies: (Currency | null)[] | null }>(GET_ESTIMATION_MASTERS, { fetchPolicy: 'network-only' });
-  const phases = (masters?.estimationPhasesList ?? []).filter((p): p is EstimationPhase => Boolean(p?.isActive)).sort((a, b) => (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) || a.phaseName.localeCompare(b.phaseName));
-  const roles = (masters?.rateMasters ?? []).filter((r): r is RateMaster => Boolean(r?.isActive)).sort((a, b) => a.roleName.localeCompare(b.roleName));
-  const currencies = (masters?.currencies ?? []).filter((c): c is Currency => c != null);
+export function EstimationModule({
+  opportunity: o,
+  onSaved,
+  readOnly,
+  showActions = true,
+}: {
+  opportunity: OpportunityDetail;
+  onSaved: (value: OpportunityDetail) => void;
+  readOnly: boolean;
+  showActions?: boolean;
+}) {
+  const service = useOpportunityService();
+  const mutation = useSave();
+  const auth = useAuth();
+
+  const { data: masters } = useQuery<{
+    estimationPhasesList: (EstimationPhase | null)[] | null;
+    rateMasters: (RateMaster | null)[] | null;
+    currencies: (Currency | null)[] | null;
+  }>(GET_ESTIMATION_MASTERS, {
+    fetchPolicy: 'network-only',
+  });
+
+  const phases = (masters?.estimationPhasesList ?? [])
+    .filter((p): p is EstimationPhase => Boolean(p?.isActive))
+    .sort(
+      (a, b) =>
+        (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) ||
+        a.phaseName.localeCompare(b.phaseName),
+    );
+
+  const roles = (masters?.rateMasters ?? [])
+    .filter((r): r is RateMaster => Boolean(r?.isActive))
+    .sort((a, b) => a.roleName.localeCompare(b.roleName));
+
+  const currencies = (masters?.currencies ?? []).filter(
+    (c): c is Currency => c != null,
+  );
+
   const canViewRates = auth.hasPermission(RATE_MASTER_MENU_KEY, 'view');
   const canEditRates = auth.hasPermission(RATE_MASTER_MENU_KEY, 'edit');
-  const [updateRateMaster] = useMutation<{ updateRateMaster: RateMaster }>(UPDATE_RATE_MASTER, { refetchQueries: [{ query: GET_ESTIMATION_MASTERS }] });
+
+  const [updateRateMaster] = useMutation<{
+    updateRateMaster: RateMaster;
+  }>(UPDATE_RATE_MASTER, {
+    refetchQueries: [{ query: GET_ESTIMATION_MASTERS }],
+  });
+
   const [rateEdits, setRateEdits] = useState<Record<number, string>>({});
   const [savingRateId, setSavingRateId] = useState<number | null>(null);
   const [rateError, setRateError] = useState<string>();
+
   async function saveRate(role: RateMaster) {
     const raw = rateEdits[role.ratemasterId];
     if (raw === undefined) return;
+
     const weeklyValue = Number(raw);
-    if (!raw.trim() || !Number.isFinite(weeklyValue) || weeklyValue < 0) { setRateError('Enter a valid, non-negative cost per week.'); return; }
+    if (!raw.trim() || !Number.isFinite(weeklyValue) || weeklyValue < 0) {
+      setRateError('Enter a valid, non-negative cost per week.');
+      return;
+    }
+
     const isMonthly = role.rateType.trim().toLowerCase() === 'monthly';
-    setRateError(undefined); setSavingRateId(role.ratemasterId);
+
+    setRateError(undefined);
+    setSavingRateId(role.ratemasterId);
+
     try {
-      await updateRateMaster({ variables: { ratemasterId: role.ratemasterId, input: {
-        roleName: role.roleName, roleCode: role.roleCode, currencyId: role.currencyId, rateType: role.rateType,
-        defaultRate: Number((isMonthly ? weeklyValue * WEEKS_PER_MONTH : weeklyValue).toFixed(2)),
-        location: role.location, description: role.description, updatedBy: auth.session?.userId ? Number(auth.session.userId) : undefined,
-      } } });
-      setRateEdits(edits => { const next = { ...edits }; delete next[role.ratemasterId]; return next; });
+      await updateRateMaster({
+        variables: {
+          ratemasterId: role.ratemasterId,
+          input: {
+            roleName: role.roleName,
+            roleCode: role.roleCode,
+            currencyId: role.currencyId,
+            rateType: role.rateType,
+            defaultRate: Number(
+              (isMonthly ? weeklyValue * WEEKS_PER_MONTH : weeklyValue).toFixed(2),
+            ),
+            location: role.location,
+            description: role.description,
+            updatedBy: auth.session?.userId
+              ? Number(auth.session.userId)
+              : undefined,
+          },
+        },
+      });
+
+      setRateEdits(edits => {
+        const next = { ...edits };
+        delete next[role.ratemasterId];
+        return next;
+      });
     } catch (error) {
-      setRateError(error instanceof Error ? error.message : 'Failed to update the rate. Please retry.');
-    } finally { setSavingRateId(null); }
+      setRateError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update the rate. Please retry.',
+      );
+    } finally {
+      setSavingRateId(null);
+    }
   }
+
+  // Continue with the remaining component code.
 
   const [draft, setDraft] = useState<Estimation>(() => o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' }), [baseline, setBaseline] = useState(() => JSON.stringify(o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' })), [validation, setValidation] = useState<string>();
   const editable = !readOnly && isPreparing(o) && o.allowedActions.includes('EDIT_ESTIMATION');
@@ -123,6 +245,21 @@ export function EstimationModule({ opportunity: o, onSaved, readOnly }: { opport
 const SEVERITY_BADGE: Record<RiskSeverity, 'success' | 'warning' | 'critical'> = { LOW: 'success', MEDIUM: 'warning', HIGH: 'critical' };
 const SEVERITY_COLOR: Record<RiskSeverity, string> = { LOW: '#089b6a', MEDIUM: '#f59e0b', HIGH: '#ef4444' };
 const emptyScope: Scope = { revision: 0, summary: '', alignment: [], risks: [] };
+const normalizeAssessmentText = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+function introducesDuplicate(incoming: { id: string; description: string }[], previous: { id: string; description: string }[]) {
+  return incoming.find(item => {
+    const prior = previous.find(row => row.id === item.id), description = normalizeAssessmentText(item.description);
+    return (!prior || normalizeAssessmentText(prior.description) !== description)
+      && incoming.some(other => other.id !== item.id && normalizeAssessmentText(other.description) === description);
+  });
+}
+
+function DuplicateHint({ id, kind }: { id: string; kind: 'risk' | 'alignment item' }) {
+  return <div id={id} role="alert" className="mt-2 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+    <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+    <p><strong className="font-medium">This {kind} is already listed.</strong> Add a different {kind} or edit the existing one.</p>
+  </div>;
+}
 
 function SeveritySelect({ value, onChange, disabled, label }: { value: RiskSeverity; onChange: (value: RiskSeverity) => void; disabled: boolean; label: string }) {
   return <Select value={value} onValueChange={v => onChange(v as RiskSeverity)} disabled={disabled}><SelectTrigger aria-label={label} className="w-28 shrink-0"><SelectValue /></SelectTrigger><SelectContent>{RISK_SEVERITY_OPTIONS.map(option => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}</SelectContent></Select>;
@@ -192,15 +329,64 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
   const [newAlignment, setNewAlignment] = useState(''), [newRisk, setNewRisk] = useState<{ description: string; severity: RiskSeverity }>({ description: '', severity: 'HIGH' });
   const [validation, setValidation] = useState<string>();
   const [recentlyUpdated, setRecentlyUpdated] = useState<Set<string>>(new Set());
-  const [pendingDelete, setPendingDelete] = useState<{ kind: 'risk' | 'alignment'; id: string; label: string } | null>(null);
-  // Brief "Updated" badge confirming an inline edit was registered — fades on its own rather than needing a dismissal.
-  function flagUpdated(id: string) {
-    setRecentlyUpdated(prev => new Set(prev).add(id));
-    setTimeout(() => setRecentlyUpdated(prev => { if (!prev.has(id)) return prev; const next = new Set(prev); next.delete(id); return next; }), 3000);
-  }
+
+const [pendingDelete, setPendingDelete] = useState<{
+  kind: 'risk' | 'alignment';
+  id: string;
+  label: string;
+} | null>(null);
+
+const [duplicate, setDuplicate] = useState<{
+  section: 'RISKS' | 'ALIGNMENT';
+  id: string;
+  value: string;
+}>();
+
+const hintId = useId();
+
+const duplicateValue =
+  duplicate?.section === 'RISKS'
+    ? duplicate.id === 'new'
+      ? newRisk.description
+      : draft.risks.find(item => item.id === duplicate.id)?.description
+    : duplicate?.id === 'new'
+      ? newAlignment
+      : draft.alignment.find(item => item.id === duplicate?.id)?.text;
+
+const activeDuplicate =
+  duplicate &&
+  duplicateValue !== undefined &&
+  normalizeAssessmentText(duplicateValue) ===
+    normalizeAssessmentText(duplicate.value)
+    ? duplicate
+    : undefined;
+
+const riskDuplicate =
+  activeDuplicate?.section === 'RISKS' ? activeDuplicate : undefined;
+
+const alignmentDuplicate =
+  activeDuplicate?.section === 'ALIGNMENT' ? activeDuplicate : undefined;
+
+// Show a brief "Updated" badge after an inline edit.
+function flagUpdated(id: string) {
+  setRecentlyUpdated(prev => new Set(prev).add(id));
+
+  setTimeout(() => {
+    setRecentlyUpdated(prev => {
+      if (!prev.has(id)) return prev;
+
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, 3000);
+}
   const baselineScope = JSON.parse(baseline) as Scope;
-  const editable = !readOnly && isPreparing(o) && o.allowedActions.includes('EDIT_SCOPE');
-  const dirty = JSON.stringify(draft) !== baseline;
+  const risksChanged = JSON.stringify(draft.risks) !== JSON.stringify(baselineScope.risks);
+  const alignmentChanged = JSON.stringify(draft.alignment) !== JSON.stringify(baselineScope.alignment);
+  const removingScope = Boolean(baselineScope.summary.trim()) && !draft.summary.trim();
+  const editable = !readOnly && (o.stageId != null ? o.stageId === 3 && o.subStageId === 7 : isPreparing(o)) && o.allowedActions.includes('EDIT_SCOPE');
+  const dirty = JSON.stringify(draft) !== baseline || Boolean(newRisk.description.trim() || newAlignment.trim());
   useUnsaved(dirty);
   const riskSeverityBreakdown = RISK_SEVERITY_OPTIONS.map(option => ({ key: option.id, label: option.label, value: draft.risks.filter(item => item.severity === option.id).length, color: SEVERITY_COLOR[option.id as RiskSeverity] }));
 
@@ -238,10 +424,10 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
     setPendingDelete(null);
   }
 
-  return <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[2fr_1fr]">
-    <div className="space-y-3">
+  return <div className="opp-assessment-layout grid grid-cols-1 items-start gap-3">
+    <div className="opp-assessment-editors space-y-3">
       <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon headerRight={<span className="text-xs font-semibold text-amber-600">Required</span>}>
-        <Textarea aria-label="Scope summary" rows={6} value={draft.summary} onChange={e => setDraft(d => ({ ...d, summary: e.target.value }))} disabled={!editable || mutation.saving} placeholder="Describe the project scope…" />
+        <Textarea aria-label="Scope summary" rows={4} value={draft.summary} onChange={e => setDraft(d => ({ ...d, summary: e.target.value }))} disabled={!editable || mutation.saving} placeholder="Describe the project scope…" />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">{draft.summary.length} characters</span>
           {editable && <div className="flex items-center gap-3">{draft.summary !== baselineScope.summary && <span className="text-xs text-amber-600">Unsaved changes</span>}<Button type="button" size="sm" disabled={mutation.saving || draft.summary === baselineScope.summary} onClick={() => void persist(draft, 'Scope saved.')}>Save scope</Button></div>}

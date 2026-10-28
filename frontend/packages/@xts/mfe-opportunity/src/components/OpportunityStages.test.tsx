@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import type { OpportunityDetail } from '@xts/api-contracts';
+import type { ListFilter, OpportunityDetail } from '@xts/api-contracts';
 import { OpportunityServiceContext, productionOpportunityService } from '../services/OpportunityService';
 import { OpportunityAccessContext } from '../hooks/useOpportunityAccess';
 import { fixtureOpportunity } from '../testing/fixtures';
@@ -9,16 +9,17 @@ import { PipelinePage } from './PipelinePage';
 import { OpportunityDetailsPage } from './OpportunityDetailsPage';
 import { Status } from './ui';
 import { decisionError } from '../lib/workflow';
+import { approvalStagesForRole, workStagesForRole } from '../lib/opportunityStatus';
 
 afterEach(cleanup);
 
-function mount(records: OpportunityDetail[], details = false) {
+function mount(records: OpportunityDetail[], details = false, queue: ListFilter['queue'] = 'PIPELINE', roleName?: string) {
   const service = {
     ...productionOpportunityService,
     list: vi.fn(async () => ({ nodes: records, totalCount: records.length, endCursor: null, hasNextPage: false })),
     detail: vi.fn(async () => records[0]),
   };
-  return render(<OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId: '101', view: true, pipeline: true, add: false, edit: false, work: false, approvals: false }}><MemoryRouter initialEntries={[details ? '/opportunity/401/details' : '/opportunity']}><Routes><Route path="/opportunity" element={<PipelinePage />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /></Routes></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider>);
+  return render(<OpportunityServiceContext.Provider value={service}><OpportunityAccessContext.Provider value={{ userId: '101', view: true, pipeline: true, add: false, edit: false, work: queue === 'MY_WORK', workStageIds: roleName ? workStagesForRole(roleName) : undefined, approvals: queue === 'MY_APPROVALS', approvalStageIds: roleName ? approvalStagesForRole(roleName) : undefined }}><MemoryRouter initialEntries={[details ? '/opportunity/401/details' : '/opportunity']}><Routes><Route path="/opportunity" element={<PipelinePage queue={queue} />} /><Route path="/opportunity/:id/details" element={<OpportunityDetailsPage />} /></Routes></MemoryRouter></OpportunityAccessContext.Provider></OpportunityServiceContext.Provider>);
 }
 
 describe('persisted stage and substage display', () => {
@@ -41,8 +42,8 @@ describe('persisted stage and substage display', () => {
     [3, 7, 'Solution/Scoping Estimation (Engineering)', 'In Progress'],
     [4, 8, 'Estimate Review & Approval', 'Pending Approval'],
     [4, 9, 'Estimate Review & Approval', 'On Hold'],
-    [5, 10, 'Proposal / Bid Submitted', 'Proposal In Preparation'],
-    [5, 11, 'Proposal / Bid Submitted', 'Bid Submitted'],
+    [5, 10, 'Proposal / Bid Submission', 'Proposal In Preparation'],
+    [5, 11, 'Proposal / Bid Submission', 'Bid Submitted'],
     [6, 12, 'Negotiation', 'Under Negotiation'],
     [7, 13, 'Closed — Won', 'Won'],
     [8, 14, 'Closed — Lost', 'Lost'],
@@ -73,11 +74,69 @@ describe('persisted stage and substage display', () => {
     await screen.findByRole('heading', { name: /^Solution\/Scoping Estimation/ });
     expect(Array.from(container.querySelectorAll('.opp-lane > h3')).map(heading => heading.querySelector('.flex-1')?.textContent)).toEqual([
       'Identified', 'Qualifying (Go/No-Go)', 'Solution/Scoping Estimation (Engineering)', 'Estimate Review & Approval',
-      'Proposal / Bid Submitted', 'Negotiation', 'Outcome (Won / Lost / Hold)', 'No-Bid / Declined',
+      'Proposal / Bid Submission', 'Negotiation', 'Outcome (Won / Lost)', 'No-Bid / Declined',
     ]);
   });
 
-  it('groups won, lost and held opportunities under Outcome (Won / Lost / Hold) while keeping their actual status', async () => {
+  it.each([
+    { role: 'CEO', stages: [[2, 4], [4, 8]], labels: ['Qualifying (Go/No-Go)', 'Estimate Review & Approval'] },
+    { role: 'Sales Head', stages: [[1, 1], [5, 10], [5, 11], [6, 12]], labels: ['Identified', 'Proposal / Bid Submission', 'Negotiation'] },
+  ])('shows only the stages returned for $role in My Approvals', async ({ role, stages, labels }) => {
+    const records = stages.map(([stageId, subStageId]) => fixtureOpportunity({ id: String(subStageId), title: `Task ${subStageId}`, stageId, subStageId }));
+    const { container } = mount(records, false, 'MY_APPROVALS', role);
+    await screen.findByRole('region', { name: 'Pipeline stages' });
+    expect(Array.from(container.querySelectorAll('.opp-lane > h3')).map(heading => heading.querySelector('.flex-1')?.textContent)).toEqual(labels);
+    expect(within(screen.getByRole('region', { name: 'Pipeline stages' })).getAllByRole('link')).toHaveLength(records.length);
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(records.length + 1);
+  });
+
+  it('keeps Negotiation visible for Sales Head when opportunities have not reached that stage', async () => {
+    mount([fixtureOpportunity({ stageId: 5, subStageId: 10 })], false, 'MY_APPROVALS', 'Sales Head');
+    const heading = await screen.findByRole('heading', { name: /^Negotiation/ });
+    expect(within(heading.closest('section')!).getByText('No opportunities in this stage.')).toBeVisible();
+    expect(screen.getByRole('heading', { name: /^Identified/ })).toBeVisible();
+    expect(screen.getByRole('heading', { name: /^Proposal \/ Bid Submission/ })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: /^Qualifying/ })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { role: 'Sales Head', labels: ['Identified', 'Proposal / Bid Submission', 'Negotiation'] },
+    { role: 'CEO', labels: ['Qualifying (Go/No-Go)', 'Estimate Review & Approval'] },
+  ])('keeps the $role approval columns visible when the whole queue is empty', async ({ role, labels }) => {
+    const { container } = mount([], false, 'MY_APPROVALS', role);
+    await screen.findByRole('region', { name: 'Pipeline stages' });
+    expect(Array.from(container.querySelectorAll('.opp-lane > h3')).map(heading => heading.querySelector('.flex-1')?.textContent)).toEqual(labels);
+    expect(screen.getAllByText('No opportunities in this stage.')).toHaveLength(labels.length);
+  });
+
+  it.each([false, true])('shows only the engineering estimation column in Estimation Team My Work (has tasks: %s)', async hasTasks => {
+    const records = hasTasks ? [fixtureOpportunity({ stageId: 3, subStageId: 7 })] : [];
+    const { container } = mount(records, false, 'MY_WORK', 'Estimation Team');
+    const board = await screen.findByRole('region', { name: 'Pipeline stages' });
+    expect(Array.from(container.querySelectorAll('.opp-lane > h3')).map(heading => heading.querySelector('.flex-1')?.textContent)).toEqual([
+      'Solution/Scoping Estimation (Engineering)',
+    ]);
+    expect(within(board).queryAllByRole('link')).toHaveLength(records.length);
+    if (!hasTasks) expect(within(board).getByText('No opportunities in this stage.')).toBeVisible();
+  });
+
+  it('lets users navigate to later stages and back without leaving the board', async () => {
+    mount([fixtureOpportunity({ stageId: 3, subStageId: 7 })]);
+    const board = await screen.findByRole('region', { name: 'Pipeline stages' });
+    Object.defineProperty(board, 'clientWidth', { value: 1000 });
+    const scrollBy = vi.fn();
+    board.scrollBy = scrollBy;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next stages' }));
+    expect(scrollBy).toHaveBeenLastCalledWith({ left: 800, behavior: 'auto' });
+    fireEvent.click(screen.getByRole('button', { name: 'Previous stages' }));
+    expect(scrollBy).toHaveBeenLastCalledWith({ left: -800, behavior: 'auto' });
+    expect(within(board).getByRole('heading', { name: /^Negotiation/ })).toBeInTheDocument();
+    expect(within(board).getByRole('heading', { name: /^Outcome/ })).toBeInTheDocument();
+  });
+
+  it('groups won, lost and held opportunities under Outcome (Won / Lost) while keeping their actual status', async () => {
     mount([[7, 13], [8, 14], [10, 19], [10, 20]].map(([stageId, subStageId]) => fixtureOpportunity({ id: String(subStageId), title: `Outcome ${subStageId}`, stageId, subStageId })));
     const heading = await screen.findByRole('heading', { name: /^Outcome \(/ });
     const lane = within(heading.closest('section')!);

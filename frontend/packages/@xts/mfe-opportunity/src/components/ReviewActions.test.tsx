@@ -71,24 +71,13 @@ describe('persisted opportunity review actions', () => {
   });
 
   it.each([
-    { stageId: 5, subStageId: 11, heldSubstage: 20, resume: 'RESUME_PROPOSAL', label: 'Resume Proposal Follow-up' },
-    { stageId: 6, subStageId: 12, heldSubstage: 19, resume: 'RESUME_NEGOTIATION', label: 'Resume Negotiation' },
-  ] as const)('shows outcome choices at $stageId/$subStageId and resumes the step that was held', async ({ stageId, subStageId, heldSubstage, resume, label }) => {
+    { stageId: 5, subStageId: 11 },
+    { stageId: 6, subStageId: 12 },
+  ] as const)('excludes Hold at $stageId/$subStageId even when an older server grants it', ({ stageId, subStageId }) => {
     const current = salesReview({ stageId, subStageId, allowedActions: ['START_NEGOTIATION', 'MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD', 'BID_SUBMITTED'] });
-    const saved = { ...current, stageId: 10, subStageId: heldSubstage, allowedActions: [resume] };
-    const decide = vi.fn(async () => saved);
-    const { onSaved, rerender } = mount(current, decide);
-    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(stageId === 5 ? ['Under Negotiation', 'Won', 'Lost', 'On Hold'] : ['Won', 'Lost', 'On Hold']);
-    const dialog = openDecision('On Hold');
-    confirmReview(dialog);
-    expect(await dialog.findByRole('alert')).toHaveTextContent('Select a hold reason.');
-    await selectHoldReason(dialog);
-    fireEvent.change(dialog.getByRole('textbox'), { target: { value: 'Waiting for client budget.' } });
-    confirmReview(dialog);
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved));
-    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'OPPORTUNITY_HOLD', reasonCodeId: 3 }));
-    rerender(saved);
-    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual([label]);
+    mount(current);
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(stageId === 5 ? ['Under Negotiation', 'Won', 'Lost'] : ['Won', 'Lost']);
+    expect(screen.queryByRole('button', { name: 'On Hold' })).not.toBeInTheDocument();
   });
 
   it('removes the Sales Head action area once the opportunity moves to Qualifying', () => {

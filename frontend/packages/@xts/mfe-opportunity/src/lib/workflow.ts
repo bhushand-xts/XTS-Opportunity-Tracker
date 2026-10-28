@@ -159,8 +159,8 @@ export function applicableDecisions(o: OpportunityDetail): Action[] {
     decisions.push('ESTIMATE_REJECT');
   }
   if (stage === 5 && substage === 10) decisions.push('BID_SUBMITTED');
-  if (stage === 5 && substage === 11) decisions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
-  if (stage === 6 && substage === 12) decisions.push('MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
+  if (stage === 5 && substage === 11) decisions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST');
+  if (stage === 6 && substage === 12) decisions.push('MARK_WON', 'MARK_LOST');
   if (stage === 10 && substage === 19) decisions.push('RESUME_NEGOTIATION');
   if (stage === 10 && substage === 20) decisions.push('RESUME_PROPOSAL');
   if ([1, 2, 3, 4, 5, 6].includes(stage ?? 0)) decisions.push('CLOSE_OPPORTUNITY');

@@ -46,6 +46,19 @@ function testService(initial = fixtureOpportunity()): OpportunityService {
   };
 }
 describe('stage-independent opportunity editing', () => {
+  it('lets a reviewer save an answer from RFP Q&A when the backend grants answer access', async () => {
+    const current = fixtureOpportunity({ stageId: 4, subStageId: 8, allowedActions: [] });
+    const service = testService(current);
+    service.answer = vi.fn(async command => ({ ...current, responses: current.responses!.map(item => item.id === command.responseId ? { ...item, answer: command.answer, revision: item.revision + 1 } : item) }));
+    mount(service, '/opportunity/401/review?tab=qa');
+    const field = await screen.findByRole('textbox', { name: 'Answer' });
+    expect(field).not.toHaveAttribute('readonly');
+    fireEvent.change(field, { target: { value: 'Reviewer answer.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save answer' }));
+    await waitFor(() => expect(service.answer).toHaveBeenCalledWith(expect.objectContaining({ opportunityId: '401', responseId: '301', answer: 'Reviewer answer.' })));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save answer' })).toBeDisabled());
+  });
+
   it.each([[1, 2], [2, 4], [2, 5], [3, 7], [4, 8], [5, 10], [6, 12], [7, 13], [8, 14], [9, 15]])('allows an authorized update at stage %s / %s', async (stageId, subStageId) => {
     const current = fixtureOpportunity({ stageId, subStageId, state: 'GATE1_GO', allowedActions: ['EDIT'], visibleModules: ['overview'] });
     current.form.estimatedValueUsd = '3000';

@@ -25,8 +25,8 @@ WITH added AS (
   ON CONFLICT (sub_stage_id) DO NOTHING
   RETURNING *
 )
-INSERT INTO mst_sub_stage_tracker (sub_stage_id, stage_id, sub_stage_name, is_active, created_dt, is_current)
-SELECT sub_stage_id, stage_id, sub_stage_name, is_active, created_dt, TRUE FROM added;
+INSERT INTO mst_sub_stage_tracker (sub_stage_id, stage_id, sub_stage_name, created_dt, is_current)
+SELECT sub_stage_id, stage_id, sub_stage_name, created_dt, TRUE FROM added;
 
 SELECT setval(pg_get_serial_sequence('mst_stage', 'stage_id'), (SELECT MAX(stage_id) FROM mst_stage));
 SELECT setval(pg_get_serial_sequence('mst_sub_stage', 'sub_stage_id'), (SELECT MAX(sub_stage_id) FROM mst_sub_stage));

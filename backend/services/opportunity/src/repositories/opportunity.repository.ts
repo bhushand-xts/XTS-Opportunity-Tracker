@@ -1,7 +1,27 @@
 import { query, transaction } from "../config/db";
 import type { PoolClient } from "pg";
+import { conflict, notFound } from '../../../../shared/errors/graphqlErrors';
 
 const GENERIC_RFP_TYPE_ID = 2;
+
+// mst_roles lives in the admin service's database, but opportunity already reads
+// other admin-owned tables (mst_client, mst_currency) directly from the same DB.
+async function findSalesHeadRoleId(): Promise<number | null> {
+  const rows = await query<{ roleId: number }>(
+    `SELECT role_id AS "roleId" FROM mst_roles WHERE role_name = 'Sales Head' AND is_active = TRUE LIMIT 1`
+  );
+  return rows[0]?.roleId ?? null;
+}
+async function findStageName(stageId: number | null): Promise<string | null> {
+  if (!stageId) return null;
+  const rows = await query<{ stageName: string }>(`SELECT stage_name AS "stageName" FROM mst_stage WHERE stage_id = $1`, [stageId]);
+  return rows[0]?.stageName ?? null;
+}
+async function findCurrencyCode(currencyId: number | null): Promise<string | null> {
+  if (!currencyId) return null;
+  const rows = await query<{ currencyCode: string }>(`SELECT currency_code AS "currencyCode" FROM mst_currency WHERE currency_id = $1`, [currencyId]);
+  return rows[0]?.currencyCode ?? null;
+}
 
 export interface Opportunity {
   opportunityId: number;
@@ -318,6 +338,49 @@ async function recordProposalQuestionSnapshot(client: PoolClient, qaId: number, 
      FROM tbl_opportunity_questions_answers WHERE qa_id = $1`,
     [qaId]
   );
+}
+
+export interface OpportunityResponse {
+  id: number;
+  title: string;
+  category: string | null;
+  answer: string;
+  revision: number;
+}
+
+// The tracker already records every saved question/answer version.
+const RESPONSE_COLUMNS = `q.qa_id AS id, q.questiontext AS title, q.question_category AS category,
+  COALESCE(q.answertext, '') AS answer,
+  (SELECT COUNT(*)::INTEGER FROM tbl_opportunity_questions_answers_tracker h WHERE h.qa_id = q.qa_id) AS revision`;
+
+export async function findResponses(opportunityId: number): Promise<OpportunityResponse[]> {
+  return query<OpportunityResponse>(`SELECT ${RESPONSE_COLUMNS}
+    FROM tbl_opportunity_questions_answers q
+    WHERE q.opportunity_id = $1 AND q.is_active = TRUE ORDER BY q.qa_id`, [opportunityId]);
+}
+
+export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, userId: number): Promise<void> {
+  await transaction(async client => {
+    // Match the lock order used when opportunity edits synchronise questions.
+    const opportunity = await client.query(`SELECT opportunity_id FROM tbl_opportunity
+      WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE`, [opportunityId]);
+    if (!opportunity.rows.length) throw notFound('Opportunity not found.');
+    const result = await client.query<OpportunityResponse>(`SELECT ${RESPONSE_COLUMNS}
+      FROM tbl_opportunity_questions_answers q
+      WHERE q.opportunity_id = $1 AND q.qa_id = $2 AND q.is_active = TRUE FOR UPDATE OF q`, [opportunityId, responseId]);
+    const current = result.rows[0];
+    if (!current) throw notFound('This question is no longer available for this opportunity.');
+    if (current.revision !== revision) throw conflict('This answer or question has changed. Refresh the opportunity before saving again.');
+    if (current.answer === answer) return;
+    // Older questions may predate tracker snapshots. Preserve their previous
+    // answer before replacing it, just as for questions created by this service.
+    if (current.revision === 0) await recordProposalQuestionSnapshot(client, responseId);
+    await client.query(`UPDATE tbl_opportunity_questions_answers
+      SET answertext = $3, answered_by = $4, answered_dt = CURRENT_TIMESTAMP,
+          updated_by = $4, updated_dt = CURRENT_TIMESTAMP
+      WHERE opportunity_id = $1 AND qa_id = $2 AND is_active = TRUE`, [opportunityId, responseId, answer, userId]);
+    await recordProposalQuestionSnapshot(client, responseId);
+  });
 }
 
 async function archiveAndRemoveProposalQuestion(client: PoolClient, qaId: number, userId: number | null): Promise<void> {
@@ -1509,5 +1572,8 @@ export {
   updateRfpIntakeOpportunity,
   transitionWorkflow,
   create,
-  update
+  update,
+  findSalesHeadRoleId,
+  findStageName,
+  findCurrencyCode
 };

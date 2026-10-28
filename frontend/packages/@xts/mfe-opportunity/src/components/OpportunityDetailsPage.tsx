@@ -31,8 +31,7 @@ function Documents({ opportunity: o }: { opportunity: OpportunityDetail }) {
     ['Source document', o.form.rfp.source ? <DocumentDownload document={o.form.rfp.source} opportunityId={o.id} /> : undefined],
   ]} /><p className="mt-3 text-sm text-muted-foreground">Additional document management is coming soon.</p></Panel>;
 }
-/** Compact solicitation card; the full reference fields, dates, sections and questions live in the drawer. */
-function SolicitationPanel({ o }: { o: OpportunityDetail }) {
+function SolicitationPanel({ opportunity: o }: { opportunity: OpportunityDetail }) {
   const f = o.form, s = f.solicitation, d = f.dates;
   const itemsLabel = f.rfp.type === 'GENERIC' ? `${f.rfp.sections.length} proposal section${f.rfp.sections.length === 1 ? '' : 's'} selected` : `${f.rfp.questions.length} question${f.rfp.questions.length === 1 ? '' : 's'} added`;
   return <Panel title={`${f.rfp.type === 'GENERIC' ? 'Generic RFP' : f.rfp.type === 'QUESTIONNAIRE' ? 'Questionnaire' : 'RFP'} · solicitation`} tone="indigo" accentIcon className="opp-solicitation" headerRight={<DetailDrawer title="Solicitation details" description="Full procurement reference, important dates and proposal requirements.">
@@ -86,19 +85,85 @@ function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
     <div className="mt-4"><Panel title="Assumptions" tone="indigo" accentIcon><p className="whitespace-pre-wrap break-words text-sm">{estimation.assumptions || 'Not provided'}</p></Panel></div>
   </DetailDrawer>}>{estimation ? <><strong className="text-2xl">{money(estimation.total, o.currencyCode)}</strong><p className="mt-2 text-sm text-muted-foreground">{estimation.rows.length} saved matrix rows</p></> : <p>Not provided</p>}</Panel>;
 }
-function Overview({ opportunity: o, onSaved }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void }) {
+function Overview({
+  opportunity: o,
+}: {
+  opportunity: OpportunityDetail;
+}) {
   const f = o.form;
-  return <div className="opp-overview"><div className="space-y-3"><Panel title="Opportunity details" tone="violet" accentIcon><Values values={[
-    ['Opportunity name', f.title], ['Client budget', money(o.estimatedValue, o.currencyCode)], ['Client budget (USD)', f.estimatedValueUsd ? money(f.estimatedValueUsd, 'USD') : ''], ['Currency', o.currencyCode], ['Service line', f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine], ['Lead source', LEAD_SOURCES.find(source => source.id === f.leadSource)?.label ?? f.leadSource], ['Owner', userLabel(o.owner)], ['Priority', f.priority], ['Description', f.description],
-  ]} /></Panel><Panel title="Client & contacts" tone="teal" accentIcon>{o.client ? <><h3 className="mb-3 font-semibold">{o.client.name}</h3><ClientValues client={o.client} /></> : <p>Not provided</p>}</Panel></div><div className="space-y-3">
-    <SolicitationPanel o={o} />
-    {o.visibleModules.includes('responses') && <ResponsesPanel o={o} />}
-    {o.visibleModules.includes('scope') && <ScopeSummaryPanel o={o} />}
-    {o.visibleModules.includes('estimation') && <EstimationSummaryPanel o={o} />}
-    {o.salesRecommendation && <Panel title="Sales Head recommendation" tone="neutral" accentIcon><Values values={[
-      ['Reviewed by', userLabel(o.salesRecommendation.actor)], ['Package revision', o.salesRecommendation.packageRevision], ['Recommendation', o.salesRecommendation.note],
-    ]} /></Panel>}
-  </div><aside className="space-y-3" aria-label="Opportunity approval and progress"><ReviewActions opportunity={o} onSaved={onSaved} /><OpportunityProgress opportunity={o} /></aside></div>;
+
+  return (
+    <div className="opp-overview">
+      <div className="space-y-3">
+        <Panel title="Opportunity details" tone="violet" accentIcon>
+          <Values
+            values={[
+              ['Opportunity name', f.title],
+              ['Client budget', money(o.estimatedValue, o.currencyCode)],
+              [
+                'Client budget (USD)',
+                f.estimatedValueUsd
+                  ? money(f.estimatedValueUsd, 'USD')
+                  : '',
+              ],
+              ['Currency', o.currencyCode],
+              [
+                'Service line',
+                f.serviceLine === 'Other'
+                  ? f.serviceLineOther
+                  : f.serviceLine,
+              ],
+              [
+                'Lead source',
+                LEAD_SOURCES.find(source => source.id === f.leadSource)
+                  ?.label ?? f.leadSource,
+              ],
+              ['Owner', userLabel(o.owner)],
+              ['Priority', f.priority],
+              ['Description', f.description],
+            ]}
+          />
+        </Panel>
+
+        <Panel title="Client & contacts" tone="teal">
+          {o.client ? (
+            <>
+              <h3 className="mb-3 font-semibold">{o.client.name}</h3>
+              <ClientValues client={o.client} />
+            </>
+          ) : (
+            <p>Not provided</p>
+          )}
+        </Panel>
+      </div>
+
+      <div className="space-y-3">
+        <SolicitationPanel opportunity={o} />
+
+        {Boolean(o.responses?.length) && <ResponsesPanel o={o} />}
+
+        {o.visibleModules.includes('scope') && (
+          <ScopeSummaryPanel o={o} />
+        )}
+
+        {o.visibleModules.includes('estimation') && (
+          <EstimationSummaryPanel o={o} />
+        )}
+
+        {o.salesRecommendation && (
+          <Panel title="Sales Head recommendation" tone="teal">
+            <Values
+              values={[
+                ['Reviewed by', userLabel(o.salesRecommendation.actor)],
+                ['Package revision', o.salesRecommendation.packageRevision],
+                ['Recommendation', o.salesRecommendation.note],
+              ]}
+            />
+          </Panel>
+        )}
+      </div>
+    </div>
+  );
 }
 type TabKey = 'overview' | 'qa' | 'scope' | 'estimation' | 'documents' | 'activity';
 export function OpportunityDetailsPage({ review = false }: { review?: boolean }) {
@@ -111,16 +176,16 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
   if (resource.loading) return <Loading />;
   if (resource.error) return <Notice error={resource.error} retry={resource.reload} />;
   if (!o) return <Notice error="This opportunity was not returned. It may have been removed or be outside your permitted scope." />;
-  // All 6 tabs always show: no backend today sends per-role visibleModules
-  // restrictions, so gating on that field only hid tabs without protecting
-  // anything. Revisit once a real backend can send actual redaction.
-  const tabs: { key: TabKey; label: string; icon: typeof LayoutGrid }[] = [
-    { key: 'overview', label: 'Overview', icon: LayoutGrid },
-    { key: 'qa', label: 'RFP Q&A', icon: HelpCircle },
-    { key: 'scope', label: 'Scope & Assessment', icon: ClipboardList },
-    { key: 'estimation', label: 'Estimate', icon: Calculator },
-    { key: 'documents', label: 'Documents', icon: FileText },
-    { key: 'activity', label: 'Activity', icon: History },
+  // Keep the full workflow visible, with preparation content available after
+  // the CEO's Go/No-Go approval moves the opportunity into estimation.
+  const awaitingEstimation = o.stageId === 1 || o.stageId === 2;
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'qa', label: 'RFP Q&A' },
+    { key: 'scope', label: 'Scope & Assessment' },
+    { key: 'estimation', label: 'Estimate' },
+    { key: 'documents', label: 'Documents' },
+    { key: 'activity', label: 'Activity' },
   ];
   const requested = params.get('tab') ?? 'overview', active = tabs.find(tab => tab.key === requested)?.key ?? tabs[0]?.key;
   if (!active) return <Notice title="Access restricted" error="No workspace modules are visible to your user." />;
@@ -143,20 +208,28 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
         {access.edit && o.allowedActions.includes('EDIT') && <Button asChild><Link to={`/opportunity/${o.id}/edit`}><Pencil className="size-3.5" aria-hidden="true" />Edit opportunity</Link></Button>}
       </div>
     </header>
-    <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <Card className="min-w-0 shadow-sm"><div className="flex items-start gap-3 p-3.5">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-indigo-50 text-indigo-600" aria-hidden="true"><Wallet className="size-4" /></span>
-        <div className="min-w-0"><p className="text-xs text-muted-foreground">Client budget</p><strong className="block break-words text-base font-semibold">{money(o.estimatedValue, o.currencyCode)}</strong><p className="text-xs text-muted-foreground">Original currency · {o.currencyCode}</p></div>
-      </div></Card>
-      <Card className="min-w-0 shadow-sm"><div className="flex items-start gap-3 p-3.5">
-        <Avatar className="size-9 shrink-0"><AvatarFallback className={cn('text-xs font-bold text-white', avatarAccent(ownerName || 'unassigned'))}>{ownerName ? initials(ownerName) : '—'}</AvatarFallback></Avatar>
-        <div className="min-w-0"><p className="text-xs text-muted-foreground">Opportunity owner</p><strong className="block break-words text-base font-semibold">{userLabel(o.owner)}</strong><p className="text-xs text-muted-foreground">{o.owner?.roles?.length ? o.owner.roles.join(', ') : 'Role not provided'}</p></div>
-      </div></Card>
-      <Card className="min-w-0 shadow-sm"><div className="flex items-start gap-3 p-3.5">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600" aria-hidden="true"><CalendarClock className="size-4" /></span>
-        <div className="min-w-0"><p className="text-xs text-muted-foreground">Submission deadline</p><strong className="block break-words text-base font-semibold">{formatLocalDate(o.form.dates.submissionDeadline) ?? 'Not provided'}</strong><p className="text-xs text-muted-foreground">{o.form.solicitation.submissionTimezone || 'Timezone not set'} · Time not set</p></div>
-      </div></Card>
-    </div>
-    <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}><TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key} className="gap-1.5"><tab.icon className="size-3.5" aria-hidden="true" />{tab.label}{tab.key === 'qa' && responseCount > 0 && <Badge variant="muted" size="sm">{responseCount}</Badge>}</TabsTrigger>)}</TabsList>{tabs.map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-3">{tab.key === 'overview' ? <Overview opportunity={o} onSaved={resource.setData} /> : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} /> : tab.key === 'scope' ? <ScopeModule opportunity={o} onSaved={resource.setData} readOnly={review} /> : tab.key === 'documents' ? <Documents opportunity={o} /> : tab.key === 'qa' ? (approvalView ? <Panel title="Saved response details" tone="indigo"><p className="mb-3 text-sm text-muted-foreground">Read-only reviewed package v{o.packageRevision}</p>{o.responses?.map(r => <article key={r.id} className="mb-3 rounded-lg border p-3"><h3 className="font-semibold">{r.title}</h3><p className="mt-1 text-xs text-muted-foreground">{RESPONSE_LABELS[r.state]} · revision {r.revision} · Owner {userLabel(r.owner)} · Reviewer {userLabel(r.reviewer)}</p><p className="mt-3 whitespace-pre-wrap break-words text-sm">{r.answer || 'No response saved.'}</p></article>)}</Panel> : <ResponseWorkspace opportunity={o} onSaved={resource.setData} />) : <Activity opportunity={o} />}</TabsContent>)}</Tabs>
+    <div className="opp-workspace-strip"><div><small>Client budget</small><strong>{money(o.estimatedValue, o.currencyCode)}</strong></div><div><small>Owner</small><strong>{userLabel(o.owner)}</strong></div><div><small>Submission deadline</small><div className="opp-deadline-value"><strong>{o.form.dates.submissionDeadline || 'Not provided'}</strong><small>{o.form.solicitation.submissionTimezone}</small></div></div></div>
+    <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}>
+      <TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>)}</TabsList>
+      <div className="opp-detail-layout mt-3">
+      <div className="opp-detail-workspace">
+      {tabs.map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-0">
+        {tab.key !== 'overview' && awaitingEstimation ? <div role="status" className="rounded-lg border bg-background px-6 py-8 text-center">
+          <h3 className="text-sm font-semibold">Available after CEO approval</h3>
+          <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">{tab.label} will be available once the CEO approves this opportunity and it enters the Solution/Scoping Estimation (Engineering) stage.</p>
+        </div> : tab.key === 'overview' ? <Overview opportunity={o} />
+          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} showActions={false} />
+          : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={review} />
+          : tab.key === 'documents' ? <Documents opportunity={o} />
+          : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />
+          : <Activity opportunity={o} />}
+      </TabsContent>)}
+      </div>
+      <aside className="opp-detail-sidebar" aria-label="Opportunity approval and progress">
+        <ReviewActions opportunity={o} onSaved={resource.setData} />
+        <OpportunityProgress opportunity={o} />
+      </aside>
+      </div>
+    </Tabs>
   </div>;
 }

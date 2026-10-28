@@ -1,8 +1,104 @@
 import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { create, findStageHistory, saveEstimation, transitionWorkflow, update, updateRfpIntakeOpportunity } from './opportunity.repository';
+import { create, findResponses, findStageHistory, saveAnswer, saveEstimation, transitionWorkflow, update, updateRfpIntakeOpportunity } from './opportunity.repository';
 const db = require('../config/db');
+
+test('Q&A loads active opportunity-specific questions with their stored answers and independent versions', async t => {
+  const rows = [{ id: 21, title: 'Delivery?', answer: 'Discovery first.', revision: 3 }];
+  const read = t.mock.method(db, 'query', async () => rows);
+  assert.deepEqual(await findResponses(10), rows);
+  const [sql, params] = read.mock.calls[0].arguments as [string, unknown[]];
+  assert.match(sql, /q\.opportunity_id = \$1 AND q\.is_active = TRUE/);
+  assert.match(sql, /q\.qa_id AS id/);
+  assert.match(sql, /COALESCE\(q\.answertext, ''\) AS answer/);
+  assert.match(sql, /COUNT\(\*\)::INTEGER.*h\.qa_id = q\.qa_id/);
+  assert.deepEqual(params, [10]);
+});
+
+test('saving a question answer records its author and history atomically without changing workflow or assignments', async t => {
+  const calls: { sql: string; params: unknown[] }[] = [];
+  t.mock.method(db.pool, 'connect', async () => ({
+    query: async (sql: string, params: unknown[] = []) => {
+      calls.push({ sql, params });
+      if (sql.includes('FROM tbl_opportunity_questions_answers q')) return { rows: [{ id: 21, answer: '', revision: 2 }] };
+      return { rows: sql.startsWith('SELECT') ? [{ opportunity_id: 10 }] : [] };
+    }, release: () => {},
+  }));
+  await saveAnswer(10, 21, 2, 'Delivery plan.\nSecond phase.', 7);
+  const read = calls.find(call => call.sql.includes('FROM tbl_opportunity_questions_answers q'))!;
+  assert.deepEqual(read.params, [10, 21]);
+  assert.match(read.sql, /q\.opportunity_id = \$1 AND q\.qa_id = \$2 AND q\.is_active = TRUE FOR UPDATE/);
+  const write = calls.find(call => call.sql.startsWith('UPDATE tbl_opportunity_questions_answers\n'))!;
+  assert.deepEqual(write.params, [10, 21, 'Delivery plan.\nSecond phase.', 7]);
+  assert.match(write.sql, /answered_by = \$4, answered_dt = CURRENT_TIMESTAMP/);
+  assert.ok(calls.some(call => call.sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker')));
+  assert.equal(calls.some(call => /SET stage_id|assigned_to|engage_tracker/.test(call.sql)), false);
+  assert.equal(calls.at(-1)?.sql, 'COMMIT');
+});
+
+test('answer updates retain previous text and authors, including questions without existing history', async t => {
+  for (const existingHistory of [true, false]) {
+    const current = { id: 21, opportunityId: 10, answer: 'Original answer.', answeredBy: 3 };
+    const history = existingHistory ? [{ ...current, isCurrent: true }] : [];
+    t.mock.method(db.pool, 'connect', async () => ({
+      query: async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('FROM tbl_opportunity_questions_answers q')) {
+          assert.deepEqual(params, [10, 21]);
+          return { rows: [{ ...current, revision: history.length }] };
+        }
+        if (sql.includes('UPDATE tbl_opportunity_questions_answers_tracker')) {
+          history.forEach(snapshot => { snapshot.isCurrent = false; });
+        } else if (sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker')) {
+          history.push({ ...current, isCurrent: true });
+        } else if (sql.startsWith('UPDATE tbl_opportunity_questions_answers\n')) {
+          assert.deepEqual(params.slice(0, 2), [10, 21]);
+          current.answer = params[2] as string;
+          current.answeredBy = params[3] as number;
+        }
+        return { rows: sql.startsWith('SELECT') ? [{ opportunity_id: 10 }] : [] };
+      }, release: () => {},
+    }));
+    await saveAnswer(10, 21, history.length, 'First update.', 7);
+    await saveAnswer(10, 21, history.length, 'Second update.', 8);
+    assert.deepEqual(current, { id: 21, opportunityId: 10, answer: 'Second update.', answeredBy: 8 });
+    assert.deepEqual(history.map(snapshot => [snapshot.answer, snapshot.answeredBy, snapshot.isCurrent]), [
+      ['Original answer.', 3, false], ['First update.', 7, false], ['Second update.', 8, true],
+    ]);
+    const count = history.length;
+    await saveAnswer(10, 21, count, 'Second update.', 8);
+    assert.equal(history.length, count, 'An unchanged answer does not create duplicate history.');
+  }
+});
+
+test('stale, removed or cross-opportunity question answers roll back before any write', async t => {
+  for (const current of [null, { id: 21, answer: 'Another answer', revision: 3 }]) {
+    const calls: string[] = [];
+    t.mock.method(db.pool, 'connect', async () => ({
+      query: async (sql: string) => {
+        calls.push(sql);
+        return { rows: sql.includes('FROM tbl_opportunity_questions_answers q') ? current ? [current] : [] : [{ opportunity_id: 10 }] };
+      }, release: () => {},
+    }));
+    await assert.rejects(saveAnswer(10, 21, 2, 'My answer', 7), current ? /has changed/ : /no longer available/);
+    assert.equal(calls.some(sql => sql.startsWith('UPDATE') || sql.startsWith('INSERT')), false);
+    assert.equal(calls.at(-1), 'ROLLBACK');
+  }
+});
+
+test('answer audit failures roll back the answer instead of leaving unaudited text', async t => {
+  const calls: string[] = [];
+  t.mock.method(db.pool, 'connect', async () => ({
+    query: async (sql: string) => {
+      calls.push(sql);
+      if (sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker')) throw new Error('Audit unavailable');
+      return { rows: sql.includes('FROM tbl_opportunity_questions_answers q') ? [{ id: 21, answer: '', revision: 2 }] : [{ opportunity_id: 10 }] };
+    }, release: () => {},
+  }));
+  await assert.rejects(saveAnswer(10, 21, 2, 'New answer', 7), /Audit unavailable/);
+  assert.equal(calls.at(-1), 'ROLLBACK');
+  assert.equal(calls.includes('COMMIT'), false);
+});
 
 test('creation saves each questionnaire mode on questions and copies it into the first tracker snapshot', async t => {
   for (const questionnaireTypeId of [1, 2]) {

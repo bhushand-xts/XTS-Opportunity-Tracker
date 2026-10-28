@@ -1,4 +1,5 @@
 import * as repository from "../repositories/opportunity.repository";
+import * as scopeRepository from '../repositories/scope.repository';
 import * as validator from "../validators/opportunity.validator";
 import * as userService from "../integrations/userService";
 import { roleAccess, holdReasonCode } from '../integrations/adminService';
@@ -7,6 +8,7 @@ import { documentUploadAudit } from '../lib/documentStorage';
 import { transaction } from "../config/db";
 import { attachSource } from "../extraction/repository";
 import { uuidPattern } from "../extraction/types";
+import { sendOpportunityCreatedEmail } from "../integrations/mailer";
 
 import {
   notFound,
@@ -28,6 +30,50 @@ async function attachSourceDocument(opportunityId: number, userId: number, sourc
     await transaction(client => attachSource(client, opportunityId, userId, sourceDocumentId));
   } catch (error) {
     console.error("Could not link the source document to the opportunity", error);
+  }
+}
+
+const userName = (user: { firstName?: string | null; lastName?: string | null; email?: string } | null) =>
+  user ? [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email || 'Unknown' : 'Unknown';
+const rfpTypeLabel = (opportunityTypeId: number | null) => opportunityTypeId === 1 ? 'Questionnaire-based' : 'Generic RFP';
+
+// Best-effort: the opportunity is already saved by the time this runs, so a
+// notification failure (bad SMTP config, provider down) never undoes the save.
+async function notifyOpportunityCreated(opportunityId: number, userId: number) {
+  try {
+    const [opportunity, creator, salesHeadRoleId] = await Promise.all([
+      repository.findById(opportunityId),
+      userService.findUser(userId),
+      repository.findSalesHeadRoleId(),
+    ]);
+    if (!opportunity) return;
+    const [owner, salesHeads, stageName, currencyCode] = await Promise.all([
+      opportunity.ownerId ? userService.findUser(opportunity.ownerId) : Promise.resolve(null),
+      salesHeadRoleId ? userService.findActiveUsersByRole(salesHeadRoleId) : Promise.resolve([]),
+      repository.findStageName(opportunity.stageId),
+      repository.findCurrencyCode(opportunity.currencyId),
+    ]);
+    // Notifies Sales Head only — not the owner, since the owner is often the
+    // person who just created the opportunity and already knows about it.
+    const candidates = salesHeads.map(user => ({ email: user.email, name: userName(user) }))
+      .filter((recipient): recipient is { email: string; name: string } => !!recipient.email);
+    const seen = new Set<string>();
+    const recipients = candidates.filter(recipient => !seen.has(recipient.email) && seen.add(recipient.email));
+    await sendOpportunityCreatedEmail(recipients, {
+      opportunityNumber: opportunity.opportunityNumber ?? 'Not assigned',
+      opportunityName: opportunity.opportunityName ?? 'Untitled',
+      accountName: opportunity.clientName ?? null,
+      rfpType: rfpTypeLabel(opportunity.opportunityTypeId),
+      ownerName: userName(owner),
+      estimatedValue: opportunity.estimatedValue,
+      currency: currencyCode,
+      stageName,
+      expectedCloseDate: opportunity.expectedCloseDate,
+      createdByName: userName(creator),
+      createdAt: opportunity.createdDt,
+    });
+  } catch (error) {
+    console.error("Could not send the opportunity-created notification email", error);
   }
 }
 
@@ -82,6 +128,7 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
     actions.push('GATE1_NO_GO');
   }
   if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('EDIT_ESTIMATION', 'SUBMIT_ESTIMATE');
+  if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.canView(opportunity)) actions.push('EDIT_SCOPE');
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) {
     actions.push('ESTIMATE_APPROVE');
     if (opportunity.subStageId === 8) actions.push('ESTIMATE_HOLD');
@@ -89,8 +136,8 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
   }
   if (access.review) {
     if (opportunity.stageId === 5 && opportunity.subStageId === 10) actions.push('BID_SUBMITTED');
-    if (opportunity.stageId === 5 && opportunity.subStageId === 11) actions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
-    if (opportunity.stageId === 6 && opportunity.subStageId === 12) actions.push('MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD');
+    if (opportunity.stageId === 5 && opportunity.subStageId === 11) actions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST');
+    if (opportunity.stageId === 6 && opportunity.subStageId === 12) actions.push('MARK_WON', 'MARK_LOST');
     if (opportunity.stageId === 10 && opportunity.subStageId === 19) actions.push('RESUME_NEGOTIATION');
     if (opportunity.stageId === 10 && opportunity.subStageId === 20) actions.push('RESUME_PROPOSAL');
     if ([1, 2, 3, 4, 5, 6].includes(opportunity.stageId ?? 0)) actions.push('CLOSE_OPPORTUNITY');
@@ -131,6 +178,7 @@ async function create(
   }, userId);
   const sourceDocumentId = (input as OpportunityInput & { sourceDocumentId?: string | null }).sourceDocumentId;
   if (sourceDocumentId) await attachSourceDocument(created.opportunityId, userId, sourceDocumentId);
+  void notifyOpportunityCreated(created.opportunityId, userId);
   return created;
 }
 
@@ -186,7 +234,9 @@ async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunity
   const access = await accessFor(ctx), userId = access.userId;
   if (!access.create) throw conflict('You do not have permission to create opportunities.');
   await validateActiveOwner(input.ownerId);
-  return repository.finalizeRfpIntakeOpportunity(input, userId, null);
+  const created = await repository.finalizeRfpIntakeOpportunity(input, userId, null);
+  void notifyOpportunityCreated(created.opportunityId, userId);
+  return created;
 }
 
 async function updateRfpIntakeOpportunity(
@@ -339,18 +389,17 @@ async function transitionWorkflow(
   if (!opportunity) throw notFound('Opportunity not found.');
   const audit = workflowAudit(access);
   if (action === 'RESUBMIT') throw validationFailed('Use Update Opportunity to save corrections and send the opportunity for review.');
+  if (action === 'OPPORTUNITY_HOLD') throw validationFailed('Hold is not available after bid submission. Choose Under Negotiation, Won or Lost.');
   const reviewingSales = opportunity.stageId === 1 && [1, 2, 3].includes(opportunity.subStageId ?? 0) && access.review;
   const reviewingCeo = opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const reviewingEstimate = opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const submittedBid = opportunity.stageId === 5 && opportunity.subStageId === 11;
-  const negotiating = opportunity.stageId === 6 && opportunity.subStageId === 12;
-  const holdingOpportunity = action === 'OPPORTUNITY_HOLD' && access.review && (submittedBid || negotiating);
   if (action === 'HOLD' && (reviewingSales && opportunity.subStageId === 3 || reviewingCeo && opportunity.subStageId === 6 || reviewingEstimate && opportunity.subStageId === 9)) {
     throw conflict('This opportunity is already on hold. Choose another available action.');
   }
   const closing = action === 'CLOSE_OPPORTUNITY' && access.review && [1, 2, 3, 4, 5, 6].includes(opportunity.stageId ?? 0);
-  if (holdingOpportunity || (action === 'HOLD' || action === 'REJECT') && (reviewingSales || reviewingCeo || reviewingEstimate)) {
-    const reasonLabel = action === 'HOLD' || holdingOpportunity ? 'hold' : 'rejection';
+  if ((action === 'HOLD' || action === 'REJECT') && (reviewingSales || reviewingCeo || reviewingEstimate)) {
+    const reasonLabel = action === 'HOLD' ? 'hold' : 'rejection';
     if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) throw validationFailed(`Select a ${reasonLabel} reason.`);
     if (!comment?.trim()) throw validationFailed(`Enter a ${reasonLabel} description.`);
     const reason = await holdReasonCode(reasonCodeId!);
@@ -365,13 +414,12 @@ async function transitionWorkflow(
   const salesTargets = {
     BID_SUBMITTED: [5, 10, 5, 11], START_NEGOTIATION: [5, 11, 6, 12],
     MARK_WON: [6, 12, 7, 13], MARK_LOST: [6, 12, 8, 14],
-    OPPORTUNITY_HOLD: [6, 12, 10, 19], RESUME_NEGOTIATION: [10, 19, 6, 12], RESUME_PROPOSAL: [10, 20, 5, 11],
+    RESUME_NEGOTIATION: [10, 19, 6, 12], RESUME_PROPOSAL: [10, 20, 5, 11],
   } as const;
   if (action in salesTargets) {
-    const [fromStage, fromSubstage, toStage, targetSubstage] = salesTargets[action as keyof typeof salesTargets];
-    const outcomeAfterBid = submittedBid && ['MARK_WON', 'MARK_LOST', 'OPPORTUNITY_HOLD'].includes(action);
+    const [fromStage, fromSubstage, toStage, toSubstage] = salesTargets[action as keyof typeof salesTargets];
+    const outcomeAfterBid = submittedBid && ['MARK_WON', 'MARK_LOST'].includes(action);
     if (!access.review || !outcomeAfterBid && (opportunity.stageId !== fromStage || opportunity.subStageId !== fromSubstage)) throw conflict('The Sales Head role and the preceding sales workflow step are required.');
-    const toSubstage = outcomeAfterBid && action === 'OPPORTUNITY_HOLD' ? 20 : targetSubstage;
     return persistTransition(opportunity, opportunityId, toStage, toSubstage, null, userId, comment?.trim() || null, null, audit);
   }
 
@@ -514,6 +562,53 @@ export async function allowedActions(opportunity: repository.Opportunity, ctx: a
 export async function getEstimation(opportunityId: number, ctx: any) {
   await get(opportunityId, ctx);
   return repository.findEstimation(opportunityId);
+}
+
+export async function getResponses(opportunityId: number, ctx: any) {
+  await get(opportunityId, ctx);
+  return (await repository.findResponses(opportunityId)).map(response => ({
+    // Temporarily allow every user who can view this opportunity to answer it.
+    ...response, allowedActions: ['SAVE_ANSWER'],
+  }));
+}
+
+export async function getScope(opportunityId: number, ctx: any) {
+  await get(opportunityId, ctx);
+  return scopeRepository.findScope(opportunityId);
+}
+
+export async function saveScope(opportunityId: number, scope: scopeRepository.OpportunityScope, section: scopeRepository.AssessmentSection = 'ALL', ctx: any) {
+  const opportunity = await get(opportunityId, ctx), access = await accessFor(ctx);
+  if (opportunity.stageId !== 3 || opportunity.subStageId !== 7) throw conflict('Scope and assessment can only be updated during engineering estimation.');
+  if (!scope || !Number.isSafeInteger(scope.revision) || scope.revision < 0 || !['ALL', 'SCOPE', 'RISKS', 'ALIGNMENT'].includes(section)) throw validationFailed('Provide a valid assessment revision and section.');
+  const text = (value: unknown) => typeof value === 'string' && value.trim().length > 0 && value.length <= 100000;
+  if (section === 'ALL' && !text(scope.summary) || section === 'SCOPE' && (typeof scope.summary !== 'string' || scope.summary.length > 100000)) throw validationFailed('Enter the project scope (maximum 100,000 characters).');
+  const validateItems = (items: { id: string }[] | undefined, description: (item: any) => unknown) => {
+    const ids = new Set<string>();
+    if (!Array.isArray(items) || items.length > 500) throw validationFailed('Provide at most 500 assessment items per section.');
+    for (const item of items) {
+      if (!item || typeof item.id !== 'string' || !/^(?:[1-9]\d{0,9}|draft-[a-zA-Z0-9-]{1,100})$/.test(item.id) || ids.has(item.id) || !text(description(item))) throw validationFailed('Each assessment item needs a unique saved or draft ID and a description (maximum 100,000 characters).');
+      ids.add(item.id);
+    }
+  };
+  if (section === 'ALL' || section === 'RISKS') {
+    validateItems(scope.risks, item => item.description);
+    if (scope.risks.some(item => !['LOW', 'MEDIUM', 'HIGH'].includes(item.severity))) throw validationFailed('Select Low, Medium or High risk severity.');
+  }
+  if (section === 'ALL' || section === 'ALIGNMENT') validateItems(scope.alignment, item => item.text);
+  await scopeRepository.saveScope(opportunityId, scope, section, access.userId);
+  return get(opportunityId, ctx);
+}
+
+export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, ctx: any) {
+  const access = await accessFor(ctx);
+  await get(opportunityId, ctx);
+  if (!Number.isSafeInteger(responseId) || responseId <= 0 || !Number.isSafeInteger(revision) || revision < 0) {
+    throw validationFailed('Select a saved opportunity question and its current revision.');
+  }
+  if (typeof answer !== 'string' || answer.length > 100000) throw validationFailed('The answer must be text with at most 100,000 characters.');
+  await repository.saveAnswer(opportunityId, responseId, revision, answer, access.userId);
+  return get(opportunityId, ctx);
 }
 
 export async function getStageHistory(opportunityId: number, ctx: any) {

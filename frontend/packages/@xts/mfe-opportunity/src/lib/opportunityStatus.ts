@@ -6,7 +6,7 @@ export const STAGE_LABELS: Record<number, string> = {
   2: 'Qualifying (Go/No-Go)',
   3: 'Solution/Scoping Estimation (Engineering)',
   4: 'Estimate Review & Approval',
-  5: 'Proposal / Bid Submitted',
+  5: 'Proposal / Bid Submission',
   6: 'Negotiation',
   7: 'Closed — Won',
   8: 'Closed — Lost',
@@ -14,8 +14,19 @@ export const STAGE_LABELS: Record<number, string> = {
   10: 'On Hold',
 };
 
-export const OPPORTUNITY_OUTCOME_LABEL = 'Outcome (Won / Lost / Hold)';
+export const OPPORTUNITY_OUTCOME_LABEL = 'Outcome (Won / Lost)';
 export const PIPELINE_STAGE_IDS = [1, 2, 3, 4, 5, 6, 7, 9];
+export function approvalStagesForRole(roleName?: string | null): number[] {
+  const role = (roleName ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (['sh', 'sales_head'].includes(role)) return [1, 5, 6];
+  if (['ceo', 'approver_gate2', 'ceo/gate_2_approver'].includes(role)) return [2, 4];
+  return [];
+}
+
+export function workStagesForRole(roleName?: string | null): number[] {
+  return (roleName ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_') === 'estimation_team' ? [3] : [];
+}
+
 export function isOpportunityOutcome(stageId: number | null | undefined) {
   return [7, 8, 10].includes(stageId ?? 0);
 }

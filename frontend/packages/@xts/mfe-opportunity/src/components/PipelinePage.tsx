@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Briefcase, Clock, Plus, Search, CheckCircle2 } from 'lucide-react';
+import { Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2 } from 'lucide-react';
 import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, SegmentedProgress, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle } from '@xts/design-system';
 import type { ListFilter, OpportunitySummary, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
@@ -74,15 +74,22 @@ function OpportunityCard({ opportunity: o, highlight }: { opportunity: Opportuni
     </Link>
   </Card>;
 }
-function OpportunityBoard({ opportunities, savedId }: { opportunities: OpportunitySummary[]; savedId: string | null }) {
+function OpportunityBoard({ opportunities, savedId, showAllStages, stageIds }: { opportunities: OpportunitySummary[]; savedId: string | null; showAllStages: boolean; stageIds?: number[] }) {
+  const boardRef = useRef<HTMLDivElement>(null);
+  const boardId = useId(), helpId = useId();
+  const scrollStages = (direction: number) => {
+    const board = boardRef.current;
+    if (board) board.scrollBy({ left: direction * board.clientWidth * 0.8, behavior: 'auto' });
+  };
   type Lane = { key: string; label: string; state: OpportunityState; order: number; items: OpportunitySummary[] };
   const lanes = new Map<string, Lane>();
-  if (opportunities.some(o => o.stageId != null)) {
-    for (const [order, stageId] of PIPELINE_STAGE_IDS.entries()) {
+  const initialStages = stageIds ?? (showAllStages && opportunities.some(o => o.stageId != null) ? PIPELINE_STAGE_IDS : []);
+  if (initialStages.length) {
+    for (const [order, stageId] of initialStages.entries()) {
       const state = stageId === 1 ? 'SALES_REVIEW' : stageId === 2 || stageId === 4 ? 'GATE1_PENDING' : stageId === 3 || stageId === 6 || stageId === 10 ? 'IN_PROGRESS' : stageId === 8 || stageId === 9 ? 'GATE1_NO_GO' : 'GATE1_GO';
       lanes.set(`stage-${stageId}`, { key: `stage-${stageId}`, label: stageId === 7 ? OPPORTUNITY_OUTCOME_LABEL : STAGE_LABELS[stageId], state, order, items: [] });
     }
-  } else {
+  } else if (showAllStages) {
     for (const state of ['SALES_REVIEW', 'GATE1_PENDING'] as const) lanes.set(state, { key: state, label: STATE_LABELS[state], state, order: STAGES.indexOf(state), items: [] });
   }
   for (const opportunity of opportunities) {
@@ -91,11 +98,22 @@ function OpportunityBoard({ opportunities, savedId }: { opportunities: Opportuni
     if (!lanes.has(key)) lanes.set(key, { key, label: stageId == null ? STATE_LABELS[state] : STAGE_LABELS[stageId] ?? `Stage ${stageId}`, state, order: stageId ?? STAGES.indexOf(state), items: [] });
     lanes.get(key)!.items.push(opportunity);
   }
-  return <div className="opp-board">{Array.from(lanes.values()).sort((a, b) => a.order - b.order).map(lane => <section key={lane.key} className={`opp-lane opp-state-${lane.state}`}>
-    <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><span className="opp-lane-dot" aria-hidden="true" /><span className="flex-1">{lane.label}</span><Badge variant="outline">{lane.items.length}</Badge></h3>
-    {lane.items.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={savedId === o.id} />)}
-    {!lane.items.length && <p className="opp-empty text-xs">No opportunities in this stage.</p>}
-  </section>)}</div>;
+  return <div className="opp-board-container">
+    <div className="mb-2 flex items-center justify-between gap-3">
+      <p id={helpId} className="text-xs text-muted-foreground">{lanes.size} stages · Scroll sideways to view all stages</p>
+      <div className="flex shrink-0 gap-1" role="group" aria-label="Board navigation">
+        <Button size="icon" variant="outline" className="size-8" aria-label="Previous stages" aria-controls={boardId} onClick={() => scrollStages(-1)}><ChevronLeft className="size-4" /></Button>
+        <Button size="icon" variant="outline" className="size-8" aria-label="Next stages" aria-controls={boardId} onClick={() => scrollStages(1)}><ChevronRight className="size-4" /></Button>
+      </div>
+    </div>
+    <div id={boardId} ref={boardRef} className="opp-board" role="region" aria-label="Pipeline stages" aria-describedby={helpId} tabIndex={0}>{Array.from(lanes.values()).sort((a, b) => a.order - b.order).map(lane => <section key={lane.key} className={`opp-lane opp-state-${lane.state}`}>
+      <h3 className="flex items-center gap-2 text-sm font-semibold"><span className="opp-lane-dot" aria-hidden="true" /><span className="flex-1">{lane.label}</span><Badge variant="outline">{lane.items.length}</Badge></h3>
+      <div className="opp-lane-cards" role="region" aria-label={`${lane.label} opportunities`} tabIndex={0}>
+        {lane.items.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={savedId === o.id} />)}
+        {!lane.items.length && <p className="opp-empty text-xs">No opportunities in this stage.</p>}
+      </div>
+    </section>)}</div>
+  </div>;
 }
 export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue'] }) {
   const service = useOpportunityService(), access = useOpportunityAccess();
@@ -109,6 +127,8 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
   const title = queue === 'MY_APPROVALS' ? 'My approvals' : queue === 'MY_WORK' ? 'My Work' : 'Opportunity pipeline';
   useSetPageTitle(title);
   const list = resource.data?.nodes ?? [];
+  const boardStageIds = queue === 'MY_APPROVALS' ? access.approvalStageIds : queue === 'MY_WORK' && access.workStageIds?.length ? access.workStageIds : undefined;
+  const showEmptyBoard = view === 'board' && Boolean(boardStageIds?.length);
   if (!allowed || resource.error?.message.includes('You do not have permission to view this workflow.')) return <AccessUnavailable page={title} changed={visited.current === queue} destination={
     queue !== 'PIPELINE' && access.pipeline ? { path: '/opportunity', label: 'Go to Pipeline' } :
     queue !== 'MY_WORK' && access.work ? { path: '/opportunity/work', label: 'Go to My Work' } :
@@ -124,7 +144,7 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
       ].map(stat => <Card key={stat.title} className={cn('min-w-0 border-t-[3px] bg-gradient-to-br from-card from-50% shadow-sm', stat.tone, stat.wash)}><section className="px-3 py-2.5"><div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">{stat.title}<stat.icon className={cn('size-4 shrink-0', stat.iconTone)} /></div><strong className="my-0.5 block break-words text-xl font-semibold">{stat.value}</strong><p className="text-xs text-muted-foreground">{stat.hint}</p></section></Card>)}</div>
     </>}
     <div className="my-3 flex flex-wrap items-center justify-between gap-3"><div className="relative w-full sm:max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input className="pl-9" aria-label="Search opportunities" placeholder="Search opportunity, client or reference…" value={search} onChange={e => { setSearch(e.target.value); setAfter(null); }} /></div><div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Pipeline view">{(['board', 'list'] as const).map(v => <Button key={v} size="sm" variant={view === v ? 'secondary' : 'ghost'} aria-pressed={view === v} onClick={() => setView(v)}>{v === 'board' ? 'Board' : 'List'}</Button>)}</div></div>
-    {resource.data && !resource.loading && !resource.error && (list.length === 0 ? <section className="opp-empty"><Briefcase className="mx-auto mb-4 size-8 text-primary" /><h3 className="text-xl font-semibold">{query ? 'No matching opportunities' : 'Your pipeline starts here'}</h3><p className="my-3 text-sm text-muted-foreground">{query ? 'Try a different search.' : 'No opportunities were returned for your permitted scope.'}</p>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new">Add Opportunity</Link></Button>}</section> : view === 'board' ? <TooltipProvider delayDuration={150}><OpportunityBoard opportunities={list} savedId={params.get('saved')} /></TooltipProvider> : <div className="space-y-3">{/* Stacked list remains usable on mobile without page overflow. */}<TooltipProvider delayDuration={150}><div className="hidden overflow-hidden rounded-xl border bg-card md:block"><Table><TableHeader className="bg-muted/50"><TableRow className="hover:bg-transparent"><TableHead className="h-9 text-[11px] uppercase tracking-wide">Opportunity</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Client</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Owner</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Due</TableHead><TableHead className="h-9 text-right text-[11px] uppercase tracking-wide">Value · USD</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Stage</TableHead></TableRow></TableHeader><TableBody>{list.map(o => <OpportunityRow key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</TableBody></Table></div><div className="grid gap-2 md:hidden">{list.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</div></TooltipProvider></div>)}
+    {resource.data && !resource.loading && !resource.error && (list.length === 0 && !showEmptyBoard ? <section className="opp-empty"><Briefcase className="mx-auto mb-4 size-8 text-primary" /><h3 className="text-xl font-semibold">{query ? 'No matching opportunities' : 'Your pipeline starts here'}</h3><p className="my-3 text-sm text-muted-foreground">{query ? 'Try a different search.' : 'No opportunities were returned for your permitted scope.'}</p>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new">Add Opportunity</Link></Button>}</section> : view === 'board' ? <TooltipProvider delayDuration={150}><OpportunityBoard opportunities={list} savedId={params.get('saved')} showAllStages={queue !== 'MY_APPROVALS'} stageIds={boardStageIds} /></TooltipProvider> : <div className="space-y-3">{/* Stacked list remains usable on mobile without page overflow. */}<TooltipProvider delayDuration={150}><div className="hidden overflow-hidden rounded-xl border bg-card md:block"><Table><TableHeader className="bg-muted/50"><TableRow className="hover:bg-transparent"><TableHead className="h-9 text-[11px] uppercase tracking-wide">Opportunity</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Client</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Owner</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Due</TableHead><TableHead className="h-9 text-right text-[11px] uppercase tracking-wide">Value · USD</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Stage</TableHead></TableRow></TableHeader><TableBody>{list.map(o => <OpportunityRow key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</TableBody></Table></div><div className="grid gap-2 md:hidden">{list.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</div></TooltipProvider></div>)}
     {resource.data?.hasNextPage && <Button variant="outline" className="mt-5" onClick={() => setAfter(resource.data?.endCursor ?? null)}>Next page</Button>}
     {after && <Button variant="ghost" className="ml-3 mt-5" onClick={() => setAfter(null)}>First page</Button>}
   </div>;
