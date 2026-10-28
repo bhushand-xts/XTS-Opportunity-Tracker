@@ -227,3 +227,54 @@ it('makes clearing a saved scope an explicit removal while preserving unrelated 
   expect(count('Alignment')).toBe('1');
   expect(screen.getByRole('textbox', { name: 'Add alignment item' })).toHaveValue('Pending alignment');
 });
+
+it.each(['risk', 'alignment'] as const)('blocks adding a duplicate %s while preserving the input and saved counts', kind => {
+  const h = mount({ revision: 3, summary: 'Saved scope', risks: [{ id: '21', description: 'Access delay', severity: 'LOW' }], alignment: [{ id: '31', text: 'Client platform' }] });
+  const field = screen.getByRole('textbox', { name: kind === 'risk' ? 'Add risk' : 'Add alignment item' });
+  const text = kind === 'risk' ? ' ACCESS   delay ' : ' CLIENT   platform ';
+  fireEvent.change(field, { target: { value: text } });
+  fireEvent.click((kind === 'risk' ? riskPanel() : alignmentPanel()).getByRole('button', { name: 'Add' }));
+  const hint = (kind === 'risk' ? riskPanel() : alignmentPanel()).getByRole('alert');
+  expect(hint).toHaveTextContent(`This ${kind === 'risk' ? 'risk' : 'alignment item'} is already listed.`);
+  expect(hint).toHaveTextContent('or edit the existing one.');
+  expect(screen.queryByText('Unable to complete this action')).not.toBeInTheDocument();
+  expect(field).toHaveAttribute('aria-invalid', 'true');
+  expect(field).toHaveAttribute('aria-describedby', hint.id);
+  expect(h.saveScope).not.toHaveBeenCalled();
+  expect(field).toHaveValue(text);
+  expect(count(kind === 'risk' ? 'Risks' : 'Alignment')).toBe('1');
+  fireEvent.change(field, { target: { value: 'A different entry' } });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(field).not.toHaveAttribute('aria-invalid');
+});
+
+it.each(['risk', 'alignment'] as const)('blocks updating a %s to another saved description and allows correcting the draft', async kind => {
+  const h = mount({ revision: 3, summary: 'Saved scope',
+    risks: [{ id: '21', description: 'Access delay', severity: 'LOW' }, { id: '22', description: 'Schedule', severity: 'HIGH' }],
+    alignment: [{ id: '31', text: 'Client platform' }, { id: '32', text: 'Standards' }],
+  });
+  const field = screen.getByRole('textbox', { name: kind === 'risk' ? 'Risk description 2' : 'Alignment item 2' });
+  fireEvent.change(field, { target: { value: kind === 'risk' ? ' ACCESS  delay ' : ' CLIENT  platform ' } });
+  fireEvent.click(screen.getByRole('button', { name: kind === 'risk' ? 'Update risk 2' : 'Update alignment 2' }));
+  expect((kind === 'risk' ? riskPanel() : alignmentPanel()).getByRole('alert')).toHaveTextContent('is already listed.');
+  expect(field).toHaveAttribute('aria-invalid', 'true');
+  expect(h.saveScope).not.toHaveBeenCalled();
+  fireEvent.change(field, { target: { value: 'Corrected description' } });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: kind === 'risk' ? 'Update risk 2' : 'Update alignment 2' }));
+  await waitFor(() => expect(h.saveScope).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(count(kind === 'risk' ? 'Risks' : 'Alignment')).toBe('2');
+});
+
+it('allows removing a pre-existing duplicate without discarding unrelated input', async () => {
+  const h = mount({ revision: 3, summary: 'Saved scope',
+    risks: [{ id: '21', description: 'Access delay', severity: 'LOW' }, { id: '22', description: 'ACCESS  delay', severity: 'HIGH' }],
+    alignment: [],
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Add risk' }), { target: { value: 'Pending risk' } });
+  fireEvent.click(screen.getByRole('button', { name: /Remove ACCESS\s+delay/ }));
+  await waitFor(() => expect(count('Risks')).toBe('1'));
+  expect(h.saveScope).toHaveBeenCalledOnce();
+  expect(screen.getByRole('textbox', { name: 'Add risk' })).toHaveValue('Pending risk');
+});

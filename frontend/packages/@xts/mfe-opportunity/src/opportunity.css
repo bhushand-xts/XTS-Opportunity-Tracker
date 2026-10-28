@@ -126,7 +126,21 @@
 .opp-status.opp-state-SALES_REJECTED, .opp-status.opp-state-GATE1_NO_GO { background: #fff0ef; color: #a34242; border-color: #efcece; }
 .opp-status.opp-status-pair { background: transparent; box-shadow: none; }
 .opp-lane.opp-state-PREPARATION_PENDING { border-top-color: #b08a33; }.opp-lane.opp-state-IN_PROGRESS { border-top-color: #4e70b8; }.opp-lane.opp-state-SALES_REVIEW { border-top-color: #8e7bd2; }.opp-lane.opp-state-GATE1_PENDING { border-top-color: #6352cc; }.opp-lane.opp-state-GATE1_GO { border-top-color: #3e957e; }
-.opp-overview { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.3fr) minmax(220px,.7fr); gap: 12px; align-items: start; }
+.opp-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(260px,300px); gap: 12px; align-items: start; }
+.opp-detail-workspace { min-width: 0; container-type: inline-size; }
+.opp-detail-sidebar { display: grid; gap: 8px; min-width: 0; align-self: start; position: sticky; top: 12px; }
+.opp-overview { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.3fr); gap: 12px; align-items: start; }
+.opp-assessment-editors { min-width: 0; container-type: inline-size; }
+.opp-assessment-layout .opp-panel > :first-child { padding: 9px 12px; }
+.opp-assessment-layout .opp-panel > :nth-child(2) { padding: 12px; }
+.opp-assessment-counts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+@container (min-width: 1000px) {
+  .opp-assessment-layout { grid-template-columns: minmax(0,1fr) 220px; }
+  .opp-assessment-counts { gap: 8px; }
+  .opp-assessment-counts strong { font-size: 24px; }
+}
+@container (max-width: 760px) { .opp-assessment-layout .opp-assessment-items { grid-template-columns: minmax(0,1fr); } }
+@container (max-width: 700px) { .opp-detail-workspace .opp-overview, .opp-detail-workspace .opp-assignment { grid-template-columns: minmax(0,1fr); } }
 .opp-values { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px 12px; margin-top: 8px; }.opp-values dt { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 2px; }.opp-values dd { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Use the panel's width, rather than the viewport, to keep the solicitation compact. */
 .opp-solicitation { container: opp-solicitation / inline-size; }
@@ -210,26 +224,30 @@
 .opp-review-buttons button:hover:not(:disabled) { color: #fff; border-color: var(--opp-action-border); background: linear-gradient(180deg, var(--opp-action-top), var(--opp-action-bottom)); filter: brightness(1.08); box-shadow: inset 0 1px 0 #ffffffa3, 0 4px 7px #14213d38; }
 .opp-review-buttons button[aria-pressed=true] { opacity: 1; box-shadow: inset 0 0 0 2px #ffffff80, 0 1px 3px #14213d26; }
 .opp-dialog :is(.opp-review-success, .opp-review-info, .opp-review-warning, .opp-review-error) { border-radius: 999px; padding-inline: 20px; box-shadow: inset 0 1px 0 #ffffff80, 0 2px 4px #14213d26; }
-.opp-progress-panel > :nth-child(2) { padding: 14px; }
+.opp-detail-sidebar .opp-review-buttons, .opp-detail-sidebar .opp-review-secondary { gap: 6px; }
+.opp-detail-sidebar .opp-review-buttons button { min-height: 34px; padding: 6px 9px 6px 12px; font-size: 11px; line-height: 16px; gap: 6px; }
+.opp-detail-sidebar .opp-review-button-arrow { width: 19px; height: 19px; }
+.opp-progress-panel > :first-child { padding: 10px 12px; }
+.opp-progress-panel > :nth-child(2) { padding: 12px; }
 .opp-stage-timeline { list-style: none; margin: 0; padding: 0; }
-.opp-timeline-stage { position: relative; display: grid; grid-template-columns: 28px minmax(0,1fr); gap: 10px; padding-bottom: 20px; }
-.opp-timeline-stage::before { content: ''; position: absolute; top: 28px; bottom: 0; left: 13px; width: 2px; background: #e2e5ed; }
+.opp-timeline-stage { position: relative; display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 8px; padding-bottom: 10px; }
+.opp-timeline-stage::before { content: ''; position: absolute; top: 20px; bottom: 0; left: 9px; width: 2px; background: #e2e5ed; }
 .opp-timeline-stage:last-child { padding-bottom: 0; }
 .opp-timeline-stage:last-child::before { display: none; }
-.opp-timeline-marker { z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid #dce1eb; background: #f6f7fa; color: #7c8599; font-size: 11px; font-weight: 600; }
-.opp-timeline-stage.current > .opp-timeline-marker { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: white; box-shadow: 0 0 0 4px hsl(var(--primary) / .1); }
+.opp-timeline-marker { z-index: 1; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #dce1eb; background: #f6f7fa; color: #7c8599; font-size: 10px; font-weight: 600; }
+.opp-timeline-stage.current > .opp-timeline-marker { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: white; box-shadow: 0 0 0 3px hsl(var(--primary) / .1); }
 .opp-timeline-stage.reached > .opp-timeline-marker { background: #eaf7f1; border-color: #c9e7db; color: #24816a; }
 .opp-timeline-stage.upcoming > .opp-timeline-marker { background: #fafbfc; border-color: #e8ebf1; color: #c3c9d5; }
 .opp-timeline-stage.upcoming::before { background: #eef0f5; }
 .opp-timeline-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.opp-timeline-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
+.opp-timeline-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 6px; }
 .opp-timeline-state { flex-shrink: 0; color: #7c8599; font-size: 10px; }
 .opp-timeline-stage.current .opp-timeline-state { color: hsl(var(--primary)); font-weight: 600; }
 .opp-timeline-stage.reached .opp-timeline-state { color: #24816a; }
-.opp-timeline-heading > h3, .opp-timeline-body > h3 { margin: 2px 0 0; font-size: 13px; font-weight: 650; line-height: 19px; overflow-wrap: anywhere; }
+.opp-timeline-heading > h3, .opp-timeline-body > h3 { margin: 0; font-size: 12px; font-weight: 650; line-height: 18px; overflow-wrap: anywhere; }
 .opp-timeline-stage.upcoming .opp-timeline-heading > h3 { color: #9ba4b5; font-weight: 400; }
-.opp-progress-time { display: block; font-size: 11px; line-height: 17px; color: #69758c; }
-.opp-progress-actor, .opp-progress-detail-label { display: block; font-size: 11px; line-height: 17px; overflow-wrap: anywhere; }
+.opp-progress-time { display: block; font-size: 10px; line-height: 15px; color: #69758c; }
+.opp-progress-actor, .opp-progress-detail-label { display: block; font-size: 10px; line-height: 15px; overflow-wrap: anywhere; }
 .opp-progress-actor { color: #56657e; }
 .opp-progress-detail-label { color: #24816a; }
 .opp-stage-completion { margin-top: 4px; }
@@ -294,7 +312,7 @@
 .opportunity-root :is(th, td) { padding: 8px 10px; }
 .opp-drawer { padding: 16px; gap: 12px; }
 .opp-dialog { padding: 18px; gap: 12px; }
-@media (max-width: 1200px) { .opp-overview { grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); }.opp-overview > aside { grid-column: 1/-1; } }
+@media (max-width: 900px) { .opp-detail-layout { grid-template-columns: minmax(0,1fr); }.opp-detail-sidebar { position: static; width: 100%; max-width: 400px; } }
 @media (max-width: 960px) { .opp-intake { grid-template-columns: minmax(0,1fr); }.opp-stats,.opp-workspace-strip { grid-template-columns: repeat(2,minmax(0,1fr)); }.opp-workspace-strip > div:last-child { grid-column: 1 / -1; }.opp-page { padding: 14px 16px; } }
 @media (max-width: 650px) { .opp-page { padding: 12px; }.opp-heading h2 { font-size: 22px; }.opp-overview,.opp-assignment,.opp-fields { grid-template-columns: minmax(0,1fr); }.opp-overview > aside { grid-column: auto; }.opp-lane { min-height: 0; }.opp-panel > :first-child { padding: 12px; }.opp-panel > :nth-child(2) { padding: 12px; }.opp-values { grid-template-columns: minmax(0,1fr); }.opp-stats { gap: 9px; }.opp-stat { padding: 12px; }.opp-stat > strong { font-size: 21px; } }
 @media (pointer: coarse) {

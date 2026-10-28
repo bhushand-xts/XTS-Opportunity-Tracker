@@ -26,7 +26,7 @@ function Documents({ opportunity: o }: { opportunity: OpportunityDetail }) {
     ['Source document', o.form.rfp.source ? <DocumentDownload document={o.form.rfp.source} opportunityId={o.id} /> : undefined],
   ]} /><p className="mt-3 text-sm text-muted-foreground">Additional document management is coming soon.</p></Panel>;
 }
-function Overview({ opportunity: o, onSaved }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void }) {
+function Overview({ opportunity: o }: { opportunity: OpportunityDetail }) {
   const f = o.form, s = f.solicitation, d = f.dates;
   return <div className="opp-overview"><div className="space-y-3"><Panel title="Opportunity details" tone="violet"><Values values={[
     ['Opportunity name', f.title], ['Client budget', money(o.estimatedValue, o.currencyCode)], ['Client budget (USD)', f.estimatedValueUsd ? money(f.estimatedValueUsd, 'USD') : ''], ['Currency', o.currencyCode], ['Service line', f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine], ['Lead source', LEAD_SOURCES.find(source => source.id === f.leadSource)?.label ?? f.leadSource], ['Owner', userLabel(o.owner)], ['Priority', f.priority], ['Description', f.description],
@@ -44,7 +44,7 @@ function Overview({ opportunity: o, onSaved }: { opportunity: OpportunityDetail;
     {o.salesRecommendation && <Panel title="Sales Head recommendation" tone="teal"><Values values={[
       ['Reviewed by', userLabel(o.salesRecommendation.actor)], ['Package revision', o.salesRecommendation.packageRevision], ['Recommendation', o.salesRecommendation.note],
     ]} /></Panel>}
-  </div><aside className="space-y-3" aria-label="Opportunity approval and progress"><ReviewActions opportunity={o} onSaved={onSaved} /><OpportunityProgress opportunity={o} /></aside></div>;
+  </div></div>;
 }
 type TabKey = 'overview' | 'qa' | 'scope' | 'estimation' | 'documents' | 'activity';
 export function OpportunityDetailsPage({ review = false }: { review?: boolean }) {
@@ -84,17 +84,25 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
     <div className="opp-workspace-strip"><div><small>Client budget</small><strong>{money(o.estimatedValue, o.currencyCode)}</strong></div><div><small>Owner</small><strong>{userLabel(o.owner)}</strong></div><div><small>Submission deadline</small><div className="opp-deadline-value"><strong>{o.form.dates.submissionDeadline || 'Not provided'}</strong><small>{o.form.solicitation.submissionTimezone}</small></div></div></div>
     <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}>
       <TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>)}</TabsList>
-      {tabs.map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-3">
+      <div className="opp-detail-layout mt-3">
+      <div className="opp-detail-workspace">
+      {tabs.map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-0">
         {tab.key !== 'overview' && awaitingEstimation ? <div role="status" className="rounded-lg border bg-background px-6 py-8 text-center">
           <h3 className="text-sm font-semibold">Available after CEO approval</h3>
           <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">{tab.label} will be available once the CEO approves this opportunity and it enters the Solution/Scoping Estimation (Engineering) stage.</p>
-        </div> : tab.key === 'overview' ? <Overview opportunity={o} onSaved={resource.setData} />
-          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} />
+        </div> : tab.key === 'overview' ? <Overview opportunity={o} />
+          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} showActions={false} />
           : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={review} />
           : tab.key === 'documents' ? <Documents opportunity={o} />
           : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />
           : <Activity opportunity={o} />}
       </TabsContent>)}
+      </div>
+      <aside className="opp-detail-sidebar" aria-label="Opportunity approval and progress">
+        <ReviewActions opportunity={o} onSaved={resource.setData} />
+        <OpportunityProgress opportunity={o} />
+      </aside>
+      </div>
     </Tabs>
   </div>;
 }

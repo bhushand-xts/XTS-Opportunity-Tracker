@@ -7,15 +7,15 @@ export interface ScopeRisk { id: string; description: string; severity: 'LOW' | 
 export interface ScopeAlignment { id: string; text: string; }
 export interface OpportunityScope { revision: number; summary: string; risks: ScopeRisk[]; alignment: ScopeAlignment[]; }
 
-// Counting current and previous versions provides a revision without changing
-// the user's existing six-table schema. Inactive records remain part of it.
+// Tracker versions count twice so moving a deleted row out of the current
+// table still advances the revision and prevents stale edits from restoring it.
 const SCOPE_QUERY = `SELECT
   ((SELECT COUNT(*) FROM tbl_opportunity_scope WHERE opportunity_id = $1) +
-   (SELECT COUNT(*) FROM tbl_opportunity_scope_tracker WHERE opportunity_id = $1) +
+   (SELECT COUNT(*) * 2 FROM tbl_opportunity_scope_tracker WHERE opportunity_id = $1) +
    (SELECT COUNT(*) FROM tbl_opportunity_risk WHERE opportunity_id = $1) +
-   (SELECT COUNT(*) FROM tbl_opportunity_risk_tracker WHERE opportunity_id = $1) +
+   (SELECT COUNT(*) * 2 FROM tbl_opportunity_risk_tracker WHERE opportunity_id = $1) +
    (SELECT COUNT(*) FROM tbl_opportunity_alignment WHERE opportunity_id = $1) +
-   (SELECT COUNT(*) FROM tbl_opportunity_alignment_tracker WHERE opportunity_id = $1))::INTEGER AS revision,
+   (SELECT COUNT(*) * 2 FROM tbl_opportunity_alignment_tracker WHERE opportunity_id = $1))::INTEGER AS revision,
   COALESCE((SELECT scope_description FROM tbl_opportunity_scope WHERE opportunity_id = $1 AND is_active = TRUE), '') AS summary,
   COALESCE((SELECT JSON_AGG(JSON_BUILD_OBJECT('id', risk_id::TEXT, 'description', risk_description, 'severity', severity) ORDER BY risk_id)
     FROM tbl_opportunity_risk WHERE opportunity_id = $1 AND is_active = TRUE), '[]'::JSON) AS risks,
@@ -42,17 +42,33 @@ async function snapshot(client: PoolClient, kind: Kind, opportunityId: number, i
 }
 
 interface Item { id: string; description: string; severity?: string; }
-async function syncItems(client: PoolClient, kind: 'RISKS' | 'ALIGNMENT', opportunityId: number, incoming: Item[], previous: Item[], userId: number) {
-  const config = tables[kind], stored = new Map(previous.map(item => [item.id, item]));
+const normalizeDescription = (description: string) => description.trim().replace(/\s+/g, ' ').toLowerCase();
+function validateItems(kind: 'RISKS' | 'ALIGNMENT', incoming: Item[], previous: Item[]) {
+  const stored = new Map(previous.map(item => [item.id, item]));
+  const counts = new Map<string, number>();
+  for (const item of incoming) {
+    const description = normalizeDescription(item.description);
+    counts.set(description, (counts.get(description) ?? 0) + 1);
+  }
   for (const item of incoming) {
     if (!item.id.startsWith('draft-') && !stored.has(item.id)) throw notFound('An assessment item is no longer available for this opportunity. Refresh before saving.');
+    const prior = stored.get(item.id), description = normalizeDescription(item.description);
+    // Allow existing duplicates to be removed or corrected without blocking
+    // unrelated edits. Never introduce another duplicate through an add/edit.
+    if (prior && normalizeDescription(prior.description) === description) continue;
+    if ((counts.get(description) ?? 0) > 1) throw conflict(kind === 'RISKS'
+      ? 'This risk already exists for this opportunity.'
+      : 'This alignment item already exists for this opportunity.');
   }
+}
+async function syncItems(client: PoolClient, kind: 'RISKS' | 'ALIGNMENT', opportunityId: number, incoming: Item[], previous: Item[], userId: number) {
+  const config = tables[kind], stored = new Map(previous.map(item => [item.id, item]));
   const retained = new Set(incoming.map(item => item.id));
   for (const item of previous) {
     if (retained.has(item.id)) continue;
     await snapshot(client, kind, opportunityId, item.id);
-    await client.query(`UPDATE ${config.table} SET is_active = FALSE, updated_by = $3, updated_dt = CURRENT_TIMESTAMP
-      WHERE opportunity_id = $1 AND ${config.id} = $2 AND is_active = TRUE`, [opportunityId, item.id, userId]);
+    await client.query(`DELETE FROM ${config.table}
+      WHERE opportunity_id = $1 AND ${config.id} = $2 AND is_active = TRUE`, [opportunityId, item.id]);
   }
   for (const item of incoming) {
     const prior = stored.get(item.id), description = item.description.trim();
@@ -76,6 +92,12 @@ export async function saveScope(opportunityId: number, scope: OpportunityScope, 
     if (opportunity.stageId !== 3 || opportunity.subStageId !== 7) throw conflict('Scope and assessment can only be updated during engineering estimation.');
     const current = (await client.query<OpportunityScope>(SCOPE_QUERY, [opportunityId])).rows[0];
     if (current.revision !== scope.revision) throw conflict('The saved assessment has changed. Refresh the opportunity before saving again. Your draft has not been saved.');
+    // Compare against current rows from this opportunity while its parent row
+    // is locked, so concurrent saves cannot introduce duplicate descriptions.
+    const alignment = scope.alignment.map(item => ({ id: item.id, description: item.text }));
+    const previousAlignment = current.alignment.map(item => ({ id: item.id, description: item.text }));
+    if (section === 'ALL' || section === 'RISKS') validateItems('RISKS', scope.risks, current.risks);
+    if (section === 'ALL' || section === 'ALIGNMENT') validateItems('ALIGNMENT', alignment, previousAlignment);
     if (section === 'ALL' || section === 'SCOPE') {
       const existing = (await client.query<{ id: string; description: string; isActive: boolean }>(`SELECT scope_id::TEXT AS id, scope_description AS description, is_active AS "isActive"
         FROM tbl_opportunity_scope WHERE opportunity_id = $1 FOR UPDATE`, [opportunityId])).rows[0];
@@ -96,7 +118,6 @@ export async function saveScope(opportunityId: number, scope: OpportunityScope, 
       }
     }
     if (section === 'ALL' || section === 'RISKS') await syncItems(client, 'RISKS', opportunityId, scope.risks, current.risks, userId);
-    if (section === 'ALL' || section === 'ALIGNMENT') await syncItems(client, 'ALIGNMENT', opportunityId,
-      scope.alignment.map(item => ({ id: item.id, description: item.text })), current.alignment.map(item => ({ id: item.id, description: item.text })), userId);
+    if (section === 'ALL' || section === 'ALIGNMENT') await syncItems(client, 'ALIGNMENT', opportunityId, alignment, previousAlignment, userId);
   });
 }
