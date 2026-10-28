@@ -202,6 +202,33 @@
   .opp-question-categories > button { min-height: 40px; }
 }
 .opp-detail-heading { display: grid; gap: 4px; margin-bottom: 8px; }
+.opp-record-details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px 20px; margin: 0; font-size: 14px; line-height: 20px; }
+.opp-record-details > div { min-width: 0; }
+.opp-record-details .opp-record-wide { grid-column: 1 / -1; }
+.opp-record-details dt { margin-bottom: 4px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 16px; }
+.opp-record-details dd { margin: 0; overflow-wrap: anywhere; }
+.opp-record-details .opp-record-title { font-size: 18px; line-height: 26px; font-weight: 600; }
+.opp-record-details .opp-record-reference { margin-top: 2px; color: hsl(var(--muted-foreground)); font-size: 12px; }
+.opp-record-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.opp-record-badges > span { max-width: 100%; white-space: normal; }
+.opp-record-status { text-align: right; }
+.opp-record-status .opp-record-badges { justify-content: flex-end; }
+.opp-record-budget { border-top: 1px solid hsl(var(--border)); padding-top: 14px; font-variant-numeric: tabular-nums; }
+@media (max-width: 480px) { .opp-record-details { grid-template-columns: minmax(0,1fr); } }
+.opp-detail-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.opp-detail-toolbar > .opp-review-actions { margin-left: auto; max-width: 100%; }
+.opp-detail-toolbar .opp-review-buttons-toolbar { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.opp-detail-toolbar .opp-review-buttons-toolbar > button { flex: 0 0 auto; width: auto; min-height: 34px; padding: 7px 16px; white-space: normal; }
+.opp-detail-toolbar .opp-review-button-label { flex: initial; }
+@media (min-width: 961px) {
+  .opp-detail-toolbar { display: grid; grid-template-columns: minmax(0,1fr) minmax(260px,330px); column-gap: 12px; }
+  .opp-detail-toolbar > .opp-review-actions { width: 100%; margin-left: 0; }
+  .opp-detail-toolbar .opp-review-buttons-toolbar > button { flex: 1 1 0; padding-inline: 10px; }
+}
+@media (max-width: 480px) {
+  .opp-detail-toolbar > .opp-review-actions { margin-left: 0; }
+  .opp-detail-toolbar .opp-review-buttons-toolbar { justify-content: flex-start; }
+}
 .opp-detail-heading .opp-heading { margin-bottom: 0; }
 .opp-opportunity-number { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; max-width: 100%; padding: 4px 7px; border: 1px solid #e1e5f1; border-radius: 6px; background: #f5f7fd; color: #52698d; overflow-wrap: anywhere; }
 .opp-opportunity-number > span { font-size: 9px; font-weight: 500; }
@@ -212,7 +239,7 @@
 .opp-card-reference > .opp-opportunity-number > strong { font-size: 10px; }
 .opp-detail-title { margin: 6px 0 0; gap: 8px 12px; }
 .opp-detail-identity { display: flex; flex: 1 1 280px; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
-.opp-detail-title h2 { font-size: 22px; margin: 0; max-width: 100%; overflow-wrap: anywhere; }
+.opp-detail-title h2 { font-size: 24px; line-height: 1.3; font-weight: 650; letter-spacing: -.65px; margin: 0; max-width: 100%; overflow-wrap: anywhere; }
 .opp-tabs { height: auto; display: flex; flex-wrap: wrap; justify-content: start; gap: 4px; width: fit-content; max-width: 100%; }.opp-tabs > button { padding: 7px 10px; }
 /* Source document panel: the chosen file name and the "Choose file" button stand out from the box. */
 .opp-upload .opp-upload-file { color: hsl(var(--primary)); font-weight: 600; }
@@ -241,6 +268,18 @@
 .opp-review-actions { min-width: 0; }
 .opp-review-actions:empty { display: none; }
 .opp-review-buttons { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; }
+/* The "bare" variant — at the top of the sidebar, right above Opportunity progress — is a plain
+   stack of individually-shaped shadcn buttons (no shared Panel card/title/description wrapper
+   and no primary/secondary size hierarchy), each still a standard full-width Button like the
+   rest of the sidebar. Same tone-color rules below still apply, since this keeps the
+   .opp-review-buttons class too. */
+.opp-review-buttons-bare { display: flex; flex-direction: column; gap: 8px; }
+/* The "card" variant sits as a 3rd header stat-card (replacing a plain data card), so its
+   buttons need to fit a narrow ~250-300px card instead of a full sidebar column — compact,
+   auto-width, wrapping onto a second line rather than stretching full width. */
+.opp-review-buttons-card { flex-direction: row; flex-wrap: wrap; }
+.opp-review-buttons-card > button { width: auto; flex: 0 0 auto; min-height: 30px; padding: 6px 10px; font-size: 12px; gap: 5px; }
+.opp-review-buttons-card .opp-review-button-icon { width: 13px; height: 13px; }
 .opp-review-secondary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
 /* Flat, tone-tinted decision buttons with a small leading icon — the primary action (Approve/Go)
    is a solid fill, secondary actions (Hold/Reject/…) are a light tint, matching the rest of the

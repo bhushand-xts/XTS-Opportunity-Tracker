@@ -19,3 +19,12 @@ export const UPDATE_RATE_MASTER = gql`
     updateRateMaster(ratemasterId: $ratemasterId, input: $input) { ratemasterId roleName roleCode currencyId rateType defaultRate isActive }
   }
 `;
+
+// Same mutation the admin Estimate Phase Management screen uses, so a phase added
+// from the estimation grid here shows up there too (and vice versa) — one shared
+// phase master, not a parallel one.
+export const CREATE_ESTIMATION_PHASE = gql`
+  mutation OpportunityCreateEstimationPhase($input: CreateEstimationPhaseInput!) {
+    createEstimationPhase(input: $input) { id phaseName phaseCode displayOrder isActive }
+  }
+`;

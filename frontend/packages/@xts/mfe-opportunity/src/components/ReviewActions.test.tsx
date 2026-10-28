@@ -45,7 +45,7 @@ describe('persisted opportunity review actions', () => {
   it('keeps the saved CEO estimation hold selected after reopening, alongside approve and reject', () => {
     const held = salesReview({ stageId: 4, subStageId: 9, allowedActions: ['ESTIMATE_APPROVE', 'ESTIMATE_REJECT'] });
     const { rerender } = mount(held);
-    const hold = screen.getByRole('button', { name: 'Put Estimation On Hold', pressed: true });
+    const hold = screen.getByRole('button', { name: 'Hold Estimation', pressed: true });
     expect(hold).toBeVisible();
     expect(hold).toBeDisabled();
     expect(hold).toHaveClass('shadow-inner', 'text-amber-700');
@@ -54,7 +54,7 @@ describe('persisted opportunity review actions', () => {
     rerender({ ...held, allowedActions: [] });
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     rerender({ ...held, stageId: 5, subStageId: 10, allowedActions: ['BID_SUBMITTED'] });
-    expect(screen.queryByRole('button', { name: 'Put Estimation On Hold' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hold Estimation' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Proposal / Bid Submitted' })).toBeEnabled();
   });
 
@@ -258,7 +258,7 @@ describe('persisted opportunity review actions', () => {
   it.each([
     { stageId: 1, subStageId: 1, held: 3, approve: 'SALES_APPROVE', hold: 'SALES_HOLD', label: 'On Hold', next: 'Approve & Send to CEO' },
     { stageId: 2, subStageId: 4, held: 6, approve: 'GATE1_GO', hold: 'GATE1_HOLD', label: 'On Hold', next: 'Approve Go' },
-    { stageId: 4, subStageId: 8, held: 9, approve: 'ESTIMATE_APPROVE', hold: 'ESTIMATE_HOLD', label: 'Put Estimation On Hold', next: 'Approve Estimation' },
+    { stageId: 4, subStageId: 8, held: 9, approve: 'ESTIMATE_APPROVE', hold: 'ESTIMATE_HOLD', label: 'Hold Estimation', next: 'Approve Estimation' },
   ] as const)('keeps the completed hold selected at review stage $stageId', async ({ stageId, subStageId, held, approve, hold, label, next }) => {
     const warning = vi.spyOn(toast, 'warning');
     const current = salesReview({ stageId, subStageId, allowedActions: [approve, hold] });

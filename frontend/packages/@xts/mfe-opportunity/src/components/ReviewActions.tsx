@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label } from '@xts/design-system';
+import { Button, Card, Checkbox, cn, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label } from '@xts/design-system';
 import type { DecisionCommand, OpportunityDetail } from '@xts/api-contracts';
 import { applicableDecisions, decisionError } from '../lib/workflow';
 import { useOpportunityService } from '../services/OpportunityService';
@@ -22,7 +22,7 @@ const LABELS: Record<DecisionCommand['decision'], string> = {
   GATE1_NO_GO: 'Reject Opportunity',
   SUBMIT_ESTIMATE: 'Submit Estimation to CEO',
   ESTIMATE_APPROVE: 'Approve Estimation',
-  ESTIMATE_HOLD: 'Put Estimation On Hold',
+  ESTIMATE_HOLD: 'Hold Estimation',
   ESTIMATE_REJECT: 'Reject Estimation',
   BID_SUBMITTED: 'Proposal / Bid Submitted',
   START_NEGOTIATION: 'Under Negotiation',
@@ -33,6 +33,16 @@ const LABELS: Record<DecisionCommand['decision'], string> = {
   RESUME_PROPOSAL: 'Resume Proposal Follow-up',
   CLOSE_OPPORTUNITY: 'Close Opportunity',
   RESUBMIT: 'Resubmit for Review',
+};
+// Short labels for the "card" variant — a ~260px header card has no room for "Approve Estimation" /
+// "Hold Estimation" without wrapping onto a second line and looking crowded; the full LABELS text
+// still appears everywhere else (dialog title, Panel/bare variants).
+const COMPACT_LABELS: Partial<Record<DecisionCommand['decision'], string>> = {
+  SALES_APPROVE: 'Approve', SALES_REQUEST_CHANGES: 'Changes', SALES_HOLD: 'Hold', SALES_REJECT: 'Reject',
+  GATE1_GO: 'Approve', GATE1_REQUEST_CHANGES: 'Changes', GATE1_HOLD: 'Hold', GATE1_NO_GO: 'Reject',
+  SUBMIT_ESTIMATE: 'Submit', ESTIMATE_APPROVE: 'Approve', ESTIMATE_HOLD: 'Hold', ESTIMATE_REJECT: 'Reject',
+  BID_SUBMITTED: 'Submitted', START_NEGOTIATION: 'Negotiate', MARK_WON: 'Won', MARK_LOST: 'Lost',
+  OPPORTUNITY_HOLD: 'Hold', RESUME_NEGOTIATION: 'Resume', RESUME_PROPOSAL: 'Resume', CLOSE_OPPORTUNITY: 'Close', RESUBMIT: 'Resubmit',
 };
 const LEGACY_DECISIONS: DecisionCommand['decision'][] = ['SALES_APPROVE', 'SALES_REJECT', 'GATE1_GO', 'GATE1_NO_GO'];
 const NEGATIVE_DECISIONS: DecisionCommand['decision'][] = ['SALES_REJECT', 'GATE1_NO_GO', 'ESTIMATE_REJECT', 'MARK_LOST'];
@@ -89,7 +99,7 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
     : `The opportunity stays in ${stage} and moves to On Hold.`;
 }
 
-export function ReviewActions({ opportunity: o, onSaved }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void }) {
+export function ReviewActions({ opportunity: o, onSaved, variant = 'panel' }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void; variant?: 'panel' | 'bare' | 'card' | 'toolbar' }) {
   const service = useOpportunityService(), mutation = useSave();
   const [decision, setDecision] = useState<DecisionCommand['decision']>(), [reason, setReason] = useState(''), [confirmed, setConfirmed] = useState(false), [validation, setValidation] = useState<string>();
   const [holdReasonId, setHoldReasonId] = useState('');
@@ -141,7 +151,7 @@ export function ReviewActions({ opportunity: o, onSaved }: { opportunity: Opport
   const secondary = displayedDecisions.filter(action => action !== primary);
   const actionTone = (action: DecisionCommand['decision']): ConfirmationTone => action.endsWith('_REQUEST_CHANGES') ? 'info' : confirmationTone(action);
   const buttonTone = (action: DecisionCommand['decision']) => `opp-review-${actionTone(action)}`;
-  const actionButton = (action: DecisionCommand['decision']) => {
+  const actionButton = (action: DecisionCommand['decision'], compact = false) => {
     const selected = action === selectedDecision;
     const Icon = selected ? Check : TONE_ICON[actionTone(action)];
     return <Button key={action} type="button" size="sm" variant="outline"
@@ -149,12 +159,23 @@ export function ReviewActions({ opportunity: o, onSaved }: { opportunity: Opport
       className={`${buttonTone(action)}${action === primary ? ' opp-review-primary' : ''}${selected ? ` ${CONFIRMATION_STYLES[confirmationTone(action)]} border shadow-inner ring-2 ring-inset ring-current disabled:opacity-100` : ''}`}
       disabled={mutation.saving || selected || !decisions.includes(action)} onClick={() => {
         setDecision(action); setReason(''); setHoldReasonId(''); setConfirmed(false); setValidation(undefined);
-      }}><Icon className="opp-review-button-icon" aria-hidden="true" /><span className="opp-review-button-label">{LABELS[action]}</span></Button>;
+      }}><Icon className="opp-review-button-icon" aria-hidden="true" /><span className="opp-review-button-label">{compact ? COMPACT_LABELS[action] ?? LABELS[action] : LABELS[action]}</span></Button>;
   };
   return <section className="opp-review-actions" aria-label="Opportunity actions">
-    {displayedDecisions.length > 0 && <Panel title="Opportunity actions" description="Review this opportunity and choose the next step." tone="indigo" icon={Check} accentIcon className="opp-review-panel">
-      <div className="opp-review-buttons">{primary && actionButton(primary)}{secondary.length > 0 && <div className="opp-review-secondary">{secondary.map(actionButton)}</div>}</div>
-    </Panel>}
+    {displayedDecisions.length > 0 && (variant === 'toolbar'
+      ? <div className="opp-review-buttons opp-review-buttons-toolbar">{displayedDecisions.map(action => actionButton(action, true))}</div>
+      : variant === 'bare'
+      ? <div className="opp-review-buttons opp-review-buttons-bare">{displayedDecisions.map(action => actionButton(action))}</div>
+      : variant === 'card'
+      ? <Card className="min-w-0 border-t-[3px] border-t-primary bg-gradient-to-br from-card from-50% to-primary/5 shadow-sm">
+          <section className="flex h-full flex-col justify-center gap-2 px-3 py-2.5">
+            <span className="text-sm text-muted-foreground">Opportunity actions</span>
+            <div className={cn('opp-review-buttons opp-review-buttons-bare', 'opp-review-buttons-card')}>{displayedDecisions.map(action => actionButton(action, true))}</div>
+          </section>
+        </Card>
+      : <Panel title="Opportunity actions" description="Review this opportunity and choose the next step." tone="indigo" icon={Check} accentIcon className="opp-review-panel">
+          <div className="opp-review-buttons">{primary && actionButton(primary)}{secondary.length > 0 && <div className="opp-review-secondary">{secondary.map(action => actionButton(action))}</div>}</div>
+        </Panel>)}
     {!decision && validation && <Notice error={validation} />}
     {!decision && mutation.error && <Notice error={mutation.error} />}
     <Dialog open={Boolean(decision)} onOpenChange={open => { if (!open && !mutation.saving) setDecision(undefined); }}>

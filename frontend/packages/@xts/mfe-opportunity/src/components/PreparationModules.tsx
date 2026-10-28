@@ -1,8 +1,9 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery } from '@apollo/client';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Info,
   X,
@@ -22,10 +23,13 @@ import {
   DonutChart,
   DonutChartLegend,
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
+  Label,
   Select,
   SelectContent,
   SelectItem,
@@ -44,6 +48,7 @@ import type {
   AssessmentSection,
   Currency,
   Estimation,
+  EstimateRow,
   EstimationPhase,
   OpportunityDetail,
   RateMaster,
@@ -55,23 +60,58 @@ import { useOpportunityService } from '../services/OpportunityService';
 import { useSave } from '../hooks/useSave';
 import { randomUUID } from '../lib/uuid';
 import { useUnsaved } from '../hooks/useUnsaved';
-import { estimateTotal, isPreparing, money, RISK_SEVERITY_OPTIONS, rowAmount } from '../lib/workflow';
+import { estimateTotal, isPreparing, money, RISK_SEVERITY_OPTIONS } from '../lib/workflow';
 import { Field, Notice, Panel, Values } from './ui';
-import { GET_ESTIMATION_MASTERS, UPDATE_RATE_MASTER } from '../services/estimationMasters.queries';
+import { CREATE_ESTIMATION_PHASE, GET_ESTIMATION_MASTERS } from '../services/estimationMasters.queries';
 
 const RATE_MASTER_MENU_KEY = 'technical_roles_and_rate_master';
-// Documented assumptions: mst_rate stores a Monthly reference rate, and the
-// backend's EstimateRow only has hours/people/hourlyRate — no weeks or role
-// fields. The grid converts person-weeks to hours/rate at a standard 40-hour
-// week so the existing (unchanged) rowAmount/estimateTotal math — and the real
-// saveOpportunityEstimation mutation — keep working exactly as before.
+const ESTIMATE_PHASE_MENU_KEY = 'estimate_phase_master';
+// The backend's EstimateRow only has hours/people/hourlyRate — no phase, role, duration or
+// resource-allocation fields. The grid below persists Duration-in-weeks × Resource-allocation
+// as an equivalent hours/hourlyRate pair (at a standard 40-hour week) so the existing
+// rowAmount/estimateTotal math and the real saveOpportunityEstimation mutation keep working
+// unchanged. The one limit this creates: reloading a saved estimate recovers the correct
+// Person-week (and cost) per phase/role, but not the original separate Duration and Resource
+// allocation values that produced it — only their product was ever persisted.
 const HOURS_PER_WEEK = 40;
-const WEEKS_PER_MONTH = 52 / 12;
-function weeklyRate(rate: RateMaster): number {
-  return rate.rateType.trim().toLowerCase() === 'monthly' ? rate.defaultRate / WEEKS_PER_MONTH : rate.defaultRate;
-}
 function gridRowId(phaseId: number, roleCode: string) { return `grid-${phaseId}-${roleCode}`; }
+function cellKey(phaseId: number, roleCode: string) { return `${phaseId}:${roleCode}`; }
 function trimDecimal(value: number) { return String(Math.round(value * 100) / 100); }
+/** Rates already stored as "Monthly" are used as-is; any other rateType is treated as a weekly
+ * figure, consistent with the formula's own 20-working-days-a-month / 5-day-week convention
+ * (4 weeks per month) rather than a calendar average. */
+function monthlyRate(role: RateMaster): number {
+  return role.rateType.trim().toLowerCase() === 'monthly' ? role.defaultRate : role.defaultRate * 4;
+}
+
+/** A checkbox-based multi-select dropdown with Select all / Clear selection, and an optional
+ * inline "add new" control (used for Phases, which can be created on the fly). Keeps the
+ * dropdown open across checks via onSelect's preventDefault — Radix closes a menu item's parent
+ * on select by default, which would make multi-selecting one item at a time unusable. */
+function MultiSelectField({ label, options, selected, onToggle, onSelectAll, onClear, disabled, addControl }: {
+  label: string; options: { id: string; label: string }[]; selected: Set<string>;
+  onToggle: (id: string) => void; onSelectAll: () => void; onClear: () => void; disabled?: boolean; addControl?: ReactNode;
+}) {
+  const summary = !selected.size ? `Select ${label.toLowerCase()}…` : selected.size === options.length && options.length > 0 ? `All ${label.toLowerCase()} (${selected.size})` : `${selected.size} selected`;
+  return <div className="opp-field min-w-0 space-y-1">
+    <Label>{label}</Label>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild><Button type="button" variant="outline" className="w-full justify-between font-normal" disabled={disabled}><span className="truncate">{summary}</span><ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden="true" /></Button></DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        <div className="flex items-center justify-between gap-2 px-2 py-1">
+          <button type="button" className="text-xs font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50" disabled={!options.length} onClick={onSelectAll}>Select all</button>
+          <button type="button" className="text-xs font-medium text-muted-foreground hover:underline disabled:pointer-events-none disabled:opacity-50" disabled={!selected.size} onClick={onClear}>Clear selection</button>
+        </div>
+        <DropdownMenuSeparator />
+        <div className="max-h-60 overflow-y-auto">
+          {options.map(option => <DropdownMenuCheckboxItem key={option.id} checked={selected.has(option.id)} onSelect={e => e.preventDefault()} onCheckedChange={() => onToggle(option.id)}>{option.label}</DropdownMenuCheckboxItem>)}
+          {!options.length && <p className="px-2 py-1.5 text-xs text-muted-foreground">Nothing configured yet.</p>}
+        </div>
+        {addControl && <><DropdownMenuSeparator />{addControl}</>}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  </div>;
+}
 
 export function EstimationModule({
   opportunity: o,
@@ -113,133 +153,181 @@ export function EstimationModule({
   );
 
   const canViewRates = auth.hasPermission(RATE_MASTER_MENU_KEY, 'view');
-  const canEditRates = auth.hasPermission(RATE_MASTER_MENU_KEY, 'edit');
+  const canAddPhase = auth.hasPermission(ESTIMATE_PHASE_MENU_KEY, 'add');
 
-  const [updateRateMaster] = useMutation<{
-    updateRateMaster: RateMaster;
-  }>(UPDATE_RATE_MASTER, {
+  const [createPhase, { loading: addingPhase }] = useMutation<{ createEstimationPhase: EstimationPhase }>(CREATE_ESTIMATION_PHASE, {
     refetchQueries: [{ query: GET_ESTIMATION_MASTERS }],
   });
+  const [newPhaseName, setNewPhaseName] = useState('');
+  const [addPhaseError, setAddPhaseError] = useState<string>();
 
-  const [rateEdits, setRateEdits] = useState<Record<number, string>>({});
-  const [savingRateId, setSavingRateId] = useState<number | null>(null);
-  const [rateError, setRateError] = useState<string>();
-
-  async function saveRate(role: RateMaster) {
-    const raw = rateEdits[role.ratemasterId];
-    if (raw === undefined) return;
-
-    const weeklyValue = Number(raw);
-    if (!raw.trim() || !Number.isFinite(weeklyValue) || weeklyValue < 0) {
-      setRateError('Enter a valid, non-negative cost per week.');
-      return;
-    }
-
-    const isMonthly = role.rateType.trim().toLowerCase() === 'monthly';
-
-    setRateError(undefined);
-    setSavingRateId(role.ratemasterId);
-
-    try {
-      await updateRateMaster({
-        variables: {
-          ratemasterId: role.ratemasterId,
-          input: {
-            roleName: role.roleName,
-            roleCode: role.roleCode,
-            currencyId: role.currencyId,
-            rateType: role.rateType,
-            defaultRate: Number(
-              (isMonthly ? weeklyValue * WEEKS_PER_MONTH : weeklyValue).toFixed(2),
-            ),
-            location: role.location,
-            description: role.description,
-            updatedBy: auth.session?.userId
-              ? Number(auth.session.userId)
-              : undefined,
-          },
-        },
-      });
-
-      setRateEdits(edits => {
-        const next = { ...edits };
-        delete next[role.ratemasterId];
-        return next;
-      });
-    } catch (error) {
-      setRateError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to update the rate. Please retry.',
-      );
-    } finally {
-      setSavingRateId(null);
-    }
-  }
-
-  // Continue with the remaining component code.
-
-  const [draft, setDraft] = useState<Estimation>(() => o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' }), [baseline, setBaseline] = useState(() => JSON.stringify(o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' })), [validation, setValidation] = useState<string>();
+  const initialEstimation = o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' };
+  const [draft, setDraft] = useState<Estimation>(initialEstimation);
+  const [baseline, setBaseline] = useState(() => JSON.stringify({ rows: initialEstimation.rows, assumptions: initialEstimation.assumptions }));
+  const [validation, setValidation] = useState<string>();
   const editable = !readOnly && isPreparing(o) && o.allowedActions.includes('EDIT_ESTIMATION');
-  useUnsaved(JSON.stringify(draft) !== baseline);
-  let total = '0.00', calculationError: string | undefined;
-  try { total = estimateTotal(draft.rows); } catch (error) { calculationError = error instanceof Error ? error.message : 'Check numeric fields.'; }
 
-  const gridIds = new Set(phases.flatMap(p => roles.map(r => gridRowId(p.id, r.roleCode))));
-  const legacyRows = draft.rows.filter(r => !gridIds.has(r.id));
-  function cellWeeksNumber(phaseId: number, roleCode: string) {
-    const row = draft.rows.find(r => r.id === gridRowId(phaseId, roleCode));
-    return row ? Number(row.hours) / HOURS_PER_WEEK : 0;
+  const [selectedPhaseIds, setSelectedPhaseIds] = useState<Set<number>>(new Set());
+  const [selectedRoleCodes, setSelectedRoleCodes] = useState<Set<string>>(new Set());
+  const [duration, setDuration] = useState<Record<number, string>>({});
+  const [allocation, setAllocation] = useState<Record<string, string>>({});
+  const seededRef = useRef(false);
+
+  // Seeds the grid's selection/duration/allocation from whatever was last saved, the first time
+  // the phase and role masters are both loaded (there's nothing to match saved rows against
+  // before then). Runs once per mount by design — not meant to re-seed on every draft edit.
+  useEffect(() => {
+    if (seededRef.current || !phases.length || !roles.length) return;
+    seededRef.current = true;
+    const savedRows = o.estimation?.rows ?? [];
+    const nextPhaseIds = new Set<number>(), nextRoleCodes = new Set<string>();
+    const nextDuration: Record<number, string> = {}, nextAllocation: Record<string, string> = {};
+    for (const phase of phases) {
+      let used = false;
+      for (const role of roles) {
+        const row = savedRows.find(r => r.id === gridRowId(phase.id, role.roleCode));
+        const weeks = row ? Number(row.hours) / HOURS_PER_WEEK : 0;
+        if (row && weeks > 0) { used = true; nextRoleCodes.add(role.roleCode); nextAllocation[cellKey(phase.id, role.roleCode)] = trimDecimal(weeks); }
+      }
+      if (used) { nextPhaseIds.add(phase.id); nextDuration[phase.id] = '1'; }
+    }
+    setSelectedPhaseIds(nextPhaseIds); setSelectedRoleCodes(nextRoleCodes); setDuration(nextDuration); setAllocation(nextAllocation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally seeds once from the loaded masters, not on every draft/row change
+  }, [phases.length, roles.length]);
+
+  const activePhases = phases.filter(p => selectedPhaseIds.has(p.id));
+  const activeRoles = roles.filter(r => selectedRoleCodes.has(r.roleCode));
+
+  // Person-week = Duration (weeks) × Resource allocation.
+  function personWeek(phaseId: number, roleCode: string): number {
+    const d = Number(duration[phaseId] ?? ''), a = Number(allocation[cellKey(phaseId, roleCode)] ?? '');
+    return Number.isFinite(d) && Number.isFinite(a) && d > 0 && a > 0 ? d * a : 0;
   }
-  function setCellWeeks(phaseId: number, roleCode: string, raw: string) {
-    const id = gridRowId(phaseId, roleCode), weeksNum = Number(raw);
-    setDraft(d => {
-      if (!raw.trim() || !Number.isFinite(weeksNum) || weeksNum <= 0) return { ...d, rows: d.rows.filter(r => r.id !== id) };
-      const role = roles.find(r => r.roleCode === roleCode), phase = phases.find(p => p.id === phaseId);
-      const row = { id, workItem: `${phase?.phaseName ?? 'Phase'} — ${role?.roleName ?? roleCode}`, hours: trimDecimal(weeksNum * HOURS_PER_WEEK), people: 1, hourlyRate: role ? (weeklyRate(role) / HOURS_PER_WEEK).toFixed(4) : '0' };
-      return { ...d, rows: d.rows.some(r => r.id === id) ? d.rows.map(r => r.id === id ? row : r) : [...d.rows, row] };
+  // Cost = (Monthly rate ÷ 20) × (Person-week × 5).
+  function cellCost(phaseId: number, roleCode: string, role: RateMaster): number {
+    return (monthlyRate(role) / 20) * (personWeek(phaseId, roleCode) * 5);
+  }
+  const effortTotal = activePhases.reduce((sum, p) => sum + activeRoles.reduce((s, r) => s + personWeek(p.id, r.roleCode), 0), 0);
+
+  // Rows saved before this redesign (free-form, not tied to any phase/role) are carried through
+  // unedited rather than silently dropped — matched against every phase×role combination the
+  // masters currently know about, not just the ones selected right now.
+  const gridIdsAll = new Set(phases.flatMap(p => roles.map(r => gridRowId(p.id, r.roleCode))));
+  const legacyRows = draft.rows.filter(r => !gridIdsAll.has(r.id));
+
+  const gridRows: EstimateRow[] = [];
+  for (const phase of activePhases) for (const role of activeRoles) {
+    const weeks = personWeek(phase.id, role.roleCode);
+    if (weeks <= 0) continue;
+    gridRows.push({
+      id: gridRowId(phase.id, role.roleCode),
+      workItem: `${phase.phaseName} — ${role.roleName}`,
+      hours: trimDecimal(weeks * HOURS_PER_WEEK),
+      people: 1,
+      hourlyRate: (monthlyRate(role) / (HOURS_PER_WEEK * 4)).toFixed(4),
     });
   }
-  function removeRow(id: string) { setDraft(d => ({ ...d, rows: d.rows.filter(r => r.id !== id) })); }
-  const effortTotal = phases.reduce((sum, p) => sum + roles.reduce((s, r) => s + cellWeeksNumber(p.id, r.roleCode), 0), 0);
+  const rows = [...gridRows, ...legacyRows];
+  let total = '0.00', calculationError: string | undefined;
+  try { total = estimateTotal(rows); } catch (error) { calculationError = error instanceof Error ? error.message : 'Check numeric fields.'; }
+  const dirty = JSON.stringify({ rows, assumptions: draft.assumptions }) !== baseline;
+  useUnsaved(dirty);
+
+  function togglePhase(id: number) {
+    setSelectedPhaseIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+    setDuration(d => d[id] !== undefined ? d : { ...d, [id]: '1' });
+  }
+  function toggleRole(code: string) { setSelectedRoleCodes(prev => { const next = new Set(prev); next.has(code) ? next.delete(code) : next.add(code); return next; }); }
+  function selectAllPhases() {
+    setSelectedPhaseIds(new Set(phases.map(p => p.id)));
+    setDuration(d => { const next = { ...d }; for (const p of phases) if (next[p.id] === undefined) next[p.id] = '1'; return next; });
+  }
+  const clearPhases = () => setSelectedPhaseIds(new Set());
+  const selectAllRoles = () => setSelectedRoleCodes(new Set(roles.map(r => r.roleCode)));
+  const clearRoles = () => setSelectedRoleCodes(new Set());
+
+  async function addPhase() {
+    const name = newPhaseName.trim();
+    if (!name) return;
+    setAddPhaseError(undefined);
+    try {
+      const { data } = await createPhase({ variables: { input: { phaseName: name, isActive: true, createdBy: auth.session?.userId ? Number(auth.session.userId) : undefined } } });
+      const created = data?.createEstimationPhase;
+      setNewPhaseName('');
+      if (created) { setSelectedPhaseIds(prev => new Set(prev).add(created.id)); setDuration(d => d[created.id] !== undefined ? d : { ...d, [created.id]: '1' }); }
+    } catch (error) {
+      setAddPhaseError(error instanceof Error ? error.message : 'Failed to add the phase. Please retry.');
+    }
+  }
 
   async function save() {
     if (!editable) return;
-    if (calculationError || draft.rows.some(row => !row.workItem.trim())) { setValidation(calculationError ?? 'Enter a work item for every row.'); return; }
+    if (calculationError) { setValidation(calculationError); return; }
     setValidation(undefined);
-    await mutation.run(JSON.stringify({ estimation: draft, revision: o.revision }), key => service.saveEstimation({ opportunityId: o.id, expectedRevision: o.revision, idempotencyKey: key, estimation: { ...draft, total } }), saved => { if (saved.estimation) { setDraft(saved.estimation); setBaseline(JSON.stringify(saved.estimation)); } onSaved(saved); }, 'Estimation saved. Overview now shows the saved revision.');
+    const next: Estimation = { revision: draft.revision, rows, assumptions: draft.assumptions, total };
+    await mutation.run(JSON.stringify({ estimation: next, revision: o.revision }), key => service.saveEstimation({ opportunityId: o.id, expectedRevision: o.revision, idempotencyKey: key, estimation: next }), saved => {
+      if (saved.estimation) { setDraft(saved.estimation); setBaseline(JSON.stringify({ rows: saved.estimation.rows, assumptions: saved.estimation.assumptions })); }
+      onSaved(saved);
+    }, 'Estimation saved. Overview now shows the saved revision.');
   }
+
   return <>
-    <div className="opp-estimation-layout grid grid-cols-1 items-start gap-3">
+    <Panel title="Select phases & technical roles" description="Rows appear in the grid below as you select phases and roles." tone="indigo" icon={ClipboardList} accentIcon>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <MultiSelectField label="Phases" options={phases.map(p => ({ id: String(p.id), label: p.phaseName }))} selected={new Set([...selectedPhaseIds].map(String))} onToggle={id => togglePhase(Number(id))} onSelectAll={selectAllPhases} onClear={clearPhases} disabled={!editable}
+          addControl={editable && canAddPhase ? <div className="space-y-1.5 px-2 py-1.5" onKeyDown={e => e.stopPropagation()}>
+            <p className="text-xs font-medium text-muted-foreground">Add a new phase</p>
+            <div className="flex gap-1.5">
+              <Input aria-label="New phase name" placeholder="Phase name" value={newPhaseName} onChange={e => setNewPhaseName(e.target.value)} disabled={addingPhase} className="h-8 text-sm" />
+              <Button type="button" size="sm" disabled={addingPhase || !newPhaseName.trim()} onClick={() => void addPhase()}>{addingPhase ? 'Adding…' : 'Add'}</Button>
+            </div>
+            {addPhaseError && <p role="alert" className="text-xs text-destructive">{addPhaseError}</p>}
+          </div> : undefined} />
+        <MultiSelectField label="Technical roles" options={roles.map(r => ({ id: r.roleCode, label: r.roleName }))} selected={selectedRoleCodes} onToggle={toggleRole} onSelectAll={selectAllRoles} onClear={clearRoles} disabled={!editable} />
+      </div>
+    </Panel>
+    <div className="opp-estimation-layout mt-3 grid grid-cols-1 items-start gap-3">
       <div className="space-y-3">
-        <Panel title="Effort by phase & role" description="person-weeks" tone="indigo">
-          <p className="mb-3 text-sm text-muted-foreground">{editable ? 'Enter effort per role; totals feed the cost summary automatically.' : 'Read-only estimation for your permissions or this stage.'}</p>
-          {!phases.length || !roles.length ? <p className="text-sm text-muted-foreground">{!phases.length ? 'No active estimation phases are configured yet.' : 'No active rate master roles are configured yet.'} Set these up in Administration before building the grid.</p> : <div className="opp-estimation-scroll"><Table><TableHeader><TableRow><TableHead>Phase</TableHead>{roles.map(role => <TableHead key={role.roleCode}>{role.roleName}</TableHead>)}<TableHead>Total</TableHead></TableRow></TableHeader>
+        <Panel title="Resource allocation" description="Duration in weeks per phase; each role's allocation against it" tone="indigo">
+          {!activePhases.length || !activeRoles.length ? <p className="text-sm text-muted-foreground">Select at least one phase and one technical role above to build the grid.</p> : <div className="opp-estimation-scroll"><Table><TableHeader><TableRow><TableHead>Phase</TableHead><TableHead>Duration in weeks</TableHead>{activeRoles.map(role => <TableHead key={role.roleCode}>{role.roleName}</TableHead>)}</TableRow></TableHeader>
+            <TableBody>{activePhases.map(phase => <TableRow key={phase.id}>
+              <TableCell className="font-medium">{phase.phaseName}</TableCell>
+              <TableCell>{editable ? <Input aria-label={`${phase.phaseName} duration in weeks`} type="number" min="0" step="0.5" className="w-20" value={duration[phase.id] ?? ''} onChange={e => setDuration(d => ({ ...d, [phase.id]: e.target.value }))} disabled={mutation.saving} /> : duration[phase.id] ?? '0'}</TableCell>
+              {activeRoles.map(role => <TableCell key={role.roleCode}>{editable ? <Input aria-label={`${phase.phaseName} — ${role.roleName} resource allocation`} type="number" min="0" step="0.05" className="w-20" value={allocation[cellKey(phase.id, role.roleCode)] ?? ''} onChange={e => setAllocation(a => ({ ...a, [cellKey(phase.id, role.roleCode)]: e.target.value }))} disabled={mutation.saving} /> : allocation[cellKey(phase.id, role.roleCode)] ?? '0'}</TableCell>)}
+            </TableRow>)}</TableBody>
+          </Table></div>}
+        </Panel>
+        <Panel title="Person-weeks" description="Duration × Resource allocation — read-only" tone="teal">
+          {!activePhases.length || !activeRoles.length ? <p className="text-sm text-muted-foreground">Nothing to show yet.</p> : <div className="opp-estimation-scroll"><Table><TableHeader><TableRow><TableHead>Phase</TableHead>{activeRoles.map(role => <TableHead key={role.roleCode}>{role.roleName}</TableHead>)}<TableHead>Total</TableHead></TableRow></TableHeader>
             <TableBody>
-              {phases.map(phase => <TableRow key={phase.id}><TableCell className="font-medium">{phase.phaseName}</TableCell>{roles.map(role => { const weeks = cellWeeksNumber(phase.id, role.roleCode); return <TableCell key={role.roleCode}>{editable ? <Input aria-label={`${phase.phaseName} — ${role.roleName} weeks`} type="number" min="0" step="0.5" className="w-20" value={weeks ? trimDecimal(weeks) : ''} onChange={e => setCellWeeks(phase.id, role.roleCode, e.target.value)} disabled={mutation.saving} /> : weeks ? trimDecimal(weeks) : '—'}</TableCell>; })}<TableCell className="font-semibold">{trimDecimal(roles.reduce((s, r) => s + cellWeeksNumber(phase.id, r.roleCode), 0))}</TableCell></TableRow>)}
-              <TableRow className="font-semibold"><TableCell>Total</TableCell>{roles.map(role => <TableCell key={role.roleCode}>{trimDecimal(phases.reduce((s, p) => s + cellWeeksNumber(p.id, role.roleCode), 0))}</TableCell>)}<TableCell>{trimDecimal(effortTotal)}</TableCell></TableRow>
+              {activePhases.map(phase => <TableRow key={phase.id}><TableCell className="font-medium">{phase.phaseName}</TableCell>{activeRoles.map(role => <TableCell key={role.roleCode}>{trimDecimal(personWeek(phase.id, role.roleCode))}</TableCell>)}<TableCell className="font-semibold">{trimDecimal(activeRoles.reduce((s, r) => s + personWeek(phase.id, r.roleCode), 0))}</TableCell></TableRow>)}
+              <TableRow className="font-semibold"><TableCell>Total</TableCell>{activeRoles.map(role => <TableCell key={role.roleCode}>{trimDecimal(activePhases.reduce((s, p) => s + personWeek(p.id, role.roleCode), 0))}</TableCell>)}<TableCell>{trimDecimal(effortTotal)}</TableCell></TableRow>
             </TableBody>
           </Table></div>}
         </Panel>
-        <Panel title="Additional items" description="Not tied to a phase/role, e.g. travel or contingency" tone="neutral">
-          <Table><TableHeader><TableRow><TableHead>Work item</TableHead><TableHead>Hours</TableHead><TableHead>People</TableHead><TableHead>Rate / hour</TableHead><TableHead>Amount</TableHead>{editable && <TableHead>Actions</TableHead>}</TableRow></TableHeader><TableBody>{legacyRows.map((row, index) => { let amount = '—'; try { amount = money(rowAmount(row), o.currencyCode); } catch { /* validation shown below */ } return <TableRow key={row.id}><TableCell>{editable ? <Field label={`Work item ${index + 1}`} value={row.workItem} onChange={v => setDraft(d => ({ ...d, rows: d.rows.map(r => r.id === row.id ? { ...r, workItem: v } : r) }))} disabled={mutation.saving} /> : row.workItem}</TableCell>{(['hours', 'people', 'hourlyRate'] as const).map((key, col) => <TableCell key={key}>{editable ? <Field label={`${['Hours', 'People', 'Rate'][col]} ${index + 1}`} type="number" value={String(row[key])} onChange={v => setDraft(d => ({ ...d, rows: d.rows.map(r => r.id === row.id ? { ...r, [key]: key === 'people' ? Number(v) : v } : r) }))} disabled={mutation.saving} /> : row[key]}</TableCell>)}<TableCell>{amount}</TableCell>{editable && <TableCell><Button type="button" variant="ghost" disabled={mutation.saving} aria-label={`Remove row ${index + 1}`} onClick={() => removeRow(row.id)}>Remove</Button></TableCell>}</TableRow>; })}{!legacyRows.length && <TableRow><TableCell colSpan={editable ? 6 : 5}>No additional items.</TableCell></TableRow>}</TableBody></Table>
-          {editable && <Button type="button" variant="outline" className="mt-3" disabled={mutation.saving} onClick={() => setDraft(d => ({ ...d, rows: [...d.rows, { id: `draft-${randomUUID()}`, workItem: '', hours: '0', people: 1, hourlyRate: '0' }] }))}>Add row</Button>}
+        <Panel title="Person-weeks to cost" description="(Monthly rate ÷ 20) × (Person-week × 5)" tone="amber">
+          {!activePhases.length || !activeRoles.length ? <p className="text-sm text-muted-foreground">Nothing to show yet.</p> : <div className="opp-estimation-scroll"><Table><TableHeader><TableRow><TableHead>Phase</TableHead>{activeRoles.map(role => <TableHead key={role.roleCode}>{role.roleName}</TableHead>)}<TableHead>Total</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {activePhases.map(phase => <TableRow key={phase.id}><TableCell className="font-medium">{phase.phaseName}</TableCell>{activeRoles.map(role => <TableCell key={role.roleCode}>{money(trimDecimal(cellCost(phase.id, role.roleCode, role)), o.currencyCode)}</TableCell>)}<TableCell className="font-semibold">{money(trimDecimal(activeRoles.reduce((s, r) => s + cellCost(phase.id, r.roleCode, r), 0)), o.currencyCode)}</TableCell></TableRow>)}
+              <TableRow className="font-semibold"><TableCell>Total</TableCell>{activeRoles.map(role => <TableCell key={role.roleCode}>{money(trimDecimal(activePhases.reduce((s, p) => s + cellCost(p.id, role.roleCode, role), 0)), o.currencyCode)}</TableCell>)}<TableCell>{calculationError ? 'Check matrix values' : money(total, o.currencyCode)}</TableCell></TableRow>
+            </TableBody>
+          </Table></div>}
         </Panel>
+        {legacyRows.length > 0 && <p className="text-xs text-muted-foreground">{legacyRows.length} previously saved item{legacyRows.length === 1 ? '' : 's'} not tied to a phase/role {legacyRows.length === 1 ? 'is' : 'are'} preserved and included in the total, though no longer editable here.</p>}
         <div><Field label="Estimation assumptions" value={draft.assumptions} onChange={v => setDraft(d => ({ ...d, assumptions: v }))} multiline disabled={!editable || mutation.saving} /></div>
         {editable && <div className="flex justify-end"><Button type="button" disabled={mutation.saving} onClick={() => void save()}>Save estimation</Button></div>}
         {(validation || calculationError) && <Notice error={validation ?? calculationError!} />}{mutation.error && <Notice error={mutation.error} />}
       </div>
       <aside className="space-y-3">
-        {canViewRates && <Panel title="Rate master" description={canEditRates ? 'Reference rates — editing here updates the shared rate for every opportunity' : 'Reference rates — managed by Finance, read-only here'} tone="amber">
-          <Table><TableHeader><TableRow><TableHead>Role</TableHead><TableHead>Cost / wk</TableHead><TableHead>Weeks</TableHead>{canEditRates && <TableHead>Actions</TableHead>}</TableRow></TableHeader><TableBody>{roles.map(role => { const currentWeekly = trimDecimal(weeklyRate(role)), draftValue = rateEdits[role.ratemasterId], dirty = draftValue !== undefined && draftValue !== currentWeekly; return <TableRow key={role.roleCode}><TableCell>{role.roleName}</TableCell><TableCell>{canEditRates ? <Input aria-label={`${role.roleName} cost per week`} type="number" min="0" step="0.01" className="w-28" value={draftValue ?? currentWeekly} onChange={e => setRateEdits(edits => ({ ...edits, [role.ratemasterId]: e.target.value }))} disabled={savingRateId === role.ratemasterId} /> : money(currentWeekly, currencies.find(c => c.currencyId === role.currencyId)?.currencyCode ?? o.currencyCode)}</TableCell><TableCell>{trimDecimal(phases.reduce((s, p) => s + cellWeeksNumber(p.id, role.roleCode), 0))}</TableCell>{canEditRates && <TableCell><Button type="button" size="sm" variant="outline" disabled={!dirty || savingRateId === role.ratemasterId} onClick={() => void saveRate(role)}>Save</Button></TableCell>}</TableRow>; })}{!roles.length && <TableRow><TableCell colSpan={canEditRates ? 4 : 3}>No active rates configured.</TableCell></TableRow>}</TableBody></Table>
-          {rateError && <Notice error={rateError} />}
+        {canViewRates && <Panel title="Rate master" description="Reference rates — managed in Administration, read-only here" tone="amber">
+          <Table><TableHeader><TableRow><TableHead>Role</TableHead><TableHead>Rate</TableHead></TableRow></TableHeader><TableBody>{roles.map(role => <TableRow key={role.roleCode}><TableCell>{role.roleName}</TableCell><TableCell>{money(trimDecimal(role.defaultRate), currencies.find(c => c.currencyId === role.currencyId)?.currencyCode ?? o.currencyCode)} / {role.rateType}</TableCell></TableRow>)}{!roles.length && <TableRow><TableCell colSpan={2}>No active rates configured.</TableCell></TableRow>}</TableBody></Table>
         </Panel>}
         <Panel title="Estimate summary" tone="violet">
           <Values values={[['Total effort', `${trimDecimal(effortTotal)} person-weeks`], ...(canViewRates ? ([['Estimated cost', calculationError ? 'Check matrix values' : money(total, o.currencyCode)]] as [string, string][]) : [])]} />
         </Panel>
       </aside>
     </div>
-    {o.allowedActions.includes('SUBMIT_ESTIMATE') && JSON.stringify(draft) === baseline && <ReviewActions opportunity={o} onSaved={onSaved} />}
+    {showActions && o.allowedActions.includes('SUBMIT_ESTIMATE') && !dirty && <ReviewActions opportunity={o} onSaved={onSaved} />}
   </>;
 }
 const SEVERITY_BADGE: Record<RiskSeverity, 'success' | 'warning' | 'critical'> = { LOW: 'success', MEDIUM: 'warning', HIGH: 'critical' };
