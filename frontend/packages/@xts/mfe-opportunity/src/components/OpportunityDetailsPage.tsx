@@ -1,8 +1,8 @@
 import { QuestionViewer } from './QuestionViewer';
-import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Pencil, Wallet } from 'lucide-react';
+import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Pencil } from 'lucide-react';
 import { useCallback } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Avatar, AvatarFallback, Badge, type BadgeProps, Button, Card, cn, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
+import { Badge, type BadgeProps, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
 import type { OpportunityDetail, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource } from '../hooks/useResource';
@@ -11,7 +11,7 @@ import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
 import { CONTEXT_FIELDS, money, RESPONSE_LABELS, rowAmount, STATE_LABELS, userLabel } from '../lib/workflow';
 import { LEAD_SOURCES } from '../lib/opportunityOptions';
 import { opportunityStatus } from '../lib/opportunityStatus';
-import { avatarAccent, DetailDrawer, formatLocalDate, initials, Loading, Notice, Panel, PRIORITY_BADGE, Values } from './ui';
+import { DetailDrawer, formatLocalDate, initials, Loading, Notice, Panel, PRIORITY_BADGE, Values } from './ui';
 import { ClientValues } from './ClientPicker';
 import { EstimationModule, ScopeModule, ScopeReadOnly } from './PreparationModules';
 import { ResponseWorkspace } from './ResponseWorkspace';
@@ -24,7 +24,7 @@ const STATUS_BADGE_VARIANT: Record<OpportunityState, BadgeProps['variant']> = {
 };
 
 function Activity({ opportunity: o }: { opportunity: OpportunityDetail }) {
-  return <Panel title="Activity & decisions" description="Backend-recorded identity, timestamps and reviewed package revisions" tone="neutral"><div className="space-y-3">{o.activity?.map(event => <article key={event.id} className="border-b pb-3"><h3 className="font-semibold">{event.action}</h3><p className="mt-1 text-xs text-muted-foreground">{userLabel(event.actor)} · {new Date(event.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST{event.packageRevision !== null ? ` · package v${event.packageRevision}` : ''}</p>{event.note && <p className="mt-3 whitespace-pre-wrap break-words text-sm">{event.note}</p>}</article>)}{!o.activity?.length && <p className="text-sm text-muted-foreground">No activity returned.</p>}</div></Panel>;
+  return <Panel title="Activity & decisions" description="Backend-recorded identity, timestamps and reviewed package revisions" tone="neutral"><div className="space-y-3">{o.activity?.map(event => <article key={event.id} className="border-b pb-3"><h3 className="text-sm font-semibold">{event.action}</h3><p className="mt-1 text-xs text-muted-foreground">{userLabel(event.actor)} · {new Date(event.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST{event.packageRevision !== null ? ` · package v${event.packageRevision}` : ''}</p>{event.note && <p className="mt-3 whitespace-pre-wrap break-words text-sm">{event.note}</p>}</article>)}{!o.activity?.length && <p className="text-sm text-muted-foreground">No activity returned.</p>}</div></Panel>;
 }
 function Documents({ opportunity: o }: { opportunity: OpportunityDetail }) {
   return <Panel title="Documents" description="Files attached to this opportunity" tone="neutral"><Values values={[
@@ -61,29 +61,48 @@ function ResponsesPanel({ o }: { o: OpportunityDetail }) {
 /** Compact scope card; full summary text plus the styled Alignment/Risks lists (same look as the Scope tab) live in the drawer. */
 function ScopeSummaryPanel({ o }: { o: OpportunityDetail }) {
   const scope = o.scope;
-  return <Panel title="Saved scope summary" description={`Revision ${scope?.revision ?? 0}`} tone="rose" accentIcon headerRight={scope && <DetailDrawer title="Scope & assessment" description="Full scope summary, alignment and risk items as saved.">
-    <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon><p className="whitespace-pre-wrap break-words text-sm">{scope.summary || 'Not provided'}</p></Panel><div className="mt-4"><ScopeReadOnly scope={scope} /></div>
-  </DetailDrawer>}>{scope ? <><p className="line-clamp-3 whitespace-pre-wrap break-words text-sm">{scope.summary || 'Not provided'}</p><Values values={[['Alignment', `${scope.alignment.length} item${scope.alignment.length === 1 ? '' : 's'}`], ['Risks', `${scope.risks.length} item${scope.risks.length === 1 ? '' : 's'} · ${scope.risks.filter(item => item.severity === 'HIGH').length} high`]]} /></> : <p>Not provided</p>}</Panel>;
+  return <Panel title="Saved scope summary" tone="rose" accentIcon headerRight={<div className="flex shrink-0 items-center gap-2">
+    <Badge variant="muted" size="sm">Revision {scope?.revision ?? 0}</Badge>
+    {scope && <DetailDrawer title="Scope & assessment" description="Full scope summary, alignment and risk items as saved.">
+      <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon><p className="whitespace-pre-wrap break-words text-sm">{scope.summary || 'Not provided'}</p></Panel><div className="mt-4"><ScopeReadOnly scope={scope} /></div>
+    </DetailDrawer>}
+  </div>}>{scope ? <><p className="line-clamp-3 whitespace-pre-wrap break-words text-sm">{scope.summary || 'Not provided'}</p><Values values={[['Alignment', `${scope.alignment.length} item${scope.alignment.length === 1 ? '' : 's'}`], ['Risks', `${scope.risks.length} item${scope.risks.length === 1 ? '' : 's'} · ${scope.risks.filter(item => item.severity === 'HIGH').length} high`]]} /></> : <p className="text-sm">Not provided</p>}</Panel>;
+}
+/** Splits a formatted money string ("₹5,81,564.10") at its last decimal point so the cents can
+ * render smaller than the whole-number part — purely a display split of the same formatted value. */
+function splitMoney(formatted: string): [string, string] {
+  const i = formatted.lastIndexOf('.');
+  return i === -1 ? [formatted, ''] : [formatted.slice(0, i), formatted.slice(i)];
 }
 /** Compact estimation card; the full matrix row breakdown and assumptions live in the drawer. */
 function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
   const estimation = o.estimation;
-  return <Panel title="Saved estimation summary" description={`Revision ${estimation?.revision ?? 0}`} tone="amber" accentIcon headerRight={estimation && <DetailDrawer title="Estimation matrix" description="Saved matrix rows and assumptions.">
-    <Panel title="Matrix rows" tone="amber" icon={Calculator} accentIcon><div className="overflow-x-auto"><Table><TableHeader><TableRow>
-      <TableHead className="px-2 py-1.5 text-[11px]">Work item</TableHead>
-      <TableHead className="px-2 py-1.5 text-[11px] text-right">Hours</TableHead>
-      <TableHead className="px-2 py-1.5 text-[11px] text-right">People</TableHead>
-      <TableHead className="px-2 py-1.5 text-[11px] text-right">Rate / hr</TableHead>
-      <TableHead className="px-2 py-1.5 text-[11px] text-right">Amount</TableHead>
-    </TableRow></TableHeader><TableBody>{estimation.rows.map(row => { let amount = '—'; try { amount = money(rowAmount(row), o.currencyCode); } catch { /* shown as — */ } return <TableRow key={row.id}>
-      <TableCell className="px-2 py-1.5 text-sm">{row.workItem}</TableCell>
-      <TableCell className="px-2 py-1.5 text-right text-sm">{row.hours}</TableCell>
-      <TableCell className="px-2 py-1.5 text-right text-sm">{row.people}</TableCell>
-      <TableCell className="px-2 py-1.5 text-right text-sm">{money(row.hourlyRate, o.currencyCode)}</TableCell>
-      <TableCell className="px-2 py-1.5 text-right text-sm font-medium">{amount}</TableCell>
-    </TableRow>; })}</TableBody></Table></div></Panel>
-    <div className="mt-4"><Panel title="Assumptions" tone="indigo" accentIcon><p className="whitespace-pre-wrap break-words text-sm">{estimation.assumptions || 'Not provided'}</p></Panel></div>
-  </DetailDrawer>}>{estimation ? <><strong className="text-2xl">{money(estimation.total, o.currencyCode)}</strong><p className="mt-2 text-sm text-muted-foreground">{estimation.rows.length} saved matrix rows</p></> : <p>Not provided</p>}</Panel>;
+  const [whole, cents] = estimation ? splitMoney(money(estimation.total, o.currencyCode)) : ['', ''];
+  return <Panel title="Saved estimation summary" tone="amber" accentIcon headerRight={<Badge variant="muted" size="sm" className="shrink-0">Revision {estimation?.revision ?? 0}</Badge>}>
+    {estimation ? <>
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">Estimate total<Badge variant="warning" size="sm">{o.currencyCode}</Badge></p>
+      <p className="mb-4 mt-1 text-3xl font-bold leading-tight tracking-tight tabular-nums">{whole}<span className="text-base font-normal text-muted-foreground">{cents}</span></p>
+      <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
+        <span><strong className="text-base">{estimation.rows.length}</strong> <span className="text-muted-foreground">work items</span></span>
+        <DetailDrawer title="Estimation matrix" description="Saved matrix rows and assumptions." trigger={<button type="button" className="text-sm font-semibold text-amber-700 hover:underline dark:text-amber-400">View estimate →</button>}>
+          <Panel title="Matrix rows" tone="amber" icon={Calculator} accentIcon><div className="overflow-x-auto"><Table><TableHeader><TableRow>
+            <TableHead className="px-2 py-1.5 text-xs">Work item</TableHead>
+            <TableHead className="px-2 py-1.5 text-xs text-right">Hours</TableHead>
+            <TableHead className="px-2 py-1.5 text-xs text-right">People</TableHead>
+            <TableHead className="px-2 py-1.5 text-xs text-right">Rate / hr</TableHead>
+            <TableHead className="px-2 py-1.5 text-xs text-right">Amount</TableHead>
+          </TableRow></TableHeader><TableBody>{estimation.rows.map(row => { let amount = '—'; try { amount = money(rowAmount(row), o.currencyCode); } catch { /* shown as — */ } return <TableRow key={row.id}>
+            <TableCell className="px-2 py-1.5 text-sm">{row.workItem}</TableCell>
+            <TableCell className="px-2 py-1.5 text-right text-sm">{row.hours}</TableCell>
+            <TableCell className="px-2 py-1.5 text-right text-sm">{row.people}</TableCell>
+            <TableCell className="px-2 py-1.5 text-right text-sm">{money(row.hourlyRate, o.currencyCode)}</TableCell>
+            <TableCell className="px-2 py-1.5 text-right text-sm font-medium">{amount}</TableCell>
+          </TableRow>; })}</TableBody></Table></div></Panel>
+          <div className="mt-4"><Panel title="Assumptions" tone="indigo" accentIcon><p className="whitespace-pre-wrap break-words text-sm">{estimation.assumptions || 'Not provided'}</p></Panel></div>
+        </DetailDrawer>
+      </div>
+    </> : <p className="text-sm">Not provided</p>}
+  </Panel>;
 }
 function Overview({
   opportunity: o,
@@ -95,44 +114,45 @@ function Overview({
   return (
     <div className="opp-overview">
       <div className="space-y-3">
-        <Panel title="Opportunity details" tone="violet" accentIcon>
-          <Values
-            values={[
-              ['Opportunity name', f.title],
-              ['Client budget', money(o.estimatedValue, o.currencyCode)],
-              [
-                'Client budget (USD)',
-                f.estimatedValueUsd
-                  ? money(f.estimatedValueUsd, 'USD')
-                  : '',
-              ],
-              ['Currency', o.currencyCode],
-              [
-                'Service line',
-                f.serviceLine === 'Other'
-                  ? f.serviceLineOther
-                  : f.serviceLine,
-              ],
-              [
-                'Lead source',
-                LEAD_SOURCES.find(source => source.id === f.leadSource)
-                  ?.label ?? f.leadSource,
-              ],
-              ['Owner', userLabel(o.owner)],
-              ['Priority', f.priority],
-              ['Description', f.description],
-            ]}
-          />
+        <Panel title="Opportunity details" tone="violet" accentIcon headerRight={<DetailDrawer title="Opportunity details" description="Full opportunity record.">
+          <Panel title="Opportunity details" tone="violet" accentIcon><Values values={[
+            ['Opportunity name', f.title], ['Client budget', money(o.estimatedValue, o.currencyCode)], ['Client budget (USD)', f.estimatedValueUsd ? money(f.estimatedValueUsd, 'USD') : ''], ['Currency', o.currencyCode], ['Service line', f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine], ['Lead source', LEAD_SOURCES.find(source => source.id === f.leadSource)?.label ?? f.leadSource], ['Owner', userLabel(o.owner)], ['Priority', f.priority], ['Description', f.description],
+          ]} /></Panel>
+        </DetailDrawer>}>
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-3 text-sm min-[400px]:grid-cols-2">
+            <div className="col-span-2">
+              <dt className="text-xs text-muted-foreground">Client budget</dt>
+              <dd className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                <strong className="text-lg font-semibold">{money(o.estimatedValue, o.currencyCode)}</strong>
+                {f.estimatedValueUsd ? <span className="text-xs text-muted-foreground">USD equivalent · {money(f.estimatedValueUsd, 'USD')}</span> : null}
+              </dd>
+            </div>
+            <div className="col-span-2"><dt className="text-xs text-muted-foreground">Service line</dt><dd className="mt-0.5">{f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Owner</dt><dd className="mt-0.5">{userLabel(o.owner)}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Lead source</dt><dd className="mt-0.5">{LEAD_SOURCES.find(source => source.id === f.leadSource)?.label ?? f.leadSource}</dd></div>
+          </dl>
         </Panel>
 
-        <Panel title="Client & contacts" tone="teal">
+        <Panel title="Client & contacts" tone="teal" accentIcon headerRight={o.client && <DetailDrawer title="Client & contacts" description="Full client record and contacts."><Panel title="Client & contacts" tone="teal" accentIcon><ClientValues client={o.client} /></Panel></DetailDrawer>}>
           {o.client ? (
             <>
-              <h3 className="mb-3 font-semibold">{o.client.name}</h3>
-              <ClientValues client={o.client} />
+              <p className="text-sm font-semibold">{o.client.name}</p>
+              <p className="text-xs text-muted-foreground">{[o.client.accountTypeName, o.client.industryName].filter(Boolean).join(' · ')}</p>
+              <p className="mt-2 text-sm">{[[o.client.streetAddress, o.client.city, o.client.stateProvince].filter(Boolean).join(', '), o.client.country].filter(Boolean).join(' · ')}</p>
+              <div className="mt-3 flex items-start gap-2 border-t pt-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full opp-panel-icon-teal text-xs font-semibold" aria-hidden="true">{initials(o.client.primaryContact.name || '—')}</span>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Primary contact</p>
+                  <p className="text-sm font-medium">{o.client.primaryContact.name}{o.client.primaryContact.title ? ` · ${o.client.primaryContact.title}` : ''}</p>
+                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                    {o.client.primaryContact.email && <a className="text-xs text-primary hover:underline" href={`mailto:${o.client.primaryContact.email}`}>{o.client.primaryContact.email}</a>}
+                    {o.client.primaryContact.phone && <a className="text-xs text-primary hover:underline" href={`tel:${o.client.primaryContact.phone}`}>{o.client.primaryContact.phone}</a>}
+                  </div>
+                </div>
+              </div>
             </>
           ) : (
-            <p>Not provided</p>
+            <p className="text-sm">Not provided</p>
           )}
         </Panel>
       </div>
@@ -189,7 +209,6 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
   ];
   const requested = params.get('tab') ?? 'overview', active = tabs.find(tab => tab.key === requested)?.key ?? tabs[0]?.key;
   if (!active) return <Notice title="Access restricted" error="No workspace modules are visible to your user." />;
-  const ownerName = o.owner ? (o.owner.name || o.owner.email) : '';
   const statusLabel = opportunityStatus(o).substage ?? opportunityStatus(o).stage ?? STATE_LABELS[o.state];
   const responseCount = o.responses?.length ?? 0;
   return <div className="opp-page">
@@ -208,7 +227,6 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
         {access.edit && o.allowedActions.includes('EDIT') && <Button asChild><Link to={`/opportunity/${o.id}/edit`}><Pencil className="size-3.5" aria-hidden="true" />Edit opportunity</Link></Button>}
       </div>
     </header>
-    <div className="opp-workspace-strip"><div><small>Client budget</small><strong>{money(o.estimatedValue, o.currencyCode)}</strong></div><div><small>Owner</small><strong>{userLabel(o.owner)}</strong></div><div><small>Submission deadline</small><div className="opp-deadline-value"><strong>{o.form.dates.submissionDeadline || 'Not provided'}</strong><small>{o.form.solicitation.submissionTimezone}</small></div></div></div>
     <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}>
       <TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>)}</TabsList>
       <div className="opp-detail-layout mt-3">

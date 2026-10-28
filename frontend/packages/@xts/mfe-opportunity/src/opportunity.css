@@ -138,21 +138,43 @@
 .opp-status.opp-state-SALES_REJECTED, .opp-status.opp-state-GATE1_NO_GO { background: #fff0ef; color: #a34242; border-color: #efcece; }
 .opp-status.opp-status-pair { background: transparent; box-shadow: none; }
 .opp-lane.opp-state-PREPARATION_PENDING { border-top-color: #b08a33; }.opp-lane.opp-state-IN_PROGRESS { border-top-color: #4e70b8; }.opp-lane.opp-state-SALES_REVIEW { border-top-color: #8e7bd2; }.opp-lane.opp-state-GATE1_PENDING { border-top-color: #6352cc; }.opp-lane.opp-state-GATE1_GO { border-top-color: #3e957e; }
-.opp-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(260px,300px); gap: 12px; align-items: start; }
-.opp-overview { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.3fr) minmax(220px,.7fr); gap: 12px; align-items: start; }
+.opp-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(260px,330px); gap: 12px; align-items: start; }
 .opp-detail-workspace { min-width: 0; container-type: inline-size; }
 .opp-detail-sidebar { display: grid; gap: 8px; min-width: 0; align-self: start; position: sticky; top: 12px; }
 .opp-overview { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.3fr); gap: 12px; align-items: start; }
+/* Below this, the fixed-ish 260-300px sidebar column leaves the main workspace too narrow (its
+   own content, e.g. .opp-overview, has already dropped to one column well before this point) —
+   so the actions/progress sidebar moves below the tab content instead of squeezing beside it. */
+@media (max-width: 960px) { .opp-detail-layout { grid-template-columns: minmax(0,1fr); } .opp-detail-sidebar { position: static; } }
 .opp-assessment-editors { min-width: 0; container-type: inline-size; }
 .opp-assessment-layout .opp-panel > :first-child { padding: 9px 12px; }
 .opp-assessment-layout .opp-panel > :nth-child(2) { padding: 12px; }
 .opp-assessment-counts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
 @container (min-width: 1000px) {
-  .opp-assessment-layout { grid-template-columns: minmax(0,1fr) 220px; }
+  .opp-assessment-layout { grid-template-columns: minmax(0,1fr) minmax(260px,320px); }
   .opp-assessment-counts { gap: 8px; }
   .opp-assessment-counts strong { font-size: 24px; }
 }
+/* The Estimate tab's own grid used a plain Tailwind `lg:grid-cols-[2fr_1fr]` (a *viewport*
+   breakpoint) while living inside a *container*-width-constrained workspace: at a wide-enough
+   viewport the two columns would appear even though the actual column had far less than 1024px
+   to work with, so the wide effort-matrix table forced the grid wider than its track and it
+   visually overlapped the page's own right-hand sidebar. A container query reacts to the
+   workspace's real width instead, matching how .opp-assessment-layout handles the same case. */
+@container (min-width: 1000px) { .opp-estimation-layout { grid-template-columns: minmax(0,2fr) minmax(260px,320px); } }
 @container (max-width: 760px) { .opp-assessment-layout .opp-assessment-items { grid-template-columns: minmax(0,1fr); } }
+/* The "Assessment summary" aside becomes the full-width column once .opp-assessment-layout drops
+   to one column on a narrower screen — at that point it has plenty of width to put the donut
+   chart beside the stat tiles instead of stacking everything vertically, which was pushing the
+   chart below the fold on laptop-width responsive views. */
+.opp-assessment-summary { container-type: inline-size; }
+.opp-assessment-summary-body { display: flex; flex-direction: column; gap: 16px; }
+.opp-assessment-chart { min-width: 0; }
+@container (min-width: 460px) {
+  .opp-assessment-summary-body { flex-direction: row; align-items: center; }
+  .opp-assessment-summary-body > * { flex: 1 1 0; min-width: 0; }
+  .opp-assessment-chart { border-top: 0; border-left: 1px solid hsl(var(--border)); padding-top: 0; padding-left: 16px; }
+}
 @container (max-width: 700px) { .opp-detail-workspace .opp-overview, .opp-detail-workspace .opp-assignment { grid-template-columns: minmax(0,1fr); } }
 .opp-values { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px 12px; margin-top: 8px; }.opp-values dt { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 2px; }.opp-values dd { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Use the panel's width, rather than the viewport, to keep the solicitation compact. */
@@ -179,7 +201,8 @@
 @media (pointer: coarse) {
   .opp-question-categories > button { min-height: 40px; }
 }
-.opp-detail-heading { display: grid; gap: 4px; margin-bottom: 10px; }
+.opp-detail-heading { display: grid; gap: 4px; margin-bottom: 8px; }
+.opp-detail-heading .opp-heading { margin-bottom: 0; }
 .opp-opportunity-number { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; max-width: 100%; padding: 4px 7px; border: 1px solid #e1e5f1; border-radius: 6px; background: #f5f7fd; color: #52698d; overflow-wrap: anywhere; }
 .opp-opportunity-number > span { font-size: 9px; font-weight: 500; }
 .opp-opportunity-number > strong { font-size: 11px; font-weight: 650; letter-spacing: .02em; color: #41558b; }
@@ -219,20 +242,35 @@
 .opp-review-actions:empty { display: none; }
 .opp-review-buttons { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; }
 .opp-review-secondary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-.opp-review-secondary > button:first-child:nth-last-child(odd) { grid-column: 1 / -1; }
-.opp-review-buttons button { justify-content: center; gap: 8px; width: 100%; height: auto; min-width: 0; min-height: 42px; padding: 8px 10px 8px 18px; border: 1px solid; border-radius: 999px; white-space: normal; text-align: center; font-size: 13px; font-weight: 650; line-height: 20px; box-shadow: inset 0 1px 0 #ffffff80, 0 3px 5px #14213d30; }
+/* Flat, tone-tinted decision buttons with a small leading icon — the primary action (Approve/Go)
+   is a solid fill, secondary actions (Hold/Reject/…) are a light tint, matching the rest of the
+   app's flatter card/badge look instead of the earlier gradient pill style. */
+.opp-review-buttons button { justify-content: center; gap: 7px; width: 100%; height: auto; min-width: 0; min-height: 37px; padding: 8px 10px; border: 1px solid; border-radius: 7px; white-space: normal; text-align: center; font-size: 13px; font-weight: 600; line-height: 1.3; box-shadow: none; }
 .opp-review-button-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.opp-review-button-arrow { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 23px; height: 23px; border: 1px solid #ffffffb3; border-radius: 50%; background: #ffffff14; }
-:is(.opp-review-buttons, .opp-dialog) :is(.opp-review-success, .opp-review-info, .opp-review-warning, .opp-review-error) { --opp-action-top: #6c7681; --opp-action-bottom: #4a5561; --opp-action-border: #8b949d; color: #fff; border-color: var(--opp-action-border); background: linear-gradient(180deg, var(--opp-action-top), var(--opp-action-bottom)); }
-.opp-review-buttons .opp-review-primary, .opp-dialog .opp-review-success { --opp-action-top: #397bc8; --opp-action-bottom: #205498; --opp-action-border: #5594dc; }
-:is(.opp-review-buttons, .opp-dialog) .opp-review-warning { --opp-action-top: #94651b; --opp-action-bottom: #765014; --opp-action-border: #b88b44; }
-:is(.opp-review-buttons, .opp-dialog) .opp-review-error { --opp-action-top: #cf4057; --opp-action-bottom: #ac263a; --opp-action-border: #e06a7c; }
-.opp-review-buttons button:hover:not(:disabled) { color: #fff; border-color: var(--opp-action-border); background: linear-gradient(180deg, var(--opp-action-top), var(--opp-action-bottom)); filter: brightness(1.08); box-shadow: inset 0 1px 0 #ffffffa3, 0 4px 7px #14213d38; }
-.opp-review-buttons button[aria-pressed=true] { opacity: 1; box-shadow: inset 0 0 0 2px #ffffff80, 0 1px 3px #14213d26; }
-.opp-dialog :is(.opp-review-success, .opp-review-info, .opp-review-warning, .opp-review-error) { border-radius: 999px; padding-inline: 20px; box-shadow: inset 0 1px 0 #ffffff80, 0 2px 4px #14213d26; }
+.opp-review-button-icon { width: 15px; height: 15px; flex-shrink: 0; }
+.opp-review-buttons .opp-review-primary { background: #456fd1; border-color: #456fd1; color: #fff; box-shadow: 0 2px 3px #345fb51a; }
+.opp-review-buttons .opp-review-primary:hover:not(:disabled) { background: #3f64c2; border-color: #3f64c2; }
+.opp-review-buttons .opp-review-warning { background: #fff9eb; border-color: #eed8a4; color: #88621b; }
+.opp-review-buttons .opp-review-warning:hover:not(:disabled) { background: #fef1cf; }
+.opp-review-buttons .opp-review-error { background: #fff3f5; border-color: #ebc5cc; color: #af4054; }
+.opp-review-buttons .opp-review-error:hover:not(:disabled) { background: #ffe7eb; }
+.opp-review-buttons :is(.opp-review-success, .opp-review-info):not(.opp-review-primary) { background: #f3f4f8; border-color: #d9dde6; color: #4b5570; }
+.opp-review-buttons :is(.opp-review-success, .opp-review-info):not(.opp-review-primary):hover:not(:disabled) { background: #e9ebf2; }
+.opp-review-buttons button[aria-pressed=true] { opacity: 1; box-shadow: inset 0 0 0 2px #ffffffa0, 0 1px 3px #14213d26; }
+/* The decision dialog's confirm button stays a bolder solid fill — it's paired with an outline
+   Cancel button there and needs to read as the dialog's one primary action. */
+.opp-dialog :is(.opp-review-success, .opp-review-info, .opp-review-warning, .opp-review-error) { color: #fff; border-radius: 8px; padding-inline: 18px; }
+.opp-dialog :is(.opp-review-success, .opp-review-info) { background: #456fd1; border-color: #456fd1; }
+.opp-dialog .opp-review-warning { background: #a9761f; border-color: #a9761f; }
+.opp-dialog .opp-review-error { background: #c23a4f; border-color: #c23a4f; }
 .opp-detail-sidebar .opp-review-buttons, .opp-detail-sidebar .opp-review-secondary { gap: 6px; }
-.opp-detail-sidebar .opp-review-buttons button { min-height: 34px; padding: 6px 9px 6px 12px; font-size: 11px; line-height: 16px; gap: 6px; }
-.opp-detail-sidebar .opp-review-button-arrow { width: 19px; height: 19px; }
+.opp-detail-sidebar .opp-review-buttons button { min-height: 34px; padding: 7px 10px; font-size: 12px; gap: 6px; }
+.opp-detail-sidebar .opp-review-button-icon { width: 13px; height: 13px; }
+/* Same compact header/body padding as the Opportunity progress panel beside it, so the two
+   sidebar cards share one visual rhythm instead of the actions card looking under-dressed. */
+.opp-review-panel > :first-child { padding: 10px 12px; }
+.opp-review-panel > :first-child p { font-size: 12px; line-height: 16px; }
+.opp-review-panel > :nth-child(2) { padding: 12px; }
 .opp-progress-panel > :first-child { padding: 10px 12px; }
 .opp-progress-panel > :nth-child(2) { padding: 12px; }
 .opp-stage-timeline { list-style: none; margin: 0; padding: 0; }

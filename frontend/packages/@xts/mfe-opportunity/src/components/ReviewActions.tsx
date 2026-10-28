@@ -4,10 +4,12 @@ import type { DecisionCommand, OpportunityDetail } from '@xts/api-contracts';
 import { applicableDecisions, decisionError } from '../lib/workflow';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useSave, type ConfirmationTone } from '../hooks/useSave';
-import { Field, Notice } from './ui';
+import { Field, Notice, Panel } from './ui';
 import { useCallback, useId } from 'react';
 import { useResource } from '../hooks/useResource';
-import { Check, ChevronRight } from 'lucide-react';
+import { ArrowRight, Check, Pause, X } from 'lucide-react';
+
+const TONE_ICON: Record<ConfirmationTone, typeof Check> = { success: Check, warning: Pause, error: X, info: ArrowRight };
 
 const LABELS: Record<DecisionCommand['decision'], string> = {
   SALES_APPROVE: 'Approve & Send to CEO',
@@ -137,18 +139,22 @@ export function ReviewActions({ opportunity: o, onSaved }: { opportunity: Opport
   const isPrimary = (action: DecisionCommand['decision']) => ['SALES_APPROVE', 'GATE1_GO', 'SUBMIT_ESTIMATE', 'ESTIMATE_APPROVE', 'BID_SUBMITTED', 'START_NEGOTIATION', 'RESUME_NEGOTIATION', 'RESUME_PROPOSAL', 'MARK_WON'].includes(action);
   const primary = decisions.find(isPrimary) ?? displayedDecisions.find(isPrimary);
   const secondary = displayedDecisions.filter(action => action !== primary);
-  const buttonTone = (action: DecisionCommand['decision']) => `opp-review-${action.endsWith('_REQUEST_CHANGES') ? 'info' : confirmationTone(action)}`;
+  const actionTone = (action: DecisionCommand['decision']): ConfirmationTone => action.endsWith('_REQUEST_CHANGES') ? 'info' : confirmationTone(action);
+  const buttonTone = (action: DecisionCommand['decision']) => `opp-review-${actionTone(action)}`;
   const actionButton = (action: DecisionCommand['decision']) => {
     const selected = action === selectedDecision;
+    const Icon = selected ? Check : TONE_ICON[actionTone(action)];
     return <Button key={action} type="button" size="sm" variant="outline"
       aria-pressed={selected} title={selected ? 'Action completed' : undefined}
       className={`${buttonTone(action)}${action === primary ? ' opp-review-primary' : ''}${selected ? ` ${CONFIRMATION_STYLES[confirmationTone(action)]} border shadow-inner ring-2 ring-inset ring-current disabled:opacity-100` : ''}`}
       disabled={mutation.saving || selected || !decisions.includes(action)} onClick={() => {
         setDecision(action); setReason(''); setHoldReasonId(''); setConfirmed(false); setValidation(undefined);
-      }}><span className="opp-review-button-label">{LABELS[action]}</span><span className="opp-review-button-arrow" aria-hidden="true">{selected ? <Check /> : <ChevronRight />}</span></Button>;
+      }}><Icon className="opp-review-button-icon" aria-hidden="true" /><span className="opp-review-button-label">{LABELS[action]}</span></Button>;
   };
   return <section className="opp-review-actions" aria-label="Opportunity actions">
-    {displayedDecisions.length > 0 && <div className="opp-review-buttons">{primary && actionButton(primary)}{secondary.length > 0 && <div className="opp-review-secondary">{secondary.map(actionButton)}</div>}</div>}
+    {displayedDecisions.length > 0 && <Panel title="Opportunity actions" description="Review this opportunity and choose the next step." tone="indigo" icon={Check} accentIcon className="opp-review-panel">
+      <div className="opp-review-buttons">{primary && actionButton(primary)}{secondary.length > 0 && <div className="opp-review-secondary">{secondary.map(actionButton)}</div>}</div>
+    </Panel>}
     {!decision && validation && <Notice error={validation} />}
     {!decision && mutation.error && <Notice error={mutation.error} />}
     <Dialog open={Boolean(decision)} onOpenChange={open => { if (!open && !mutation.saving) setDecision(undefined); }}>

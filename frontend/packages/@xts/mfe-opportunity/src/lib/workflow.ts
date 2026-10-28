@@ -116,7 +116,9 @@ export function estimateTotal(rows: EstimateRow[]): Decimal {
 }
 export function money(value: Decimal, code: string) {
   try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(Number(value)); }
-  catch { return `${code} ${value}`; }
+  // Not a recognized ISO currency code (e.g. test/seed data): still group digits
+  // (5,81,564.10) instead of a raw, hard-to-scan decimal string.
+  catch { return `${code} ${new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value))}`; }
 }
 export function decisionError(o: OpportunityDetail, decision: Action, reason: string, confirmed: boolean, reasonCodeId?: number | null): string | null {
   if (!may(o, decision)) return 'You are not permitted to make this decision.';

@@ -210,7 +210,7 @@ export function EstimationModule({
     await mutation.run(JSON.stringify({ estimation: draft, revision: o.revision }), key => service.saveEstimation({ opportunityId: o.id, expectedRevision: o.revision, idempotencyKey: key, estimation: { ...draft, total } }), saved => { if (saved.estimation) { setDraft(saved.estimation); setBaseline(JSON.stringify(saved.estimation)); } onSaved(saved); }, 'Estimation saved. Overview now shows the saved revision.');
   }
   return <>
-    <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[2fr_1fr]">
+    <div className="opp-estimation-layout grid grid-cols-1 items-start gap-3">
       <div className="space-y-3">
         <Panel title="Effort by phase & role" description="person-weeks" tone="indigo">
           <p className="mb-3 text-sm text-muted-foreground">{editable ? 'Enter effort per role; totals feed the cost summary automatically.' : 'Read-only estimation for your permissions or this stage.'}</p>
@@ -394,10 +394,13 @@ function flagUpdated(id: string) {
   // Scope summary textarea, there is no natural "done typing" moment to batch these list edits
   // behind a manual Save button. `next` is built explicitly (not read back from `draft` after
   // setDraft) since state updates are not synchronous.
-  async function persist(next: Scope, label: string) {
+  async function persist(next: Scope, label: string, requireSummary = false) {
     setDraft(next);
     if (!editable) return;
-    if (!next.summary.trim()) { setValidation('Enter the project scope before saving.'); return; }
+    // Only the explicit "Save scope" action enforces the required summary — Alignment and Risks
+    // are saved independently (add/remove/edit) and shouldn't be blocked by an unrelated, unsaved
+    // summary draft.
+    if (requireSummary && !next.summary.trim()) { setValidation('Enter the project scope before saving.'); return; }
     if (next.alignment.some(item => !item.text.trim())) { setValidation('Remove any empty alignment items before saving.'); return; }
     if (next.risks.some(item => !item.description.trim())) { setValidation('Remove any empty risks before saving.'); return; }
     setValidation(undefined);
@@ -430,7 +433,7 @@ function flagUpdated(id: string) {
         <Textarea aria-label="Scope summary" rows={4} value={draft.summary} onChange={e => setDraft(d => ({ ...d, summary: e.target.value }))} disabled={!editable || mutation.saving} placeholder="Describe the project scope…" />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">{draft.summary.length} characters</span>
-          {editable && <div className="flex items-center gap-3">{draft.summary !== baselineScope.summary && <span className="text-xs text-amber-600">Unsaved changes</span>}<Button type="button" size="sm" disabled={mutation.saving || draft.summary === baselineScope.summary} onClick={() => void persist(draft, 'Scope saved.')}>Save scope</Button></div>}
+          {editable && <div className="flex items-center gap-3">{draft.summary !== baselineScope.summary && <span className="text-xs text-amber-600">Unsaved changes</span>}<Button type="button" size="sm" disabled={mutation.saving || draft.summary === baselineScope.summary} onClick={() => void persist(draft, 'Scope saved.', true)}>Save scope</Button></div>}
         </div>
       </Panel>
       <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
@@ -454,9 +457,9 @@ function flagUpdated(id: string) {
       <ConfirmRemoveDialog open={pendingDelete !== null} label={pendingDelete?.label ?? ''} onCancel={() => setPendingDelete(null)} onConfirm={confirmDelete} />
       {(validation || mutation.error) && <Notice error={validation ?? mutation.error!} />}
     </div>
-    <aside className="space-y-3" aria-label="Assessment summary">
+    <aside className="opp-assessment-summary space-y-3" aria-label="Assessment summary">
       <Panel title="Assessment summary" tone="indigo" accentIcon className="bg-emerald-50/40">
-        <div className="space-y-4">
+        <div className="opp-assessment-summary-body">
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg border border-teal-100 bg-teal-50/60 p-3 text-center dark:border-teal-900 dark:bg-teal-950/10">
               <strong className="block text-3xl text-teal-700 dark:text-teal-300">{draft.alignment.length}</strong>
@@ -467,7 +470,7 @@ function flagUpdated(id: string) {
               <p className="text-xs text-muted-foreground">Risks</p>
             </div>
           </div>
-          <div className="border-t pt-4">
+          <div className="opp-assessment-chart border-t pt-4">
             <p className="mb-2 text-xs font-semibold text-muted-foreground">Risks by severity</p>
             <DonutChart centerLabel="Risks" emptyLabel="No risks logged yet" data={riskSeverityBreakdown} />
             <DonutChartLegend className="mt-3" data={riskSeverityBreakdown} />
