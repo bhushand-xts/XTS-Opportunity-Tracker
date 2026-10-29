@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { create, findResponses, findStageHistory, saveAnswer, saveEstimation, transitionWorkflow, update, updateRfpIntakeOpportunity } from './opportunity.repository';
+import { create, createClient, finalizeRfpIntakeOpportunity, findResponses, findStageHistory, saveAnswer, saveEstimation, transitionWorkflow, update, updateClient, updateRfpIntakeOpportunity } from './opportunity.repository';
 const db = require('../config/db');
 
 test('Q&A loads active opportunity-specific questions with their stored answers and independent versions', async t => {
@@ -33,6 +33,7 @@ test('saving a question answer records its author and history atomically without
   assert.deepEqual(write.params, [10, 21, 'Delivery plan.\nSecond phase.', 7]);
   assert.match(write.sql, /answered_by = \$4, answered_dt = CURRENT_TIMESTAMP/);
   assert.ok(calls.some(call => call.sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker')));
+  assert.ok(calls.findIndex(call => call.sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker')) < calls.indexOf(write));
   assert.equal(calls.some(call => /SET stage_id|assigned_to|engage_tracker/.test(call.sql)), false);
   assert.equal(calls.at(-1)?.sql, 'COMMIT');
 });
@@ -50,7 +51,7 @@ test('answer updates retain previous text and authors, including questions witho
         if (sql.includes('UPDATE tbl_opportunity_questions_answers_tracker')) {
           history.forEach(snapshot => { snapshot.isCurrent = false; });
         } else if (sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker')) {
-          history.push({ ...current, isCurrent: true });
+          history.push({ ...current, isCurrent: false });
         } else if (sql.startsWith('UPDATE tbl_opportunity_questions_answers\n')) {
           assert.deepEqual(params.slice(0, 2), [10, 21]);
           current.answer = params[2] as string;
@@ -62,8 +63,8 @@ test('answer updates retain previous text and authors, including questions witho
     await saveAnswer(10, 21, history.length, 'First update.', 7);
     await saveAnswer(10, 21, history.length, 'Second update.', 8);
     assert.deepEqual(current, { id: 21, opportunityId: 10, answer: 'Second update.', answeredBy: 8 });
-    assert.deepEqual(history.map(snapshot => [snapshot.answer, snapshot.answeredBy, snapshot.isCurrent]), [
-      ['Original answer.', 3, false], ['First update.', 7, false], ['Second update.', 8, true],
+    assert.deepEqual(history.slice(existingHistory ? 1 : 0).map(snapshot => [snapshot.answer, snapshot.answeredBy, snapshot.isCurrent]), [
+      ['Original answer.', 3, false], ['First update.', 7, false],
     ]);
     const count = history.length;
     await saveAnswer(10, 21, count, 'Second update.', 8);
@@ -100,7 +101,7 @@ test('answer audit failures roll back the answer instead of leaving unaudited te
   assert.equal(calls.includes('COMMIT'), false);
 });
 
-test('creation saves each questionnaire mode on questions and copies it into the first tracker snapshot', async t => {
+test('creation saves each questionnaire mode only in the current table with no opportunity or question snapshot', async t => {
   for (const questionnaireTypeId of [1, 2]) {
     const calls: { sql: string; params: unknown[] }[] = [];
     const opportunity = { opportunityId: 10, stageId: 1, subStageId: 1 };
@@ -116,15 +117,13 @@ test('creation saves each questionnaire mode on questions and copies it into the
     const question = calls.find(call => call.sql.includes('INSERT INTO tbl_opportunity_questions_answers\n'))!;
     assert.deepEqual(question.params, [10, 1, null, 'Describe delivery.', 'Technical', 7, questionnaireTypeId]);
     assert.match(question.sql, /questionnaire_type_id/);
-    const snapshot = calls.find(call => call.sql.includes('INSERT INTO tbl_opportunity_questions_answers_tracker'))!;
-    assert.equal(snapshot.sql.match(/questionnaire_type_id/g)?.length, 2);
-    assert.deepEqual(snapshot.params, [21]);
+    assert.equal(calls.some(call => /INSERT INTO \w+_tracker/.test(call.sql)), false);
     assert.ok(calls.some(call => call.sql.includes('ARRAY_AGG(questionnaire_type_id ORDER BY qa_id)')));
     assert.equal(calls.at(-1)?.sql, 'COMMIT');
   }
 });
 
-test('a mode-only update snapshots the new value, and an unchanged or omitted mode preserves the saved choice', async t => {
+test('a mode-only update snapshots the previous value before updating, and an unchanged or omitted mode preserves the saved choice', async t => {
   for (const scenario of [
     { stored: 1, selected: 2, rfpType: 1, expected: 2, changed: true },
     { stored: 2, selected: 1, rfpType: 1, expected: 1, changed: true },
@@ -153,9 +152,8 @@ test('a mode-only update snapshots the new value, and an unchanged or omitted mo
     if (scenario.changed) {
       assert.equal(questionUpdates[0].params[6], scenario.expected);
       assert.equal(snapshots[0].sql.match(/questionnaire_type_id/g)?.length, 2);
-      const closed = calls.find(call => call.sql.includes('UPDATE tbl_opportunity_questions_answers_tracker'))!;
-      assert.match(closed.sql, /is_current = FALSE/);
-      assert.ok(calls.indexOf(closed) < calls.indexOf(snapshots[0]));
+      assert.match(snapshots[0].sql, /updated_by, FALSE/);
+      assert.ok(calls.indexOf(snapshots[0]) < calls.indexOf(questionUpdates[0]));
     }
     assert.equal(calls.at(-1)?.sql, 'COMMIT');
   }
@@ -322,7 +320,7 @@ test('an engagement tracker failure rolls back the opportunity and releases the 
     query: async (sql: string) => {
       calls.push(sql);
       if (sql.includes('INSERT INTO tbl_opportunity_engage_tracker')) throw new Error('Audit insert failed');
-      return { rows: sql.includes('RETURNING opportunity_id') ? [{ opportunityId: 10 }] : [] };
+      return { rows: sql.includes('RETURNING opportunity_id') || sql.startsWith('SELECT') ? [{ opportunityId: 10 }] : [] };
     },
     release: () => { released = true; },
   }));
@@ -330,4 +328,97 @@ test('an engagement tracker failure rolls back the opportunity and releases the 
   assert.equal(calls.at(-1), 'ROLLBACK');
   assert.equal(calls.includes('COMMIT'), false);
   assert.equal(released, true);
+});
+
+const intakeClient = { clientName: 'Client', accountType: 'Enterprise', sector: 'Technology', city: 'Pune', state: 'Maharashtra', country: 'India' };
+const intakeContact = { fullName: 'Contact', titleRole: 'Manager', email: 'contact@example.com', phone: '123', roleInDecision: 1 };
+const intake = { opportunityName: 'Opportunity', ownerId: 7, currencyId: 1, estimatedValue: 100, sourceTypeId: 1, rfpType: 2, client: intakeClient, contacts: [intakeContact], questions: ['Delivery?'] };
+
+test('client and intake creation write only current rows, with a separate initial workflow event', async t => {
+  const calls: string[] = [];
+  let reuseClient = false;
+  t.mock.method(db.pool, 'connect', async () => ({
+    query: async (sql: string) => {
+      calls.push(sql.trim());
+      if (sql.includes('SELECT client_id AS "clientId"')) return { rows: reuseClient ? [{ clientId: 1 }] : [] };
+      if (sql.includes('SELECT client_contact_id') || sql.includes('SELECT qa_id')) return { rows: [] };
+      return { rows: [{ clientId: 1, clientContactId: 21, opportunityId: 10, opportunityNumber: 'TEST-10', opportunityName: 'Opportunity', qaId: 31 }] };
+    }, release: () => {},
+  }));
+  await createClient(intakeClient, [intakeContact], 7);
+  assert.equal(calls.some(sql => /INSERT INTO \w+_tracker/.test(sql)), false);
+  calls.length = 0;
+  await finalizeRfpIntakeOpportunity(intake, 7, null);
+  assert.equal(calls.filter(sql => /INSERT INTO \w+_tracker/.test(sql)).length, 1);
+  assert.ok(calls.some(sql => sql.startsWith('INSERT INTO tbl_opportunity_engage_tracker')));
+  // Selecting a client by ID does not edit or snapshot that client.
+  reuseClient = true;
+  calls.length = 0;
+  await finalizeRfpIntakeOpportunity({ ...intake, clientId: 1 }, 7, null);
+  assert.equal(calls.some(sql => sql.startsWith('INSERT INTO mst_client_tracker') || sql.startsWith('UPDATE mst_client\n')), false);
+  // Reusing by name edits the existing client, so preserve its previous row.
+  calls.length = 0;
+  await finalizeRfpIntakeOpportunity({ ...intake, contacts: [] }, 7, null);
+  assert.equal(calls.filter(sql => sql.startsWith('INSERT INTO mst_client_tracker')).length, 1);
+  assert.ok(calls.findIndex(sql => sql.startsWith('INSERT INTO mst_client_tracker')) < calls.findIndex(sql => sql.startsWith('UPDATE mst_client\n')));
+});
+
+test('both client editing routes archive old clients and edited/removed contacts, without snapshots for new contacts', async t => {
+  for (const fromIntake of [false, true]) {
+    const calls: { sql: string; params: unknown[] }[] = [];
+    t.mock.method(db.pool, 'connect', async () => ({
+      query: async (sql: string, params: unknown[] = []) => {
+        calls.push({ sql: sql.trim(), params });
+        if (sql.includes('SELECT client_contact_id')) {
+          if (sql.includes('NOT (LOWER(email)')) return { rows: [{ clientContactId: 21 }] };
+          return { rows: params[1] === intakeContact.email ? [{ clientContactId: 22 }] : [] };
+        }
+        return { rows: [{ clientId: 1, opportunityId: 10, stageId: 1, subStageId: 1, createdBy: 7 }] };
+      }, release: () => {},
+    }));
+    const contacts = [intakeContact, { ...intakeContact, email: 'new@example.com' }];
+    if (fromIntake) await updateRfpIntakeOpportunity(10, { ...intake, contacts, questions: [] }, 7);
+    else await updateClient(1, intakeClient, contacts, 7);
+    for (const table of ['mst_client', ...(fromIntake ? ['tbl_opportunity'] : [])]) {
+      const snapshots = calls.filter(call => call.sql.startsWith(`INSERT INTO ${table === 'mst_client' ? 'mst_client_tracker' : 'tbl_opportunity_tracker'} (`));
+      assert.equal(snapshots.length, 1);
+      assert.ok(calls.indexOf(snapshots[0]) < calls.findIndex(call => new RegExp(`^UPDATE ${table}\\b`).test(call.sql)));
+    }
+    const contactsHistory = calls.filter(call => call.sql.startsWith('INSERT INTO tbl_client_contact_person_tracker'));
+    assert.deepEqual(contactsHistory.map(call => call.params), [[21], [22]]);
+    assert.ok(calls.indexOf(contactsHistory[0]) < calls.findIndex(call => call.sql.startsWith('UPDATE tbl_client_contact_person SET is_active')));
+    assert.ok(calls.indexOf(contactsHistory[1]) < calls.findIndex(call => call.sql.startsWith('UPDATE tbl_client_contact_person\n')));
+    assert.equal(calls.at(-1)?.sql, 'COMMIT');
+  }
+});
+
+test('all opportunity update routes snapshot before overwriting, and a snapshot failure prevents the change', async t => {
+  for (const save of [
+    () => update(10, { opportunityName: 'Changed' }, 7),
+    () => updateRfpIntakeOpportunity(10, { ...intake, contacts: [], questions: [] }, 7),
+    () => transitionWorkflow(10, 2, 4, null, 7, 'Approved'),
+  ]) {
+    for (const fail of [false, true]) {
+      const calls: string[] = [];
+      t.mock.method(db.pool, 'connect', async () => ({
+        query: async (sql: string) => {
+          calls.push(sql.trim());
+          if (fail && sql.startsWith('INSERT INTO tbl_opportunity_tracker')) throw new Error('History unavailable');
+          if (sql.includes('SELECT client_contact_id')) return { rows: [] };
+          return { rows: [{ opportunityId: 10, clientId: 1, stageId: 1, subStageId: 1, createdBy: 7 }] };
+        }, release: () => {},
+      }));
+      if (fail) {
+        await assert.rejects(save(), /History unavailable/);
+        assert.equal(calls.some(sql => sql.startsWith('UPDATE tbl_opportunity\n')), false);
+        assert.equal(calls.at(-1), 'ROLLBACK');
+      } else {
+        await save();
+        const snapshots = calls.filter(sql => sql.startsWith('INSERT INTO tbl_opportunity_tracker'));
+        assert.equal(snapshots.length, 1);
+        assert.ok(calls.indexOf(snapshots[0]) < calls.findIndex(sql => sql.startsWith('UPDATE tbl_opportunity\n')));
+        assert.equal(calls.at(-1), 'COMMIT');
+      }
+    }
+  }
 });

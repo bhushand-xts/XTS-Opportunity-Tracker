@@ -28,7 +28,7 @@ export interface UpdatePermissionInput {
 }
 
 /** One entry of a permission's change history (mst_permissions_tracker): the
- * permission as it stood after a change. Newest first. */
+ * permission as it stood before an update or deletion. Newest first. */
 export interface PermissionHistory {
   trackerId: number;
   permissionId: number;

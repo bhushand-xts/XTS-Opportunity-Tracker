@@ -24,7 +24,7 @@ export interface EstimationPhaseInput {
 }
 
 /** One entry of an estimation phase's change history
- * (tbl_estimation_phases_tracker): the phase as it stood after a change.
+ * (tbl_estimation_phases_tracker): the phase as it stood before an update or deletion.
  * Newest first. */
 export interface EstimationPhaseHistory {
   trackerId: number;

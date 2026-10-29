@@ -1,14 +1,11 @@
+import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import type { PoolClient } from 'pg';
 
 import { query, transaction } from '../config/db';
 
 // ALL SQL for clients (mst_client) and their contact people
-// (tbl_client_contact_person). Every write to mst_client also writes a
-// snapshot to mst_client_tracker, inside the same transaction — the client
-// and its history are saved together or not at all, same convention as
-// reason-codes.repository.ts. tbl_client_contact_person_tracker uses
-// is_current (not is_active) as its own status-snapshot column, matching
-// its live schema.
+// (tbl_client_contact_person). Updates and deletes archive the previous row
+// in the same transaction. Creation writes only to the main tables.
 
 export interface Client {
   id: number;
@@ -151,32 +148,11 @@ async function findContactsByClient(clientId: number): Promise<ClientContact[]> 
 }
 
 async function recordTracker(client: PoolClient, id: number): Promise<void> {
-  await client.query(
-    `INSERT INTO mst_client_tracker
-       (client_id, client_name, account_type, sector, website, city, state, country, street_address,
-        created_dt, created_by, updated_dt, updated_by, is_active)
-     SELECT
-       client_id, client_name, account_type, sector, website, city, state, country, street_address,
-       COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, updated_dt, updated_by, COALESCE(is_active, TRUE)
-     FROM mst_client
-     WHERE client_id = $1`,
-    [id]
-  );
+  await recordPreviousVersion(client, 'mst_client', id);
 }
 
 async function recordContactTracker(client: PoolClient, contactId: number): Promise<void> {
-  await client.query(
-    `INSERT INTO tbl_client_contact_person_tracker
-       (client_contact_id, client_id, full_name, title_role, email, phone, role_in_decision,
-        role_in_decision_other, contact_sequence, created_dt, created_by, updated_dt, updated_by, is_current)
-     SELECT
-       client_contact_id, client_id, full_name, title_role, email, phone, role_in_decision,
-       role_in_decision_other, contact_sequence,
-       COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, updated_dt, updated_by, COALESCE(is_active, TRUE)
-     FROM tbl_client_contact_person
-     WHERE client_contact_id = $1`,
-    [contactId]
-  );
+  await recordPreviousVersion(client, 'tbl_client_contact_person', contactId);
 }
 
 // Newest change first.
@@ -208,8 +184,8 @@ async function findHistory(clientId: number): Promise<ClientHistory[]> {
 // Soft-deletes every currently-active contact for this client, then inserts
 // the submitted list fresh (sequence = its position in the array). Simpler
 // and more robust than id-matching individual contacts for edit-in-place,
-// and the full before/after state of every contact is preserved via its own
-// tracker row either way.
+// Previous contacts are archived before being retired; replacements are new
+// current rows and do not receive tracker entries on creation.
 async function replaceContacts(
   client: PoolClient,
   clientId: number,
@@ -221,17 +197,17 @@ async function replaceContacts(
     [clientId]
   );
   for (const row of existing.rows) {
+    await recordContactTracker(client, row.client_contact_id);
     await client.query(
       `UPDATE tbl_client_contact_person SET is_active = FALSE, updated_dt = CURRENT_TIMESTAMP, updated_by = $2
        WHERE client_contact_id = $1`,
       [row.client_contact_id, userId]
     );
-    await recordContactTracker(client, row.client_contact_id);
   }
 
   let sequence = 1;
   for (const contact of contacts) {
-    const inserted = await client.query<{ client_contact_id: number }>(
+    await client.query<{ client_contact_id: number }>(
       `INSERT INTO tbl_client_contact_person
          (client_id, full_name, title_role, email, phone, role_in_decision, role_in_decision_other,
           contact_sequence, created_by, is_active)
@@ -249,7 +225,6 @@ async function replaceContacts(
         userId,
       ]
     );
-    await recordContactTracker(client, inserted.rows[0].client_contact_id);
   }
 }
 
@@ -273,7 +248,6 @@ async function create(input: ClientInput, userId: number | null): Promise<Client
       ]
     );
     const clientId = result.rows[0].id;
-    await recordTracker(client, clientId);
     if (input.contacts?.length) {
       await replaceContacts(client, clientId, input.contacts, userId);
     }
@@ -283,6 +257,7 @@ async function create(input: ClientInput, userId: number | null): Promise<Client
 
 async function update(id: number, input: Partial<ClientInput>, userId: number | null): Promise<Client> {
   return transaction(async (client) => {
+    await recordTracker(client, id);
     const result = await client.query<Client>(
       `UPDATE mst_client SET
          client_name = COALESCE($1, client_name),
@@ -319,7 +294,6 @@ async function update(id: number, input: Partial<ClientInput>, userId: number | 
         id,
       ]
     );
-    await recordTracker(client, id);
     if (input.contacts !== undefined) {
       await replaceContacts(client, id, input.contacts, userId);
     }
@@ -332,6 +306,8 @@ async function update(id: number, input: Partial<ClientInput>, userId: number | 
 // reason-codes.repository.ts's remove().
 async function remove(id: number, userId: number | null): Promise<void> {
   await transaction(async (client) => {
+    // Use the same parent-before-contacts lock order as update().
+    await recordTracker(client, id);
     const contacts = await client.query<{ client_contact_id: number }>(
       `SELECT client_contact_id FROM tbl_client_contact_person WHERE client_id = $1`,
       [id]
@@ -339,17 +315,6 @@ async function remove(id: number, userId: number | null): Promise<void> {
     for (const row of contacts.rows) {
       await recordContactTracker(client, row.client_contact_id);
     }
-    await client.query(
-      `INSERT INTO mst_client_tracker
-         (client_id, client_name, account_type, sector, website, city, state, country, street_address,
-          created_dt, created_by, updated_dt, updated_by, is_active)
-       SELECT
-         client_id, client_name, account_type, sector, website, city, state, country, street_address,
-         COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, CURRENT_TIMESTAMP, $2, FALSE
-       FROM mst_client
-       WHERE client_id = $1`,
-      [id, userId]
-    );
     await client.query('DELETE FROM tbl_client_contact_person WHERE client_id = $1', [id]);
     await client.query('DELETE FROM mst_client WHERE client_id = $1', [id]);
   });

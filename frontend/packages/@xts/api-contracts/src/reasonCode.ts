@@ -22,7 +22,7 @@ export interface ReasonCodeInput {
 }
 
 /** One entry of a reason code's change history (tbl_reason_codes_tracker):
- * the reason code as it stood after a change. Newest first. */
+ * the reason code as it stood before an update or deletion. Newest first. */
 export interface ReasonCodeHistory {
   trackerId: number;
   reasonCodeId: number;

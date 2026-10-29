@@ -1,3 +1,4 @@
+import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import type { PoolClient } from 'pg';
 
 import { query, transaction } from '../config/db';
@@ -7,7 +8,7 @@ import { query, transaction } from '../config/db';
 // (questions are deactivated, not deleted — see rfp-questions.service.ts).
 
 // One row of mst_rfp_questions_tracker: a snapshot of a question as it stood
-// after a change.
+// before an update or deletion.
 export interface RfpQuestionHistory {
   trackerId: number;
   questionId: number;
@@ -91,21 +92,11 @@ export interface RfpQuestionInput {
   updatedBy?: number | null;
 }
 
-// Every write to mst_rfp_questions also writes a snapshot to
+// Updates archive the previous row in
 // mst_rfp_questions_tracker, inside the same transaction (README rule 5):
 // the question and its history are saved together or not at all.
 async function recordTracker(client: PoolClient, id: number): Promise<void> {
-  await client.query(
-    `INSERT INTO mst_rfp_questions_tracker
-       (question_id, question, description, display_order, created_dt, created_by, updated_dt, updated_by, is_active)
-     SELECT
-       question_id, question, description, display_order,
-       COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, updated_dt, updated_by,
-       COALESCE(is_active, TRUE)
-     FROM mst_rfp_questions
-     WHERE question_id = $1`,
-    [id]
-  );
+  await recordPreviousVersion(client, 'mst_rfp_questions', id);
 }
 
 // Newest change first.
@@ -137,13 +128,13 @@ async function create(input: RfpQuestionInput, userId: number | null): Promise<R
        RETURNING ${SELECT_COLUMNS}`,
       [input.question, input.description ?? null, input.displayOrder ?? null, input.isActive ?? null, userId]
     );
-    await recordTracker(client, result.rows[0].id);
     return result.rows[0];
   });
 }
 
 async function update(id: number, input: Partial<RfpQuestionInput>, userId: number | null): Promise<RfpQuestion> {
   return transaction(async (client) => {
+    await recordTracker(client, id);
     const result = await client.query<RfpQuestion>(
       `UPDATE mst_rfp_questions SET
          question = COALESCE($1, question),
@@ -165,7 +156,6 @@ async function update(id: number, input: Partial<RfpQuestionInput>, userId: numb
         id,
       ]
     );
-    await recordTracker(client, id);
     return result.rows[0];
   });
 }

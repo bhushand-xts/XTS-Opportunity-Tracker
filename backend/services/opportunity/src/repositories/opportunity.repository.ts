@@ -1,3 +1,4 @@
+import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import { query, transaction } from "../config/db";
 import type { PoolClient } from "pg";
 import { conflict, notFound } from '../../../../shared/errors/graphqlErrors';
@@ -283,16 +284,8 @@ async function saveClientContact(
   );
   const existingContactId = existingContact.rows[0]?.clientContactId;
   if (existingContactId) {
-    await client.query(
-      `UPDATE tbl_client_contact_person_tracker
-       SET is_current = FALSE
-       WHERE client_contact_id = $1 AND is_current = TRUE`,
-      [existingContactId]
-    );
-  }
-
-  const savedContact = existingContactId
-    ? await client.query<{ clientContactId: number }>(
+    await recordPreviousVersion(client, 'tbl_client_contact_person', existingContactId);
+    await client.query<{ clientContactId: number }>(
         `UPDATE tbl_client_contact_person
          SET full_name = $1, title_role = $2, email = $3, phone = $4,
              role_in_decision = $5, updated_dt = CURRENT_TIMESTAMP,
@@ -301,8 +294,9 @@ async function saveClientContact(
          RETURNING client_contact_id AS "clientContactId"`,
         [contact.fullName.trim(), contact.titleRole.trim(), contact.email.trim(), contact.phone.trim(),
           contact.roleInDecision, userId, existingContactId, contact.roleInDecision === 10 ? contact.roleInDecisionOther?.trim() || null : null, contactSequence]
-      )
-    : await client.query<{ clientContactId: number }>(
+      );
+  } else {
+    await client.query<{ clientContactId: number }>(
         `INSERT INTO tbl_client_contact_person
            (client_id, full_name, title_role, email, phone, role_in_decision,
             contact_sequence, created_by, is_active, role_in_decision_other)
@@ -311,33 +305,11 @@ async function saveClientContact(
         [clientId, contact.fullName.trim(), contact.titleRole.trim(), contact.email.trim(),
           contact.phone.trim(), contact.roleInDecision, contactSequence, userId, contact.roleInDecision === 10 ? contact.roleInDecisionOther?.trim() || null : null]
       );
-
-  await client.query(
-    `INSERT INTO tbl_client_contact_person_tracker
-       (client_contact_id, client_id, full_name, title_role, email, phone, role_in_decision, role_in_decision_other,
-        contact_sequence, created_dt, created_by, updated_dt, updated_by, is_current)
-     SELECT client_contact_id, client_id, full_name, title_role, email, phone, role_in_decision, role_in_decision_other,
-            contact_sequence, created_dt, created_by, updated_dt, updated_by, TRUE
-     FROM tbl_client_contact_person WHERE client_contact_id = $1`,
-    [savedContact.rows[0].clientContactId]
-  );
+  }
 }
 
-async function recordProposalQuestionSnapshot(client: PoolClient, qaId: number, isCurrent = true): Promise<void> {
-  await client.query(
-    `UPDATE tbl_opportunity_questions_answers_tracker
-     SET is_current = FALSE WHERE qa_id = $1 AND is_current = TRUE`,
-    [qaId]
-  );
-  await client.query(
-    `INSERT INTO tbl_opportunity_questions_answers_tracker
-       (qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, questionnaire_type_id, answertext,
-        answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, is_current)
-     SELECT qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, questionnaire_type_id, answertext,
-            answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, ${isCurrent ? 'TRUE' : 'FALSE'}
-     FROM tbl_opportunity_questions_answers WHERE qa_id = $1`,
-    [qaId]
-  );
+async function recordProposalQuestionSnapshot(client: PoolClient, qaId: number): Promise<void> {
+  await recordPreviousVersion(client, 'tbl_opportunity_questions_answers', qaId);
 }
 
 export interface OpportunityResponse {
@@ -348,7 +320,7 @@ export interface OpportunityResponse {
   revision: number;
 }
 
-// The tracker already records every saved question/answer version.
+// Every archived previous version advances the revision; a new question starts at zero.
 const RESPONSE_COLUMNS = `q.qa_id AS id, q.questiontext AS title, q.question_category AS category,
   COALESCE(q.answertext, '') AS answer,
   (SELECT COUNT(*)::INTEGER FROM tbl_opportunity_questions_answers_tracker h WHERE h.qa_id = q.qa_id) AS revision`;
@@ -372,21 +344,16 @@ export async function saveAnswer(opportunityId: number, responseId: number, revi
     if (!current) throw notFound('This question is no longer available for this opportunity.');
     if (current.revision !== revision) throw conflict('This answer or question has changed. Refresh the opportunity before saving again.');
     if (current.answer === answer) return;
-    // Older questions may predate tracker snapshots. Preserve their previous
-    // answer before replacing it, just as for questions created by this service.
-    if (current.revision === 0) await recordProposalQuestionSnapshot(client, responseId);
+    await recordProposalQuestionSnapshot(client, responseId);
     await client.query(`UPDATE tbl_opportunity_questions_answers
       SET answertext = $3, answered_by = $4, answered_dt = CURRENT_TIMESTAMP,
           updated_by = $4, updated_dt = CURRENT_TIMESTAMP
       WHERE opportunity_id = $1 AND qa_id = $2 AND is_active = TRUE`, [opportunityId, responseId, answer, userId]);
-    await recordProposalQuestionSnapshot(client, responseId);
   });
 }
 
-async function archiveAndRemoveProposalQuestion(client: PoolClient, qaId: number, userId: number | null): Promise<void> {
-  await client.query(`UPDATE tbl_opportunity_questions_answers SET is_active = FALSE,
-    updated_dt = CURRENT_TIMESTAMP, updated_by = $2 WHERE qa_id = $1`, [qaId, userId]);
-  await recordProposalQuestionSnapshot(client, qaId, false);
+async function archiveAndRemoveProposalQuestion(client: PoolClient, qaId: number): Promise<void> {
+  await recordProposalQuestionSnapshot(client, qaId);
   await client.query('DELETE FROM tbl_opportunity_questions_answers WHERE qa_id = $1', [qaId]);
 }
 
@@ -446,6 +413,7 @@ async function saveProposalQuestion(
       current.category !== selection.category ||
       (current.questionnaireTypeId ?? null) !== questionnaireTypeId ||
         (selection.questionId !== null && current.questionId !== selection.questionId)) {
+      await recordProposalQuestionSnapshot(client, current.qaId);
       await client.query(
         `UPDATE tbl_opportunity_questions_answers
        SET opportunity_type_id = $2, question_id = COALESCE($3, question_id),
@@ -454,19 +422,17 @@ async function saveProposalQuestion(
          WHERE qa_id = $1`,
       [current.qaId, opportunityTypeId, selection.questionId, selection.question, selection.category, userId, questionnaireTypeId]
       );
-      await recordProposalQuestionSnapshot(client, current.qaId);
     }
     return;
   }
 
-  const inserted = await client.query<{ qaId: number }>(
+  await client.query<{ qaId: number }>(
     `INSERT INTO tbl_opportunity_questions_answers
        (opportunity_id, opportunity_type_id, question_id, questiontext, question_category, answertext, created_by, is_active, questionnaire_type_id)
      VALUES ($1, $2, $3, $4, $5, NULL, $6, TRUE, $7)
      RETURNING qa_id AS "qaId"`,
     [opportunityId, opportunityTypeId, selection.questionId, selection.question, selection.category, userId, questionnaireTypeId]
   );
-  await recordProposalQuestionSnapshot(client, inserted.rows[0].qaId);
 }
 
 async function findClients() {
@@ -490,12 +456,6 @@ export async function createClient(input: RfpIntakeClientInput, contacts: RfpInt
       [input.clientName.trim(), input.accountType.trim(), input.sector.trim(), input.website?.trim() || null,
         input.city.trim(), input.state.trim(), input.country.trim(), input.streetAddress?.trim() || null, userId]);
     const clientId = result.rows[0].clientId;
-    await client.query(
-      `INSERT INTO mst_client_tracker
-       (client_id, client_name, account_type, sector, website, city, state, country,
-        street_address, created_dt, created_by, updated_dt, updated_by, is_active)
-       SELECT client_id, client_name, account_type, sector, website, city, state, country,
-        street_address, created_dt, created_by, updated_dt, updated_by, TRUE FROM mst_client WHERE client_id = $1`, [clientId]);
     for (const [index, contact] of contacts.entries()) {
       await saveClientContact(client, clientId, contact, index + 1, userId);
     }
@@ -503,8 +463,21 @@ export async function createClient(input: RfpIntakeClientInput, contacts: RfpInt
   });
 }
 
+async function removeMissingClientContacts(client: PoolClient, clientId: number, contacts: RfpIntakeContactInput[], userId: number): Promise<void> {
+  const removed = await client.query<{ clientContactId: number }>(
+    `SELECT client_contact_id AS "clientContactId" FROM tbl_client_contact_person
+     WHERE client_id = $1 AND is_active = TRUE AND NOT (LOWER(email) = ANY($2::TEXT[])) FOR UPDATE`,
+    [clientId, contacts.map(contact => contact.email.trim().toLowerCase())]);
+  for (const contact of removed.rows) {
+    await recordPreviousVersion(client, 'tbl_client_contact_person', contact.clientContactId);
+    await client.query(`UPDATE tbl_client_contact_person SET is_active = FALSE,
+      updated_dt = CURRENT_TIMESTAMP, updated_by = $2 WHERE client_contact_id = $1`, [contact.clientContactId, userId]);
+  }
+}
+
 export async function updateClient(clientId: number, input: RfpIntakeClientInput, contacts: RfpIntakeContactInput[], userId: number) {
   return transaction(async client => {
+    await recordPreviousVersion(client, 'mst_client', clientId);
     const existing = await client.query('SELECT client_id FROM mst_client WHERE client_id = $1 FOR UPDATE', [clientId]);
     if (!existing.rows.length) throw new Error('Client not found.');
     await client.query(
@@ -513,27 +486,7 @@ export async function updateClient(clientId: number, input: RfpIntakeClientInput
        updated_dt = CURRENT_TIMESTAMP, updated_by = $9 WHERE client_id = $10`,
       [input.clientName.trim(), input.accountType.trim(), input.sector.trim(), input.website?.trim() || null,
         input.city.trim(), input.state.trim(), input.country.trim(), input.streetAddress?.trim() || null, userId, clientId]);
-    await client.query(
-      `INSERT INTO mst_client_tracker
-       (client_id, client_name, account_type, sector, website, city, state, country,
-        street_address, created_dt, created_by, updated_dt, updated_by, is_active)
-       SELECT client_id, client_name, account_type, sector, website, city, state, country,
-        street_address, created_dt, created_by, updated_dt, updated_by, is_active
-       FROM mst_client WHERE client_id = $1`, [clientId]);
-    const removed = await client.query<{ clientContactId: number }>(
-      `UPDATE tbl_client_contact_person SET is_active = FALSE, updated_dt = CURRENT_TIMESTAMP, updated_by = $3
-       WHERE client_id = $1 AND is_active = TRUE AND NOT (LOWER(email) = ANY($2::TEXT[]))
-       RETURNING client_contact_id AS "clientContactId"`, [clientId, contacts.map(contact => contact.email.trim().toLowerCase()), userId]);
-    for (const contact of removed.rows) {
-      await client.query('UPDATE tbl_client_contact_person_tracker SET is_current = FALSE WHERE client_contact_id = $1 AND is_current = TRUE', [contact.clientContactId]);
-      await client.query(
-        `INSERT INTO tbl_client_contact_person_tracker
-         (client_contact_id, client_id, full_name, title_role, email, phone, role_in_decision, role_in_decision_other,
-          contact_sequence, created_dt, created_by, updated_dt, updated_by, is_current)
-         SELECT client_contact_id, client_id, full_name, title_role, email, phone, role_in_decision, role_in_decision_other,
-          contact_sequence, created_dt, created_by, updated_dt, updated_by, TRUE
-         FROM tbl_client_contact_person WHERE client_contact_id = $1`, [contact.clientContactId]);
-    }
+    await removeMissingClientContacts(client, clientId, contacts, userId);
     for (const [index, contact] of contacts.entries()) await saveClientContact(client, clientId, contact, index + 1, userId);
     return clientId;
   });
@@ -643,6 +596,8 @@ async function updateRfpIntakeOpportunity(
     );
     const clientId = existing.rows[0]?.clientId;
     if (!clientId) return null;
+    await recordPreviousVersion(client, 'tbl_opportunity', opportunityId);
+    await recordPreviousVersion(client, 'mst_client', clientId);
 
     await client.query(
       `UPDATE mst_client
@@ -654,47 +609,7 @@ async function updateRfpIntakeOpportunity(
         input.client.website?.trim() || null, input.client.city, input.client.state,
         input.client.country, input.client.streetAddress?.trim() || null, userId, clientId]
     );
-    await client.query(
-      `UPDATE mst_client_tracker SET is_active = FALSE WHERE client_id = $1 AND is_active = TRUE`,
-      [clientId]
-    );
-    await client.query(
-      `INSERT INTO mst_client_tracker
-         (client_id, client_name, account_type, sector, website, city, state, country,
-          street_address, created_dt, created_by, updated_dt, updated_by, is_active)
-       SELECT client_id, client_name, account_type, sector, website, city, state, country,
-              street_address, created_dt, created_by, updated_dt, updated_by, TRUE
-       FROM mst_client WHERE client_id = $1`,
-      [clientId]
-    );
-
-    const activeEmails = input.contacts.map((contact) => contact.email.trim().toLowerCase());
-    const removedContacts = await client.query<{ clientContactId: number }>(
-      `UPDATE tbl_client_contact_person
-       SET is_active = FALSE, updated_dt = CURRENT_TIMESTAMP, updated_by = $3
-       WHERE client_id = $1 AND is_active = TRUE
-         AND NOT (LOWER(email) = ANY($2::TEXT[]))
-       RETURNING client_contact_id AS "clientContactId"`,
-      [clientId, activeEmails, userId]
-    );
-    const removedContactIds = removedContacts.rows.map((contact) => contact.clientContactId);
-    if (removedContactIds.length > 0) {
-      await client.query(
-        `UPDATE tbl_client_contact_person_tracker
-         SET is_current = FALSE
-         WHERE client_contact_id = ANY($1::INTEGER[]) AND is_current = TRUE`,
-        [removedContactIds]
-      );
-      await client.query(
-        `INSERT INTO tbl_client_contact_person_tracker
-           (client_contact_id, client_id, full_name, title_role, email, phone, role_in_decision, role_in_decision_other,
-            contact_sequence, created_dt, created_by, updated_dt, updated_by, is_current)
-         SELECT client_contact_id, client_id, full_name, title_role, email, phone, role_in_decision, role_in_decision_other,
-                contact_sequence, created_dt, created_by, updated_dt, updated_by, TRUE
-         FROM tbl_client_contact_person WHERE client_contact_id = ANY($1::INTEGER[])`,
-        [removedContactIds]
-      );
-    }
+    await removeMissingClientContacts(client, clientId, input.contacts, userId);
     await input.contacts.reduce<Promise<void>>(
       (previous, contact, index) => previous.then(() =>
         saveClientContact(client, clientId, contact, index + 1, userId)
@@ -733,30 +648,6 @@ async function updateRfpIntakeOpportunity(
       [opportunityId, input.opportunityDescription ?? null, input.contractTerm ?? null,
         input.incumbentVendor ?? null, input.preBidmeeting ?? null, input.leadReceivedDate || null]);
     await returnUpdatedOpportunityForReview(client, opportunityId, existing.rows[0], userId, audit);
-    await client.query(
-      `UPDATE tbl_opportunity_tracker SET is_current = FALSE
-       WHERE opportunity_id = $1 AND is_current = TRUE`,
-      [opportunityId]
-    );
-    await client.query(
-      `INSERT INTO tbl_opportunity_tracker
-         (opportunity_id, opportunity_number, opportunity_name, opportunity_type_id, source_type_id,
-          client_id, stage_id, sub_stage_id, owner_id, assigned_to, priority, service_line,
-          solicitation_number, issuing_agency, procurement_contact, que_duedate, submission_method,
-          contract_term, incumbent_vendor, pre_bidmeeting, document_type, file_name, file_path,
-            uploaded_by, uploaded_dt, doc_submission_format, evaluation_basis, opportunity_description,
-          lead_received_date, expected_start_date, expected_close_date, proposal_due_date, created_dt,
-          created_by, updated_dt, updated_by, is_current, estimated_value, currency_id, estimated_value_usd)
-       SELECT opportunity_id, opportunity_number, opportunity_name, opportunity_type_id, source_type_id,
-          client_id, stage_id, sub_stage_id, owner_id, assigned_to, priority, service_line,
-          solicitation_number, issuing_agency, procurement_contact, que_duedate, submission_method,
-          contract_term, incumbent_vendor, pre_bidmeeting, document_type, file_name, file_path,
-          uploaded_by, uploaded_dt, doc_submission_format, evaluation_basis, opportunity_description,
-          lead_received_date, expected_start_date, expected_close_date, proposal_due_date, created_dt,
-          created_by, updated_dt, updated_by, TRUE, estimated_value, currency_id, estimated_value_usd
-       FROM tbl_opportunity WHERE opportunity_id = $1`,
-      [opportunityId]
-    );
     const result = await client.query<Opportunity>(
       `SELECT ${OPPORTUNITY_LIST_COLUMNS}
        FROM tbl_opportunity o WHERE o.opportunity_id = $1`,
@@ -785,6 +676,9 @@ async function finalizeRfpIntakeOpportunity(
       [input.client.clientName.trim(), input.clientId ?? null]
     );
     if (input.clientId && !existingClient.rows[0]) throw new Error("The selected client is no longer available.");
+    if (!input.clientId && existingClient.rows[0]) {
+      await recordPreviousVersion(client, 'mst_client', existingClient.rows[0].clientId);
+    }
     const clientResult = input.clientId ? existingClient : existingClient.rows[0]
       ? await client.query<{ clientId: number }>(
           `UPDATE mst_client
@@ -809,20 +703,6 @@ async function finalizeRfpIntakeOpportunity(
             input.client.country, input.client.streetAddress?.trim() || null, userId]
         );
     const clientId = clientResult.rows[0].clientId;
-
-    await client.query(
-      `UPDATE mst_client_tracker SET is_active = FALSE WHERE client_id = $1 AND is_active = TRUE`,
-      [clientId]
-    );
-    await client.query(
-      `INSERT INTO mst_client_tracker
-         (client_id, client_name, account_type, sector, website, city, state, country,
-          street_address, created_dt, created_by, updated_dt, updated_by, is_active)
-       SELECT client_id, client_name, account_type, sector, website, city, state, country,
-              street_address, created_dt, created_by, updated_dt, updated_by, TRUE
-       FROM mst_client WHERE client_id = $1`,
-      [clientId]
-    );
 
     const created = await client.query<{ opportunityId: number; opportunityName: string; opportunityNumber: string }>(
       `INSERT INTO tbl_opportunity
@@ -856,37 +736,11 @@ async function finalizeRfpIntakeOpportunity(
         input.incumbentVendor || null, input.preBidmeeting ?? null, input.leadReceivedDate || null]);
 
     await client.query(
-      `INSERT INTO tbl_opportunity_tracker
-         (opportunity_id, opportunity_number, opportunity_name, opportunity_type_id, source_type_id, client_id,
-         stage_id, sub_stage_id, owner_id, assigned_to, priority, service_line,
-         solicitation_number, issuing_agency, procurement_contact, que_duedate, submission_method,
-        file_name, document_type, doc_submission_format, evaluation_basis,
-         proposal_due_date, created_by, is_current, estimated_value, currency_id)
-       VALUES ($1, $2, $3, $4, $5, $6, 1, 1, $7, $8, $9, $10,
-         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, TRUE, $22, $23)`,
-      [opportunity.opportunityId, opportunity.opportunityNumber, opportunity.opportunityName,
-        input.rfpType, input.sourceTypeId, clientId, input.ownerId, salesHeadId, input.priority?.trim() || null,
-        input.serviceLine?.trim() || null, input.solicitationNumber?.trim() || null,
-        input.issuingAgency?.trim() || null, input.procurementContact?.trim() || null,
-        input.queDueDate || null, input.submissionMethod?.trim() || null,
-        input.fileName?.trim() || null, input.documentType?.trim() || null,
-        input.docSubmissionFormat?.trim() || null, input.evaluationBasis?.trim() || null,
-        input.proposalDueDate || null,
-        userId, input.estimatedValue, input.currencyId]
-    );
-
-    await client.query(
       `INSERT INTO tbl_opportunity_engage_tracker
          (opportunity_id, stage_id, substage_id, updated_by, updated_dt, is_current, comment)
        VALUES ($1, 1, 1, $2, CURRENT_TIMESTAMP, TRUE, NULL)`,
       [opportunity.opportunityId, userId]
     );
-
-    await client.query(`UPDATE tbl_opportunity_tracker t SET opportunity_description = o.opportunity_description,
-      contract_term = o.contract_term, incumbent_vendor = o.incumbent_vendor,
-      pre_bidmeeting = o.pre_bidmeeting, lead_received_date = o.lead_received_date
-      FROM tbl_opportunity o WHERE t.opportunity_id = o.opportunity_id AND o.opportunity_id = $1 AND t.is_current = TRUE`,
-      [opportunity.opportunityId]);
 
     await (input.clientId ? [] : input.contacts).reduce<Promise<void>>(
       (previous, contact, index) => previous.then(() =>
@@ -977,11 +831,14 @@ async function transitionWorkflow(
   expected?: { stageId: number | null; subStageId: number | null }
 ): Promise<Opportunity | null> {
   return transaction(async (client) => {
-    if (expected) {
-      const current = await client.query<{ stageId: number; subStageId: number }>(
-        'SELECT stage_id AS "stageId", sub_stage_id AS "subStageId" FROM tbl_opportunity WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE', [opportunityId]);
-      if (!current.rows[0] || current.rows[0].stageId !== expected.stageId || current.rows[0].subStageId !== expected.subStageId) throw new Error('This opportunity changed while you were reviewing it. Refresh before making a decision.');
+    const current = await client.query<{ stageId: number; subStageId: number }>(
+      'SELECT stage_id AS "stageId", sub_stage_id AS "subStageId" FROM tbl_opportunity WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE', [opportunityId]);
+    if (!current.rows[0]) {
+      if (expected) throw new Error('This opportunity changed while you were reviewing it. Refresh before making a decision.');
+      return null;
     }
+    if (expected && (current.rows[0].stageId !== expected.stageId || current.rows[0].subStageId !== expected.subStageId)) throw new Error('This opportunity changed while you were reviewing it. Refresh before making a decision.');
+    await recordPreviousVersion(client, 'tbl_opportunity', opportunityId);
     const updated = await client.query<{ opportunityId: number }>(
       `UPDATE tbl_opportunity
        SET stage_id = $1, sub_stage_id = $2, assigned_to = $3,
@@ -993,30 +850,6 @@ async function transitionWorkflow(
     );
     if (!updated.rows[0]) return null;
 
-    await client.query(
-      `UPDATE tbl_opportunity_tracker SET is_current = FALSE
-       WHERE opportunity_id = $1 AND is_current = TRUE`,
-      [opportunityId]
-    );
-    await client.query(
-      `INSERT INTO tbl_opportunity_tracker
-         (opportunity_id, opportunity_number, opportunity_name, opportunity_type_id, source_type_id,
-          client_id, stage_id, sub_stage_id, owner_id, assigned_to, priority, service_line,
-          solicitation_number, issuing_agency, procurement_contact, que_duedate, submission_method,
-          contract_term, incumbent_vendor, pre_bidmeeting, document_type, file_name, file_path,
-          uploaded_by, uploaded_dt, doc_submission_format, evaluation_basis, opportunity_description,
-          lead_received_date, expected_start_date, expected_close_date, proposal_due_date, created_dt,
-          created_by, updated_dt, updated_by, is_current, estimated_value, currency_id, estimated_value_usd)
-       SELECT opportunity_id, opportunity_number, opportunity_name, opportunity_type_id, source_type_id,
-          client_id, stage_id, sub_stage_id, owner_id, assigned_to, priority, service_line,
-          solicitation_number, issuing_agency, procurement_contact, que_duedate, submission_method,
-          contract_term, incumbent_vendor, pre_bidmeeting, document_type, file_name, file_path,
-          uploaded_by, uploaded_dt, doc_submission_format, evaluation_basis, opportunity_description,
-          lead_received_date, expected_start_date, expected_close_date, proposal_due_date, created_dt,
-          created_by, updated_dt, updated_by, TRUE, estimated_value, currency_id, estimated_value_usd
-       FROM tbl_opportunity WHERE opportunity_id = $1`,
-      [opportunityId]
-    );
     await client.query(
       `UPDATE tbl_opportunity_engage_tracker SET is_current = FALSE
        WHERE opportunity_id = $1 AND is_current = TRUE`,
@@ -1165,127 +998,6 @@ async function create(
 
   const opportunity = rows[0];
 
-  await query(
-    `INSERT INTO tbl_opportunity_tracker
-    (
-      opportunity_id,
-      opportunity_number,
-      opportunity_name,
-      opportunity_type_id,
-      source_type_id,
-      client_id,
-      stage_id,
-      sub_stage_id,
-      owner_id,
-      assigned_to,
-      priority,
-      service_line,
-      solicitation_number,
-      issuing_agency,
-      procurement_contact,
-      que_duedate,
-      submission_method,
-      contract_term,
-      incumbent_vendor,
-      pre_bidmeeting,
-      document_type,
-      file_name,
-      file_path,
-      uploaded_by,
-      uploaded_dt,
-      doc_submission_format,
-      evaluation_basis,
-      opportunity_description,
-      lead_received_date,
-      expected_start_date,
-      expected_close_date,
-      proposal_due_date,
-      created_by,
-      is_current,
-      estimated_value,
-      currency_id,
-      estimated_value_usd
-    )
-    VALUES
-    (
-      $1,
-      $2,
-      $3,
-      $4,
-      $5,
-      $6,
-      $7,
-      $8,
-      $9,
-      $10,
-      $11,
-      $12,
-      $13,
-      $14,
-      $15,
-      $16,
-      $17,
-      $18,
-      $19,
-      $20,
-      $21,
-      $22,
-      $23,
-      $24,
-      $25,
-      $26,
-      $27,
-      $28,
-      $29,
-      $30,
-      $31,
-      $32,
-      $33,
-      TRUE,
-      $34,
-      $35,
-      $36
-    )`,
-    [
-      opportunity.opportunityId,
-      opportunity.opportunityNumber,
-      opportunity.opportunityName,
-      opportunity.opportunityTypeId,
-      opportunity.sourceTypeId,
-      opportunity.clientId,
-      opportunity.stageId,
-      opportunity.subStageId,
-      opportunity.ownerId,
-      opportunity.assignedTo,
-      opportunity.priority,
-      opportunity.serviceLine,
-      opportunity.solicitationNumber,
-      opportunity.issuingAgency,
-      opportunity.procurementContact,
-      opportunity.queDueDate,
-      opportunity.submissionMethod,
-      opportunity.contractTerm,
-      opportunity.incumbentVendor,
-      opportunity.preBidMeeting,
-      opportunity.documentType,
-      opportunity.fileName,
-      opportunity.filePath,
-      opportunity.uploadedBy,
-      opportunity.uploadedDt,
-      opportunity.docSubmissionFormat,
-      opportunity.evaluationBasis,
-      opportunity.opportunityDescription,
-      opportunity.leadReceivedDate,
-      opportunity.expectedStartDate,
-      opportunity.expectedCloseDate,
-      opportunity.proposalDueDate,
-      userId,
-      opportunity.estimatedValue,
-      opportunity.currencyId,
-      opportunity.estimatedValueUsd ?? null
-    ]
-  );
-
   await syncProposalQuestions(client, opportunity.opportunityId, input, userId);
   return (await query<Opportunity>(`SELECT ${OPPORTUNITY_LIST_COLUMNS} FROM tbl_opportunity o WHERE o.opportunity_id = $1`, [opportunity.opportunityId]))[0];
   });
@@ -1307,6 +1019,7 @@ async function update(
       input.subStageId !== undefined && current.subStageId !== input.subStageId) {
     throw new Error('This opportunity changed while you were editing it. Refresh before saving.');
   }
+  await recordPreviousVersion(client, 'tbl_opportunity', opportunityId);
   const rows = await query<Opportunity>(
     `UPDATE tbl_opportunity
      SET
@@ -1390,147 +1103,6 @@ async function update(
 
   Object.assign(opportunity, await returnUpdatedOpportunityForReview(client, opportunityId, current, userId, audit));
 
-  /*
-   * Mark previous tracker record as not current
-   */
-  await query(
-    `UPDATE tbl_opportunity_tracker
-     SET
-       is_current = FALSE
-     WHERE opportunity_id = $1
-       AND is_current = TRUE`,
-    [opportunityId]
-  );
-
-  /*
-   * Insert updated opportunity snapshot
-   */
-  await query(
-    `INSERT INTO tbl_opportunity_tracker
-    (
-      opportunity_id,
-      opportunity_number,
-      opportunity_name,
-      opportunity_type_id,
-      source_type_id,
-      client_id,
-      stage_id,
-      sub_stage_id,
-      owner_id,
-      assigned_to,
-      priority,
-      service_line,
-      solicitation_number,
-      issuing_agency,
-      procurement_contact,
-      que_duedate,
-      submission_method,
-      contract_term,
-      incumbent_vendor,
-      pre_bidmeeting,
-      document_type,
-      file_name,
-      file_path,
-      uploaded_by,
-      uploaded_dt,
-      doc_submission_format,
-      evaluation_basis,
-      opportunity_description,
-      lead_received_date,
-      expected_start_date,
-      expected_close_date,
-      proposal_due_date,
-      created_by,
-      updated_dt,
-      updated_by,
-      is_current,
-      estimated_value,
-      currency_id,
-      estimated_value_usd
-    )
-    VALUES
-    (
-      $1,
-      $2,
-      $3,
-      $4,
-      $5,
-      $6,
-      $7,
-      $8,
-      $9,
-      $10,
-      $11,
-      $12,
-      $13,
-      $14,
-      $15,
-      $16,
-      $17,
-      $18,
-      $19,
-      $20,
-      $21,
-      $22,
-      $23,
-      $24,
-      $25,
-      $26,
-      $27,
-      $28,
-      $29,
-      $30,
-      $31,
-      $32,
-      $33,
-      CURRENT_TIMESTAMP,
-      $34,
-      TRUE,
-      $35,
-      $36,
-      $37
-    )`,
-    [
-      opportunity.opportunityId,
-      opportunity.opportunityNumber,
-      opportunity.opportunityName,
-      opportunity.opportunityTypeId,
-      opportunity.sourceTypeId,
-      opportunity.clientId,
-      opportunity.stageId,
-      opportunity.subStageId,
-      opportunity.ownerId,
-      opportunity.assignedTo,
-      opportunity.priority,
-      opportunity.serviceLine,
-      opportunity.solicitationNumber,
-      opportunity.issuingAgency,
-      opportunity.procurementContact,
-      opportunity.queDueDate,
-      opportunity.submissionMethod,
-      opportunity.contractTerm,
-      opportunity.incumbentVendor,
-      opportunity.preBidMeeting,
-      opportunity.documentType,
-      opportunity.fileName,
-      opportunity.filePath,
-      opportunity.uploadedBy,
-      opportunity.uploadedDt,
-      opportunity.docSubmissionFormat,
-      opportunity.evaluationBasis,
-      opportunity.opportunityDescription,
-      opportunity.leadReceivedDate,
-      opportunity.expectedStartDate,
-      opportunity.expectedCloseDate,
-      opportunity.proposalDueDate,
-      opportunity.createdBy,
-      userId,
-      opportunity.estimatedValue,
-      opportunity.currencyId,
-      opportunity.estimatedValueUsd ?? null
-    ]
-  );
-
   await syncProposalQuestions(client, opportunityId, input, userId);
   return (await query<Opportunity>(`SELECT ${OPPORTUNITY_LIST_COLUMNS} FROM tbl_opportunity o WHERE o.opportunity_id = $1`, [opportunityId]))[0];
   });
@@ -1550,7 +1122,7 @@ async function syncProposalQuestions(client: PoolClient, opportunityId: number, 
       : row.questionId === null && selection.question.trim() === row.question);
     const key = match ? match.questionId === null ? `text:${match.question.trim()}` : `master:${match.questionId}` : null;
     if (row.isActive !== false && key && !retained.has(key)) { retained.add(key); continue; }
-    await archiveAndRemoveProposalQuestion(client, row.qaId, userId);
+    await archiveAndRemoveProposalQuestion(client, row.qaId);
   }
   for (const selection of selections) {
     await saveProposalQuestion(client, opportunityId, {
