@@ -88,7 +88,7 @@ export function ResponseWorkspace({ opportunity, onSaved, formDirty = false, rea
   return <div className="opp-assignment">
     <Panel title="Opportunity questions" description={`${responses.length} questions saved for this opportunity`} tone="violet">
       <div className="space-y-3">{questionnaire ? <>
-        <div role="group" aria-label="Question categories" className="grid grid-cols-2 gap-2 xl:grid-cols-3">
+        <div role="group" aria-label="Question categories" className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-2">
           {Array.from(groups, ([category, items]) => <Button key={category} type="button" variant="outline"
             className={`h-auto min-h-11 min-w-0 justify-between gap-2 whitespace-normal px-3 py-2 text-left ${activeCategory === category ? 'opp-selected' : ''}`}
             aria-pressed={activeCategory === category} aria-controls={questionsId}

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useMutation, useQuery } from '@apollo/client';
 import {
   AlertTriangle,
@@ -20,6 +20,9 @@ import {
   Badge,
   Button,
   cn,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   DonutChart,
   DonutChartLegend,
   DropdownMenu,
@@ -411,7 +414,34 @@ export function ScopeReadOnly({ scope }: { scope: Scope }) {
     </Panel>
   </div>;
 }
+function ResponsiveScopePanel({ compact, children, headerRight, className, ...props }: ComponentProps<typeof Panel> & { compact: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const open = !compact || expanded;
+  return <Collapsible open={open} onOpenChange={setExpanded} className="min-w-0">
+    <Panel {...props} className={cn(className, !open && '[&>:nth-child(2)]:hidden')} headerRight={<div className="flex items-center gap-2">
+      {headerRight}
+      {compact && <CollapsibleTrigger asChild><Button type="button" variant="ghost" size="icon" className="size-7" aria-label={`${open ? 'Collapse' : 'Expand'} ${props.title.toLowerCase()}`}><ChevronDown className={cn('size-4', open && 'rotate-180')} aria-hidden="true" /></Button></CollapsibleTrigger>}
+    </div>}>
+      <CollapsibleContent forceMount hidden={!open}>{children}</CollapsibleContent>
+    </Panel>
+  </Collapsible>;
+}
+
 export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void; readOnly: boolean }) {
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const layout = layoutRef.current;
+    if (!layout) return;
+    // Match the workspace breakpoint that moves Assessment summary below the editors.
+    const updateWidth = (width: number) => setCompact(width > 0 && width < 1000);
+    const measure = () => updateWidth(layout.getBoundingClientRect().width);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(entries => updateWidth(entries[0].contentRect.width));
+    observer?.observe(layout);
+    window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+  }, []);
   const service = useOpportunityService(), mutation = useSave();
   const [draft, setDraft] = useState<Scope>(o.scope ?? emptyScope), [baseline, setBaseline] = useState(JSON.stringify(o.scope ?? emptyScope));
   const [newAlignment, setNewAlignment] = useState(''), [newRisk, setNewRisk] = useState<{ description: string; severity: RiskSeverity }>({ description: '', severity: 'HIGH' });
@@ -499,10 +529,10 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
     setPendingDelete(null);
   }
 
-  return <div className="opp-assessment-layout grid grid-cols-1 items-start gap-3">
+  return <div ref={layoutRef} className="opp-assessment-layout grid grid-cols-1 items-start gap-3">
     <div className="opp-assessment-editors space-y-3">
       {preparationLocked && <p role="status" className="opp-notice">Scope &amp; Assessment is read-only at this workflow stage.</p>}
-      <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon headerRight={<span className={cn('text-xs font-semibold', preparationLocked ? 'text-muted-foreground' : 'text-amber-600')}>{preparationLocked ? 'Read only' : 'Required'}</span>}>
+      <ResponsiveScopePanel compact={compact} title="Scope" tone="violet" icon={ClipboardList} accentIcon headerRight={<span className={cn('text-xs font-semibold', preparationLocked ? 'text-muted-foreground' : 'text-amber-600')}>{preparationLocked ? 'Read only' : 'Required'}</span>}>
         <Textarea aria-label="Scope summary" rows={4} value={draft.summary} onChange={e => { setDraft(d => ({ ...d, summary: e.target.value })); setScopeMissing(false); }} disabled={!editable || mutation.saving} placeholder="Describe the project scope…" aria-invalid={scopeMissing} aria-describedby={scopeMissing ? scopeHintId : undefined} className={cn(scopeMissing && 'border-amber-400 focus-visible:ring-amber-300')} />
         {editable && scopeMissing && <div id={scopeHintId} role="alert" className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -514,15 +544,15 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
             ? <Button type="button" size="sm" variant="outline" className="border-destructive/40 text-destructive hover:bg-destructive/5" disabled={mutation.saving} onClick={() => setConfirmScopeRemoval(true)}>Remove scope</Button>
             : <Button type="button" size="sm" disabled={mutation.saving || draft.summary === baselineScope.summary && Boolean(baselineScope.summary.trim())} onClick={() => void persist(draft, 'Scope saved.', true)}>Save scope</Button>}</div>}
         </div>
-      </Panel>
+      </ResponsiveScopePanel>
       <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
-        <Panel title="Alignment" tone="teal" icon={CheckCircle2} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.alignment.length} item{draft.alignment.length === 1 ? '' : 's'}</span>}>
+        <ResponsiveScopePanel compact={compact} title="Alignment" tone="teal" icon={CheckCircle2} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.alignment.length} item{draft.alignment.length === 1 ? '' : 's'}</span>}>
           <ul className="space-y-1">{draft.alignment.map(item => <li key={item.id} className="flex items-center gap-2 rounded-md bg-teal-50/70 px-2 py-1.5 transition-colors hover:bg-teal-100 dark:bg-teal-950/10 dark:hover:bg-teal-950/30"><span className="size-1.5 shrink-0 rounded-sm bg-teal-500" aria-hidden="true" /><InlineEditableText value={item.text} editable={editable} disabled={mutation.saving} ariaLabel={`Edit alignment item: ${item.text}`} onCommit={text => updateAlignmentText(item.id, text)} />{recentlyUpdated.has(item.id) && <Badge variant="info" size="sm" className="shrink-0">Updated</Badge>}{editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${item.text || 'alignment item'}`} disabled={mutation.saving} onClick={() => setPendingDelete({ kind: 'alignment', id: item.id, label: item.text || 'this alignment item' })}><X className="size-4" /></Button>}</li>)}</ul>
           {!draft.alignment.length && <p className="text-sm text-muted-foreground">No alignment items yet.</p>}
           {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add alignment item" placeholder="Add alignment item (e.g. tech stack, standard, pricing model)" value={newAlignment} onChange={e => { setNewAlignment(e.target.value); setRejectedEdit(undefined); }} disabled={mutation.saving} aria-invalid={newAlignmentDuplicate} aria-describedby={showAlignmentHint ? alignmentHintId : undefined} className={cn(newAlignmentDuplicate && 'border-amber-400 focus-visible:ring-amber-300')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAlignment(); } }} /><Button type="button" variant="outline" disabled={mutation.saving || !newAlignment.trim() || newAlignmentDuplicate} onClick={addAlignment}>Add</Button></div>}
           {editable && showAlignmentHint && <DuplicateHint id={alignmentHintId} kind="alignment item" />}
-        </Panel>
-        <Panel title="Risks" tone="amber" icon={AlertTriangle} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.risks.length} item{draft.risks.length === 1 ? '' : 's'}</span>}>
+        </ResponsiveScopePanel>
+        <ResponsiveScopePanel compact={compact} title="Risks" tone="amber" icon={AlertTriangle} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.risks.length} item{draft.risks.length === 1 ? '' : 's'}</span>}>
           <ul className="space-y-1">{draft.risks.map(risk => <li key={risk.id} className="flex items-center gap-2 rounded-md bg-amber-50/70 px-2 py-1.5 transition-colors hover:bg-amber-100 dark:bg-amber-950/10 dark:hover:bg-amber-950/30">
             <span className="size-1.5 shrink-0 rounded-sm bg-muted-foreground/50" aria-hidden="true" />
             <InlineEditableText value={risk.description} editable={editable} disabled={mutation.saving} ariaLabel={`Edit risk: ${risk.description}`} onCommit={text => updateRiskDescription(risk.id, text)} />
@@ -533,7 +563,7 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
           {!draft.risks.length && <p className="text-sm text-muted-foreground">No risks logged yet.</p>}
           {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add risk" placeholder="Add risk…" value={newRisk.description} onChange={e => { setNewRisk(r => ({ ...r, description: e.target.value })); setRejectedEdit(undefined); }} disabled={mutation.saving} aria-invalid={newRiskDuplicate} aria-describedby={showRiskHint ? riskHintId : undefined} className={cn(newRiskDuplicate && 'border-amber-400 focus-visible:ring-amber-300')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRisk(); } }} /><SeveritySelect label="New risk severity" value={newRisk.severity} onChange={severity => setNewRisk(r => ({ ...r, severity }))} disabled={mutation.saving} /><Button type="button" variant="outline" disabled={mutation.saving || !newRisk.description.trim() || newRiskDuplicate} onClick={addRisk}>Add</Button></div>}
           {editable && showRiskHint && <DuplicateHint id={riskHintId} kind="risk" />}
-        </Panel>
+        </ResponsiveScopePanel>
       </div>
       <ConfirmRemoveDialog open={pendingDelete !== null} label={pendingDelete?.label ?? ''} onCancel={() => setPendingDelete(null)} onConfirm={confirmDelete} />
       <ConfirmRemoveDialog open={confirmScopeRemoval} label="" title="Remove the project scope?" description="The saved scope will be removed from this opportunity. Alignment and risks are not affected." onCancel={() => setConfirmScopeRemoval(false)} onConfirm={() => { setConfirmScopeRemoval(false); void persist(draft, 'Scope removed.', true); }} />

@@ -11,10 +11,6 @@
 .opportunity-root { min-width: 0; overflow-x: hidden; color: hsl(var(--foreground)); background: #f5f5fc; min-height: calc(100dvh - 56px); display: flex; flex-direction: column; }
 .opportunity-root > .opp-page { flex: 1 1 auto; min-height: 0; }
 .opp-page { padding: 14px 20px; width: 100%; margin-inline: auto; min-width: 0; }
-/* The pipeline board fills whatever vertical space is actually left in the viewport (no fixed
-   px guess, so it adapts to any screen size/zoom) instead of being capped at a fixed height —
-   its own horizontal scrollbar then naturally sits right at the bottom of the page, reachable
-   without a separate page-level scroll, rather than stranded mid-page above empty space. */
 .opp-pipeline-page { display: flex; flex-direction: column; min-height: 0; }
 .opp-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .opp-heading h2 { font-size: 24px; line-height: 1.3; font-weight: 650; letter-spacing: -.65px; margin-bottom: 3px; overflow-wrap: anywhere; }
@@ -118,14 +114,16 @@
 .opp-stat:nth-child(3) { border-color: #e8d9b8; border-top-color: #b08a33; background: linear-gradient(120deg,#fff 45%,#fff8e9); }
 .opp-stat:nth-child(4) { border-color: #bddfd3; border-top-color: #3e957e; background: linear-gradient(120deg,#fff 45%,#edf9f4); }
 .opp-stat > strong { display: block; font-size: 21px; font-weight: 650; margin: 3px 0; overflow-wrap: anywhere; }
-/* Bound the outer module as well as the board. Other views retain page scrolling. */
-.opportunity-root:has(> .opp-pipeline-page .opp-board) { height: var(--opp-board-viewport-height, calc(100dvh - 56px)); min-height: 0; overflow: hidden; }
-.opportunity-root > .opp-pipeline-page:has(.opp-board) { height: 100%; max-height: 100%; flex: 1 1 0; overflow: hidden; }
+/* Board view alone uses a viewport-height shell. Flex layout reserves the actual
+   header/help/pagination heights and gives the shared board scroller the remainder.
+   These selectors match AppShell's SidebarInset > main > opportunity-root structure;
+   list, loading, empty, and detail views keep their normal document scrolling. */
+main:has(> main > .opportunity-root > .opp-pipeline-page .opp-board) { height: 100dvh; min-height: 0; overflow: hidden; }
+main:has(> main > .opportunity-root > .opp-pipeline-page .opp-board) > :not(main) { flex-shrink: 0; }
+main:has(> .opportunity-root > .opp-pipeline-page .opp-board) { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.opportunity-root:has(> .opp-pipeline-page .opp-board) { flex: 1 1 0; min-height: 0; overflow: hidden; }
+.opportunity-root > .opp-pipeline-page:has(.opp-board) { flex: 1 1 0; overflow: hidden; }
 .opp-pipeline-page:has(.opp-board) > :not(.opp-board-container) { flex-shrink: 0; }
-.opp-board-container { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
-.opp-board-container > :first-child { flex-shrink: 0; }
-.opp-board { overflow: auto; overscroll-behavior: contain; padding-bottom: 8px; min-height: 0; flex: 1 1 0; }
-.opp-board-track { display: flex; flex-wrap: nowrap; gap: 12px; align-items: stretch; width: max-content; min-width: 100%; }
 .opp-lane { flex: 0 0 320px; width: 320px; min-width: 0; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
 .opp-lane > h3 { position: sticky; top: 0; z-index: 1; background: #eef0f5; }
 .opp-pipeline-card { border: 1px solid #e1e5ed; border-radius: 9px; background: white; margin-bottom: 8px; box-shadow: 0 2px 3px #14213d03; overflow: hidden; min-width: 0; }

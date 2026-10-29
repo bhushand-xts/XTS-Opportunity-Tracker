@@ -136,6 +136,26 @@ describe('persisted stage and substage display', () => {
     expect(within(board).getByRole('heading', { name: /^Outcome/ })).toBeInTheDocument();
   });
 
+  it('jumps vertically without losing the selected stages and keeps Board/List switching available', async () => {
+    mount([fixtureOpportunity({ stageId: 3, subStageId: 7 })]);
+    const board = await screen.findByRole('region', { name: 'Pipeline stages' });
+    Object.defineProperty(board, 'scrollHeight', { value: 2400 });
+    board.scrollLeft = 480;
+    const scrollTo = vi.fn();
+    board.scrollTo = scrollTo;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to bottom of board' }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 2400, left: 480, behavior: 'auto' });
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to top of board' }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, left: 480, behavior: 'auto' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.queryByRole('region', { name: 'Pipeline stages' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getAllByRole('link')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Board' }));
+    expect(within(screen.getByRole('region', { name: 'Pipeline stages' })).getAllByRole('link')).toHaveLength(1);
+  });
+
   it('groups won, lost and held opportunities under Outcome (Won / Lost) while keeping their actual status', async () => {
     mount([[7, 13], [8, 14], [10, 19], [10, 20]].map(([stageId, subStageId]) => fixtureOpportunity({ id: String(subStageId), title: `Outcome ${subStageId}`, stageId, subStageId })));
     const heading = await screen.findByRole('heading', { name: /^Outcome \(/ });
