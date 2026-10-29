@@ -459,12 +459,14 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
   const showRiskHint = newRiskDuplicate || rejectedEdit === 'RISKS';
   const showAlignmentHint = newAlignmentDuplicate || rejectedEdit === 'ALIGNMENT';
   // Show a brief "Updated" badge after an inline edit.
-  function flagUpdated(id: string) {
-    setRecentlyUpdated(prev => new Set(prev).add(id));
+  function flagUpdated(section: 'RISKS' | 'ALIGNMENT', id: string) {
+    // Alignment and risk tables can contain the same row ID.
+    const key = `${section}:${id}`;
+    setRecentlyUpdated(prev => new Set(prev).add(key));
     setTimeout(() => setRecentlyUpdated(prev => {
-      if (!prev.has(id)) return prev;
+      if (!prev.has(key)) return prev;
       const next = new Set(prev);
-      next.delete(id);
+      next.delete(key);
       return next;
     }), 3000);
   }
@@ -519,10 +521,10 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
   function updateRiskSeverity(id: string, severity: RiskSeverity) { void persist({ ...draft, risks: draft.risks.map(item => item.id === id ? { ...item, severity } : item) }, 'Risk severity updated.'); }
   function updateRiskDescription(id: string, description: string) {
     if (isListedDuplicate(riskItems, description, id)) { setRejectedEdit('RISKS'); return; }
-    setRejectedEdit(undefined); flagUpdated(id); void persist({ ...draft, risks: draft.risks.map(item => item.id === id ? { ...item, description } : item) }, 'Risk updated.'); }
+    setRejectedEdit(undefined); flagUpdated('RISKS', id); void persist({ ...draft, risks: draft.risks.map(item => item.id === id ? { ...item, description } : item) }, 'Risk updated.'); }
   function updateAlignmentText(id: string, text: string) {
     if (isListedDuplicate(draft.alignment, text, id)) { setRejectedEdit('ALIGNMENT'); return; }
-    setRejectedEdit(undefined); flagUpdated(id); void persist({ ...draft, alignment: draft.alignment.map(item => item.id === id ? { ...item, text } : item) }, 'Alignment item updated.'); }
+    setRejectedEdit(undefined); flagUpdated('ALIGNMENT', id); void persist({ ...draft, alignment: draft.alignment.map(item => item.id === id ? { ...item, text } : item) }, 'Alignment item updated.'); }
   function confirmDelete() {
     if (!pendingDelete) return;
     if (pendingDelete.kind === 'risk') removeRisk(pendingDelete.id); else removeAlignment(pendingDelete.id);
@@ -547,7 +549,7 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
       </ResponsiveScopePanel>
       <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
         <ResponsiveScopePanel compact={compact} title="Alignment" tone="teal" icon={CheckCircle2} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.alignment.length} item{draft.alignment.length === 1 ? '' : 's'}</span>}>
-          <ul className="space-y-1">{draft.alignment.map(item => <li key={item.id} className="flex items-center gap-2 rounded-md bg-teal-50/70 px-2 py-1.5 transition-colors hover:bg-teal-100 dark:bg-teal-950/10 dark:hover:bg-teal-950/30"><span className="size-1.5 shrink-0 rounded-sm bg-teal-500" aria-hidden="true" /><InlineEditableText value={item.text} editable={editable} disabled={mutation.saving} ariaLabel={`Edit alignment item: ${item.text}`} onCommit={text => updateAlignmentText(item.id, text)} />{recentlyUpdated.has(item.id) && <Badge variant="info" size="sm" className="shrink-0">Updated</Badge>}{editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${item.text || 'alignment item'}`} disabled={mutation.saving} onClick={() => setPendingDelete({ kind: 'alignment', id: item.id, label: item.text || 'this alignment item' })}><X className="size-4" /></Button>}</li>)}</ul>
+          <ul className="space-y-1">{draft.alignment.map(item => <li key={item.id} className="flex items-center gap-2 rounded-md bg-teal-50/70 px-2 py-1.5 transition-colors hover:bg-teal-100 dark:bg-teal-950/10 dark:hover:bg-teal-950/30"><span className="size-1.5 shrink-0 rounded-sm bg-teal-500" aria-hidden="true" /><InlineEditableText value={item.text} editable={editable} disabled={mutation.saving} ariaLabel={`Edit alignment item: ${item.text}`} onCommit={text => updateAlignmentText(item.id, text)} />{recentlyUpdated.has(`ALIGNMENT:${item.id}`) && <Badge variant="info" size="sm" className="shrink-0">Updated</Badge>}{editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${item.text || 'alignment item'}`} disabled={mutation.saving} onClick={() => setPendingDelete({ kind: 'alignment', id: item.id, label: item.text || 'this alignment item' })}><X className="size-4" /></Button>}</li>)}</ul>
           {!draft.alignment.length && <p className="text-sm text-muted-foreground">No alignment items yet.</p>}
           {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add alignment item" placeholder="Add alignment item (e.g. tech stack, standard, pricing model)" value={newAlignment} onChange={e => { setNewAlignment(e.target.value); setRejectedEdit(undefined); }} disabled={mutation.saving} aria-invalid={newAlignmentDuplicate} aria-describedby={showAlignmentHint ? alignmentHintId : undefined} className={cn(newAlignmentDuplicate && 'border-amber-400 focus-visible:ring-amber-300')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAlignment(); } }} /><Button type="button" variant="outline" disabled={mutation.saving || !newAlignment.trim() || newAlignmentDuplicate} onClick={addAlignment}>Add</Button></div>}
           {editable && showAlignmentHint && <DuplicateHint id={alignmentHintId} kind="alignment item" />}
@@ -556,7 +558,7 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
           <ul className="space-y-1">{draft.risks.map(risk => <li key={risk.id} className="flex items-center gap-2 rounded-md bg-amber-50/70 px-2 py-1.5 transition-colors hover:bg-amber-100 dark:bg-amber-950/10 dark:hover:bg-amber-950/30">
             <span className="size-1.5 shrink-0 rounded-sm bg-muted-foreground/50" aria-hidden="true" />
             <InlineEditableText value={risk.description} editable={editable} disabled={mutation.saving} ariaLabel={`Edit risk: ${risk.description}`} onCommit={text => updateRiskDescription(risk.id, text)} />
-            {recentlyUpdated.has(risk.id) && <Badge variant="info" size="sm" className="shrink-0">Updated</Badge>}
+            {recentlyUpdated.has(`RISKS:${risk.id}`) && <Badge variant="info" size="sm" className="shrink-0">Updated</Badge>}
             <RiskSeverityBadge severity={risk.severity} editable={editable} disabled={mutation.saving} onChange={severity => updateRiskSeverity(risk.id, severity)} />
             {editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${risk.description || 'risk'}`} disabled={mutation.saving} onClick={() => setPendingDelete({ kind: 'risk', id: risk.id, label: risk.description || 'this risk' })}><X className="size-4" /></Button>}
           </li>)}</ul>

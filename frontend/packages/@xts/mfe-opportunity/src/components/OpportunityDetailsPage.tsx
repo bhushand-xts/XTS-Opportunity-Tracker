@@ -50,7 +50,6 @@ function SolicitationPanel({ opportunity: o }: { opportunity: OpportunityDetail 
 function ScopeSummaryPanel({ o }: { o: OpportunityDetail }) {
   const scope = o.scope;
   return <Panel title="Saved scope summary" tone="rose" accentIcon headerRight={<div className="flex shrink-0 items-center gap-2">
-    <Badge variant="muted" size="sm">Revision {scope?.revision ?? 0}</Badge>
     {scope && <DetailDrawer title="Scope & assessment" description="Full scope summary, alignment and risk items as saved.">
       <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon><p className="whitespace-pre-wrap break-words text-sm">{scope.summary || 'Not provided'}</p></Panel><div className="mt-4"><ScopeReadOnly scope={scope} /></div>
     </DetailDrawer>}
@@ -66,7 +65,7 @@ function splitMoney(formatted: string): [string, string] {
 function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
   const estimation = o.estimation;
   const [whole, cents] = estimation ? splitMoney(money(estimation.total, o.currencyCode)) : ['', ''];
-  return <Panel title="Saved estimation summary" tone="amber" accentIcon headerRight={<Badge variant="muted" size="sm" className="shrink-0">Revision {estimation?.revision ?? 0}</Badge>}>
+  return <Panel title="Saved estimation summary" tone="amber" accentIcon>
     {estimation ? <>
       <p className="flex items-center gap-2 text-xs text-muted-foreground">Estimate total<Badge variant="warning" size="sm">{o.currencyCode}</Badge></p>
       <p className="mb-4 mt-1 text-lg font-semibold tabular-nums">{whole}{cents}</p>
@@ -94,10 +93,8 @@ function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
 }
 function Overview({
   opportunity: o,
-  review = false,
 }: {
   opportunity: OpportunityDetail;
-  review?: boolean;
 }) {
   const f = o.form;
   const statusLabel = opportunityStatus(o).substage ?? opportunityStatus(o).stage ?? STATE_LABELS[o.state];
@@ -105,14 +102,10 @@ function Overview({
   return (
     <div className="opp-overview">
       <div className="space-y-3">
-        <Panel title="Opportunity details" tone="violet" accentIcon headerRight={<DetailDrawer title="Opportunity details" description="Full opportunity record.">
-          <Panel title="Opportunity details" tone="violet" accentIcon><Values values={[
-            ['Opportunity name', f.title], ['Client budget', money(o.estimatedValue, o.currencyCode)], ['Client budget (USD)', f.estimatedValueUsd ? money(f.estimatedValueUsd, 'USD') : ''], ['Currency', o.currencyCode], ['Service line', f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine], ['Lead source', LEAD_SOURCES.find(source => source.id === f.leadSource)?.label ?? f.leadSource], ['Owner', userLabel(o.owner)], ['Priority', f.priority], ['Description', f.description],
-          ]} /></Panel>
-        </DetailDrawer>}>
+        <Panel title="Opportunity details" tone="violet" accentIcon>
           <dl className="opp-record-details">
             <div><dt>Opportunity</dt><dd className="opp-record-title">{o.title}</dd><dd className="opp-record-reference">{o.number}</dd></div>
-            <div className="opp-record-status"><dt>Status</dt><dd className="opp-record-badges"><Badge variant={STATUS_BADGE_VARIANT[o.state] ?? 'outline'} size="sm">{statusLabel}</Badge><Badge variant="muted" size="sm">{review ? `Submitted package revision ${o.packageRevision ?? 'not submitted'}` : `Revision ${o.revision}`}</Badge></dd></div>
+            <div className="opp-record-status"><dt>Status</dt><dd className="opp-record-badges"><Badge variant={STATUS_BADGE_VARIANT[o.state] ?? 'outline'} size="sm">{statusLabel}</Badge></dd></div>
             <div className="opp-record-wide opp-record-budget">
               <dt className="text-xs text-muted-foreground">Client budget</dt>
               <dd className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
@@ -166,7 +159,6 @@ function Overview({
             <Values
               values={[
                 ['Reviewed by', userLabel(o.salesRecommendation.actor)],
-                ['Package revision', o.salesRecommendation.packageRevision],
                 ['Recommendation', o.salesRecommendation.note],
               ]}
             />
@@ -222,7 +214,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
           <span className="flex size-10 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300"><Lock className="size-5" aria-hidden="true" /></span>
           <h3 className="mt-3 text-sm font-semibold">Available after CEO approval</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">This opportunity is currently in {o.stageId === 1 ? 'Identified' : 'Qualifying (Go/No-Go)'}. {tab.label} will be available once the CEO approves this opportunity and it moves to the Solution/Scoping Estimation (Engineering) stage.</p>
-        </div> : tab.key === 'overview' ? <Overview opportunity={o} review={review} />
+        </div> : tab.key === 'overview' ? <Overview opportunity={o} />
           : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} showActions={false} />
           : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} />
           : tab.key === 'documents' ? <Documents opportunity={o} />
