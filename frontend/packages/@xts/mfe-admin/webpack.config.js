@@ -25,6 +25,15 @@ module.exports = {
       "Access-Control-Allow-Origin": "*",
     },
   },
+  // Docker Desktop on Windows doesn't reliably deliver native filesystem
+  // change events for bind-mounted files edited from the host, so native
+  // watch silently misses edits to @xts/design-system (resolved through a
+  // node_modules symlink) even though the rest of this package's own src
+  // watches fine. Polling checks file mtimes directly instead.
+  watchOptions: {
+    poll: 1000,
+    ignored: /node_modules\/(?!@xts)/,
+  },
   resolve: {
     extensions: [".ts", ".tsx", ".js", ".jsx"],
     alias: {

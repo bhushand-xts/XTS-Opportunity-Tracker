@@ -1,6 +1,7 @@
 import { useQuery } from "@apollo/client";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
+  ArrowUp,
   Bell,
   Briefcase,
   Building2,
@@ -33,7 +34,7 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
@@ -649,6 +650,51 @@ function AppSidebar({
   );
 }
 
+const SCROLL_THRESHOLD = 200;
+
+/** Appears once any scrollable area on the page — the document itself, or an
+ * inner panel like the Pipeline board's per-lane scroll (.opp-lane doesn't
+ * scroll the window at all) — has scrolled past a short threshold. Listens
+ * with `capture: true` because scroll events don't bubble, so this is the
+ * only way a single window-level listener can see scrolling inside nested
+ * elements. Clicking resets the window and every tracked panel to the top. */
+function ScrollToTopButton() {
+  const [visible, setVisible] = useState(false);
+  const scrolledElsRef = useRef<Set<HTMLElement>>(new Set());
+  useEffect(() => {
+    const scrolledEls = scrolledElsRef.current;
+    const update = () => setVisible(window.scrollY > SCROLL_THRESHOLD || scrolledEls.size > 0);
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        if (target.scrollTop > SCROLL_THRESHOLD) scrolledEls.add(target);
+        else scrolledEls.delete(target);
+      }
+      update();
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, []);
+  if (!visible) return null;
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      className="fixed bottom-6 right-6 z-30 size-10 rounded-full border-sidebar-border bg-card shadow-md hover:bg-accent"
+      aria-label="Scroll to top"
+      onClick={() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        scrolledElsRef.current.forEach((el) => el.scrollTo({ top: 0, behavior: "smooth" }));
+        scrolledElsRef.current.clear();
+        setVisible(false);
+      }}
+    >
+      <ArrowUp className="size-4" />
+    </Button>
+  );
+}
+
 export function AppShell({ actions, children }: { actions?: ReactNode; children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -721,6 +767,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
         </SidebarInset>
       </SidebarProvider>
       <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
+      <ScrollToTopButton />
     </TooltipProvider>
   );
 }
