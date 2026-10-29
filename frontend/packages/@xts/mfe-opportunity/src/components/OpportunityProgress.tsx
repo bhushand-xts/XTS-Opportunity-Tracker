@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react';
+import { Badge } from '@xts/design-system';
 import type { DirectoryUser, OpportunityDetail, OpportunityStageHistory } from '@xts/api-contracts';
 import { isOpportunityOutcome, OPPORTUNITY_OUTCOME_LABEL, opportunityStatus, STAGE_LABELS } from '../lib/opportunityStatus';
 import { Panel } from './ui';
@@ -53,7 +54,7 @@ export function OpportunityProgress({ opportunity: o }: { opportunity: Opportuni
   const stageIds = [...new Set([1, 2, 3, 4, 5, 6, 7, ...(o.stageId != null ? [o.stageId] : []), ...history.map(event => event.stageId)]
     .map(id => isOpportunityOutcome(id) ? 7 : id))].sort((a, b) => b - a);
 
-  return <Panel title="Opportunity progress" tone="violet" className="opp-progress-panel">
+  return <Panel title="Opportunity progress" tone="emerald" accentIcon className="opp-progress-panel">
     {o.stageId == null ? <div className="opp-timeline-body"><h3>{opportunityStatus(o).stage}</h3><strong>Opportunity created</strong><ProgressDetails at={o.createdDt} actor={o.createdBy} /></div> :
       <ol className="opp-stage-timeline" aria-label="Opportunity progress history">{stageIds.map(id => {
         const outcome = id === 7;

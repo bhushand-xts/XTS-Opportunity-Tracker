@@ -22,7 +22,7 @@ export interface RfpQuestionInput {
 }
 
 /** One entry of an RFP question's change history (mst_rfp_questions_tracker):
- * the question as it stood after a change. Newest first. */
+ * the question as it stood before an update or deletion. Newest first. */
 export interface RfpQuestionHistory {
   trackerId: number;
   questionId: number;

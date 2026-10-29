@@ -14,10 +14,10 @@ export function OpportunityAccessProvider({ children }: { children: ReactNode })
   const service = useOpportunityService();
   const { data, loading, error, refetch } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, { fetchPolicy: 'cache-and-network' });
   const menus = resolveOpportunityMenus(data?.menus ?? []);
-  const permissions = opportunityMenuPermissions(menus, auth.hasPermission, auth.roleName);
+  const permissions = opportunityMenuPermissions(data?.menus ?? [], auth.hasPermission);
   const loadActions = useCallback(() => service.globalActions(), [service, permissions.add, permissions.edit]);
-  const actions = useResource(loadActions, Boolean(auth.session));
-  const entry = permissions.view || permissions.add || permissions.edit || permissions.pipeline || permissions.work || permissions.approvals;
+  const actions = useResource(loadActions, Boolean(auth.session && permissions.view && (permissions.add || permissions.edit)));
+  const entry = permissions.view;
   const visited = useRef(false);
   useEffect(() => { if (entry) visited.current = true; }, [entry]);
   if (loading && !data) return <Loading label="Checking Opportunity access…" />;

@@ -33,9 +33,8 @@ export interface HistoryField<T> {
 }
 
 /**
- * Shows a record's change history, newest first. Each row is a snapshot of
- * the record after one change, so beside every snapshot we list which fields
- * differ from the one before it — and mark the oldest as the creation.
+ * Shows previous versions, newest first, with differences between consecutive
+ * saved versions. Current values belong to the main record.
  */
 export function HistoryDialog<T extends HistoryRow>({
   open,
@@ -61,7 +60,7 @@ export function HistoryDialog<T extends HistoryRow>({
 
   const changedFields = (row: T, index: number): string => {
     const older = rows[index + 1];
-    if (!older) return "Created";
+    if (!older) return "Oldest saved version";
     const changed = fields.filter((f) => row[f.key] !== older[f.key]).map((f) => f.label);
     return changed.length ? changed.join(", ") : "No visible change";
   };
@@ -71,7 +70,7 @@ export function HistoryDialog<T extends HistoryRow>({
       <DialogContent className="max-w-6xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>Every change, newest first. Each row is the record as it stood after that change.</DialogDescription>
+          <DialogDescription>Previous versions, newest first.</DialogDescription>
         </DialogHeader>
 
         {error && <ErrorNotice error={error} title="Couldn't load the history" />}
@@ -84,9 +83,9 @@ export function HistoryDialog<T extends HistoryRow>({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>When</TableHead>
-                <TableHead>By</TableHead>
-                <TableHead>What changed</TableHead>
+                <TableHead>Version saved</TableHead>
+                <TableHead>Saved by</TableHead>
+                <TableHead>Differences from older version</TableHead>
                 {fields.map((f) => (
                   <TableHead key={f.key}>{f.label}</TableHead>
                 ))}

@@ -64,7 +64,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth, type AppPermission } from "@/lib/auth";
 import { GET_NAV_MENUS } from "@/lib/nav.queries";
-import { GET_OPPORTUNITY_MENUS, opportunityMenuPermissions, resolveOpportunityMenus, type OpportunityMenuRecord } from "@/lib/opportunityMenu";
+import { GET_OPPORTUNITY_MENUS, opportunityMenuArea, opportunityMenuPermissions, resolveOpportunityMenus, type OpportunityMenuRecord } from "@/lib/opportunityMenu";
 import { usePageTitle } from "@/lib/pageTitle";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -482,16 +482,13 @@ function AdminNavGroup({
   );
 }
 
-// All real active Opportunity menu records can grant access to this MFE.
-// Keep one navigation surface and use the first accessible record's label/icon.
+// Opportunity navigation requires the parent and each child's own View grant.
 function OpportunityMenuLink({
   pathname,
-  hasMenuAccess,
 }: {
   pathname: string;
-  hasMenuAccess: (menuKey: string) => boolean;
 }) {
-  const { hasPermission, roleName } = useAuth();
+  const { hasPermission } = useAuth();
   const onOpportunity = pathname === "/opportunity" || pathname.startsWith("/opportunity/");
   const [opportunityOpen, setOpportunityOpen] = useState(onOpportunity);
   useEffect(() => {
@@ -501,8 +498,8 @@ function OpportunityMenuLink({
     fetchPolicy: "cache-and-network",
   });
   const menus = resolveOpportunityMenus(data?.menus ?? []);
-  const permissions = opportunityMenuPermissions(menus, hasPermission, roleName);
-  const menu = menus.find(record => hasMenuAccess(record.menuKey)) ?? (permissions.approvals || permissions.work ? menus[0] : undefined);
+  const permissions = opportunityMenuPermissions(data?.menus ?? [], hasPermission);
+  const menu = permissions.view ? menus.find(record => opportunityMenuArea(record) === 'opportunities' && hasPermission(record.menuKey, 'view')) : undefined;
   if (error && !menu) return (
     <SidebarMenuItem>
       <SidebarMenuButton onClick={() => void refetch().catch(() => undefined)} disabled={loading} tooltip="Retry loading Opportunities menu">
@@ -542,7 +539,7 @@ function OpportunityMenuLink({
 function OpportunityCreateShortcut() {
   const { hasPermission } = useAuth();
   const { data, error } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, { fetchPolicy: 'cache-and-network' });
-  const permissions = opportunityMenuPermissions(resolveOpportunityMenus(data?.menus ?? []), hasPermission);
+  const permissions = opportunityMenuPermissions(data?.menus ?? [], hasPermission);
   if (error || !permissions.add) return null;
   return <Button asChild size="icon" className="size-9 rounded-full" aria-label="New opportunity">
     <Link to="/opportunity/new"><Plus className="size-[18px]" /></Link>
@@ -612,7 +609,7 @@ function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
 
-          <OpportunityMenuLink pathname={pathname} hasMenuAccess={hasMenuAccess} />
+          <OpportunityMenuLink pathname={pathname} />
 
           {can("admin") && (
             <Collapsible open={adminOpen} onOpenChange={setAdminOpen} className="group/admin">

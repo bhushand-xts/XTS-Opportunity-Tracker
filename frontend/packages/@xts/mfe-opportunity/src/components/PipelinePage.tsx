@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2 } from 'lucide-react';
-import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, SegmentedProgress, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TooltipProvider, useSetPageTitle, type BadgeProps } from '@xts/design-system';
+import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, SegmentedProgress, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle } from '@xts/design-system';
 import type { ListFilter, OpportunitySummary, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource, useDebounce } from '../hooks/useResource';
 import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
-import { Loading, Notice, OpportunityNumber, Status } from './ui';
+import { avatarAccent, initials, Loading, Notice, OpportunityNumber, PRIORITY_BADGE, Status } from './ui';
 import { money, STATE_LABELS, userLabel } from '../lib/workflow';
 import { AccessUnavailable } from './AccessUnavailable';
 import { isOpportunityOutcome, OPPORTUNITY_OUTCOME_LABEL, PIPELINE_STAGE_IDS, STAGE_LABELS } from '../lib/opportunityStatus';
@@ -26,32 +26,18 @@ const STAGE_TONE: Record<OpportunityState, { top: string; edge: string; fill: st
   SALES_REJECTED: { top: 'border-t-destructive', edge: 'border-l-destructive', fill: 'bg-destructive' },
   GATE1_NO_GO: { top: 'border-t-destructive', edge: 'border-l-destructive', fill: 'bg-destructive' },
 };
-const PRIORITY: Record<string, { label: string; variant: BadgeProps['variant'] }> = { LOW: { label: 'Low', variant: 'success' }, MEDIUM: { label: 'Medium', variant: 'warning' }, HIGH: { label: 'High', variant: 'critical' } };
 function localEstimate(o: OpportunitySummary) {
   return o.estimatedValue.trim() ? o.currencySymbol?.trim() ? `${o.currencySymbol.trim()} ${Number(o.estimatedValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : money(o.estimatedValue, o.currencyCode) : 'Not provided';
 }
 function OpportunityEstimates({ opportunity: o }: { opportunity: OpportunitySummary }) {
-  return <div className="space-y-0.5">
-    <div><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget</span><strong className="text-[12.5px]">{localEstimate(o)}</strong></div>
-    <div><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget (USD)</span><strong className="text-[12.5px]">{o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'Not provided'}</strong></div>
-  </div>;
+  const usd = o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'USD not provided';
+  return <div><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget</span><strong className="text-[12.5px]">{localEstimate(o)}</strong><span className="ml-1.5 text-[11px] text-muted-foreground">({usd})</span></div>;
 }
-// Decorative only: a vibrant, deterministic accent for the owner's initials avatar. Carries no data of its own.
-const AVATAR_ACCENTS = ['bg-violet-600', 'bg-blue-600', 'bg-emerald-700', 'bg-amber-600', 'bg-pink-600', 'bg-cyan-600'];
-function avatarAccent(seed: string) {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  return AVATAR_ACCENTS[hash % AVATAR_ACCENTS.length];
-}
-function initials(name: string) {
-  const [first, second] = name.trim().split(/\s+/);
-  return (`${first?.[0] ?? ''}${second?.[0] ?? first?.[1] ?? ''}`).toUpperCase();
-}
-/** Label the owner explicitly and show their full name beside the decorative initials. */
+/** Owner shown as an initials badge only; the full name appears on hover (and to screen readers). */
 function OwnerBadge({ opportunity: o }: { opportunity: OpportunitySummary }) {
   const ownerName = o.owner ? (o.owner.name || o.owner.email) : '';
-  if (!ownerName) return <span>Owner: Unassigned</span>;
-  return <span className="inline-flex min-w-0 items-center gap-1.5"><Avatar className="size-[22px] shrink-0" aria-hidden="true"><AvatarFallback className={cn('text-[10px] font-bold text-white', avatarAccent(ownerName))}>{initials(ownerName)}</AvatarFallback></Avatar><span className="min-w-0 break-words text-[11px]"><span className="font-medium">Owner:</span> {userLabel(o.owner)}</span></span>;
+  if (!ownerName) return <span>Unassigned</span>;
+  return <Tooltip><TooltipTrigger asChild><span className="flex items-center"><Avatar className="size-[22px]"><AvatarFallback className={cn('text-[10px] font-bold text-white', avatarAccent(ownerName))}>{initials(ownerName)}</AvatarFallback></Avatar><span className="sr-only">Assigned to {userLabel(o.owner)}</span></span></TooltipTrigger><TooltipContent>Assigned to {userLabel(o.owner)}</TooltipContent></Tooltip>;
 }
 function StageProgress({ state, className }: { state: OpportunityState; className?: string }) {
   const step = progressStep(state);
@@ -60,7 +46,7 @@ function StageProgress({ state, className }: { state: OpportunityState; classNam
 function OpportunityBadges({ opportunity: o }: { opportunity: OpportunitySummary }) {
   return <span className="flex flex-wrap items-center gap-1">
     <Badge size="sm" variant={o.rfpType === 'QUESTIONNAIRE' ? 'violet' : o.rfpType === 'GENERIC' ? 'info' : 'muted'}>{o.rfpType === 'GENERIC' ? 'Generic RFP' : o.rfpType === 'QUESTIONNAIRE' ? 'Questionnaire' : 'RFP not selected'}</Badge>
-    <Badge size="sm" variant={PRIORITY[o.priority]?.variant ?? 'outline'}>{PRIORITY[o.priority]?.label ?? o.priority}</Badge>
+    <Badge size="sm" variant={PRIORITY_BADGE[o.priority]?.variant ?? 'outline'}>{PRIORITY_BADGE[o.priority]?.label ?? o.priority}</Badge>
   </span>;
 }
 /** List view row: the same compact details and stage colours as the board card, laid out in columns. */
@@ -75,7 +61,7 @@ function OpportunityRow({ opportunity: o, highlight }: { opportunity: Opportunit
   </TableRow>;
 }
 function OpportunityCard({ opportunity: o, highlight }: { opportunity: OpportunitySummary; highlight: boolean }) {
-  return <Card className={cn('min-w-0 overflow-hidden border-t-[3px] shadow-sm transition-shadow hover:shadow-md', STAGE_TONE[o.state].top, highlight && 'opp-highlight')}>
+  return <Card className={cn('mb-2.5 min-w-0 overflow-hidden border-t-[3px] shadow-sm transition-shadow hover:shadow-md last:mb-0', STAGE_TONE[o.state].top, highlight && 'opp-highlight')}>
     <Link className="block px-2.5 pb-2 pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" to={`/opportunity/${o.id}/details`} aria-label={`View ${o.title}`}>
       <div className="flex flex-wrap items-center justify-between gap-1.5"><OpportunityNumber number={o.number} /><OpportunityBadges opportunity={o} /></div>
       <h3 className="mt-1 break-words text-[13px] font-semibold leading-snug">{o.title}</h3><p className="text-[11.5px] text-muted-foreground">{o.clientName || 'Client not provided'}</p>
@@ -84,7 +70,7 @@ function OpportunityCard({ opportunity: o, highlight }: { opportunity: Opportuni
         <span>Due {o.submissionDeadline || 'Not set'}</span>
         <OwnerBadge opportunity={o} />
       </div>
-      <StageProgress state={o.state} className="mt-1.5" /><div className="mt-1.5"><Status {...o} size="sm" /></div><p className="mt-1.5 border-t pt-1.5 text-[11px] text-muted-foreground">Created by: {o.createdBy?.name || o.createdBy?.email || 'Not available'}</p>
+      <StageProgress state={o.state} className="mt-1.5" /><div className="mt-1.5"><Status {...o} size="sm" hideStage /></div>{o.createdBy && o.createdBy.id !== o.owner?.id && <p className="mt-1.5 border-t pt-1.5 text-[11px] text-muted-foreground">Created by: {o.createdBy.name || o.createdBy.email}</p>}
     </Link>
   </Card>;
 }
@@ -137,7 +123,8 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
   const visited = useRef<ListFilter['queue']>();
   useEffect(() => { if (allowed) visited.current = queue; }, [allowed, queue]);
   const load = useCallback((signal: AbortSignal) => service.list({ search: query, queue, after, first: 50 }, signal), [service, query, queue, after]);
-  const resource = useResource(load, allowed);
+  const resultScope = JSON.stringify([access.userId, queue, access.approvalStageIds, access.workStageIds]);
+  const resource = useResource(load, allowed, 0, resultScope);
   const title = queue === 'MY_APPROVALS' ? 'My approvals' : queue === 'MY_WORK' ? 'My Work' : 'Opportunity pipeline';
   useSetPageTitle(title);
   const list = resource.data?.nodes ?? [];
@@ -148,8 +135,8 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
     queue !== 'MY_WORK' && access.work ? { path: '/opportunity/work', label: 'Go to My Work' } :
     queue !== 'MY_APPROVALS' && access.approvals ? { path: '/opportunity/approvals', label: 'Go to My approvals' } : undefined
   } />;
-  return <div className="opp-page">
-    <div className="opp-heading"><div><p className="opp-eyebrow">{queue === 'MY_APPROVALS' ? 'OPPORTUNITY REVIEWS' : 'OPPORTUNITY MANAGEMENT'}</p><h2>{title}</h2><p className="text-sm text-muted-foreground">{queue === 'MY_APPROVALS' ? 'Opportunities awaiting your review or sales follow-up. Open an opportunity to take the next action.' : queue === 'MY_WORK' ? 'Your preparation, response and review tasks, in one place.' : 'Track every opportunity through approvals, estimation, proposal, negotiation and outcome.'}</p></div>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new"><Plus className="size-4" />Add Opportunity</Link></Button>}</div>
+  return <div className="opp-page opp-pipeline-page" aria-busy={resource.refreshing}>
+    <div className="opp-heading"><div><p className="opp-eyebrow">{queue === 'MY_APPROVALS' ? 'OPPORTUNITY REVIEWS' : 'OPPORTUNITY MANAGEMENT'}</p><h2>{title}</h2><p className="text-sm text-muted-foreground">{queue === 'MY_APPROVALS' ? 'Track opportunities across all stages. Open Overview to take the action available to your role.' : queue === 'MY_WORK' ? 'Your preparation, response and review tasks, in one place.' : 'Track every opportunity through approvals, estimation, proposal, negotiation and outcome.'}</p></div>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new"><Plus className="size-4" />Add Opportunity</Link></Button>}</div>
     {resource.loading ? <Loading label="Loading permitted opportunities…" /> : resource.error ? <Notice error={resource.error} retry={resource.reload} title="Pipeline unavailable" /> : resource.data && <>
       <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-3">{[
         { title: 'All opportunities', value: resource.data.totalCount, hint: 'Permitted opportunities', icon: Briefcase, tone: 'border-t-primary', iconTone: 'text-primary', wash: 'to-primary/5' },

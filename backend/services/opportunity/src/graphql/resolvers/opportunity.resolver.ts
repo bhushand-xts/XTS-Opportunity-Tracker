@@ -8,6 +8,7 @@ function formDate(value: Date | string | null | undefined): string | null {
 
 export const opportunityResolvers = {
   Opportunity: {
+    scope: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getScope(opportunity.opportunityId, ctx),
     responses: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getResponses(opportunity.opportunityId, ctx),
     stageHistory: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getStageHistory(opportunity.opportunityId, ctx),
     createdDt: (opportunity: { createdDt: Date | string }) => opportunity.createdDt instanceof Date ? opportunity.createdDt.toISOString() : opportunity.createdDt,
@@ -35,6 +36,8 @@ export const opportunityResolvers = {
   },
 
   Mutation: {
+    saveOpportunityScope: async (_: unknown, args: { opportunityId: number; scope: Parameters<typeof service.saveScope>[1]; section?: Parameters<typeof service.saveScope>[2] }, ctx: any) =>
+      service.saveScope(args.opportunityId, args.scope, args.section ?? 'ALL', ctx),
     saveOpportunityAnswer: async (_: unknown, args: { opportunityId: number; responseId: number; revision: number; answer: string }, ctx: any) =>
       service.saveAnswer(args.opportunityId, args.responseId, args.revision, args.answer, ctx),
     saveOpportunityEstimation: async (_: unknown, args: { opportunityId: number; estimation: Parameters<typeof service.saveEstimation>[1] }, ctx: any) => service.saveEstimation(args.opportunityId, args.estimation, ctx),
