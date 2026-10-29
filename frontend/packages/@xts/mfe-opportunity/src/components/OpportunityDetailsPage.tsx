@@ -1,5 +1,5 @@
 import { QuestionViewer } from './QuestionViewer';
-import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Pencil } from 'lucide-react';
+import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Lock, Pencil } from 'lucide-react';
 import { useCallback } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Badge, type BadgeProps, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
@@ -187,8 +187,8 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
   if (resource.loading) return <Loading />;
   if (resource.error) return <Notice error={resource.error} retry={resource.reload} />;
   if (!o) return <Notice error="This opportunity was not returned. It may have been removed or be outside your permitted scope." />;
-  // Keep the full workflow visible, with preparation content available after
-  // the CEO's Go/No-Go approval moves the opportunity into estimation.
+  // While Identified or Qualifying (Go/No-Go), only Overview is open; every other
+  // workspace tab opens once CEO approval moves it into Solution/Scoping Estimation.
   const awaitingEstimation = o.stageId === 1 || o.stageId === 2;
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' },
@@ -218,12 +218,13 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
       <div className="opp-detail-layout mt-3">
       <div className="opp-detail-workspace">
       {tabs.map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-0">
-        {tab.key !== 'overview' && awaitingEstimation ? <div role="status" className="rounded-lg border bg-background px-6 py-8 text-center">
-          <h3 className="text-sm font-semibold">Available after CEO approval</h3>
-          <p className="mx-auto mt-2 max-w-2xl text-sm text-muted-foreground">{tab.label} will be available once the CEO approves this opportunity and it enters the Solution/Scoping Estimation (Engineering) stage.</p>
+        {tab.key !== 'overview' && awaitingEstimation ? <div role="status" className="flex flex-col items-center rounded-lg border border-dashed bg-background px-6 py-10 text-center">
+          <span className="flex size-10 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300"><Lock className="size-5" aria-hidden="true" /></span>
+          <h3 className="mt-3 text-sm font-semibold">Available after CEO approval</h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">This opportunity is currently in {o.stageId === 1 ? 'Identified' : 'Qualifying (Go/No-Go)'}. {tab.label} will be available once the CEO approves this opportunity and it moves to the Solution/Scoping Estimation (Engineering) stage.</p>
         </div> : tab.key === 'overview' ? <Overview opportunity={o} review={review} />
           : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} showActions={false} />
-          : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={review} />
+          : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} />
           : tab.key === 'documents' ? <Documents opportunity={o} />
           : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />
           : <Activity opportunity={o} />}

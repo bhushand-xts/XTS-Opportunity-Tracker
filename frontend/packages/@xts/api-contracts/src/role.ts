@@ -22,7 +22,7 @@ export interface RoleInput {
 }
 
 /** One entry of a role's change history (mst_roles_tracker): the role as it
- * stood after a change. Newest first. */
+ * stood before an update or deletion. Newest first. */
 export interface RoleHistory {
   trackerId: number;
   roleId: number;

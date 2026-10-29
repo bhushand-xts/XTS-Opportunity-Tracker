@@ -58,7 +58,7 @@ export interface ClientInput {
 }
 
 /** One entry of a client's change history (mst_client_tracker): the client
- * as it stood after a change. Newest first. */
+ * as it stood before an update or deletion. Newest first. */
 export interface ClientHistory {
   trackerId: number;
   clientId: number;

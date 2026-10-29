@@ -151,7 +151,9 @@ describe('persisted stage and substage display', () => {
     const { container } = mount([fixtureOpportunity({ stageId: Number(stageId), subStageId: Number(subStageId), visibleModules: ['overview'], allowedActions: [] })], true);
     await screen.findByText('Opportunity progress');
     expect(within(container.querySelector('header')!).queryByLabelText(`${stage} — ${substage}`)).not.toBeInTheDocument();
-    expect(within(container.querySelector('header')!).getByLabelText('Opportunity number OPP-TEST-401')).toBeVisible();
+    const overview = within(screen.getByRole('tabpanel', { name: 'Overview' }));
+    expect(overview.getByText('OPP-TEST-401')).toBeVisible();
+    expect(within(container.querySelector('header')!).queryByText('OPP-TEST-401')).not.toBeInTheDocument();
     const progress = within(screen.getByText('Opportunity progress').closest('.opp-panel')!);
     const current = within(progress.getByRole('list', { name: 'Opportunity progress history' }).querySelector('[aria-current="step"]')!);
     expect(current.getByRole('heading', { name: String(stage) })).toBeVisible();
@@ -166,9 +168,9 @@ describe('existing stage decision boundaries', () => {
     expect(decisionError(record, 'SALES_REQUEST_CHANGES', ' ', true)).toContain('changes requested');
     expect(decisionError(record, 'SALES_REQUEST_CHANGES', 'Update the scope', true)).toBeNull();
     expect(decisionError({ ...record, subStageId: 3 }, 'SALES_APPROVE', '', true)).toBeNull();
-    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_APPROVE', '', true)).toBeNull();
-    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_HOLD', '', true)).toContain('hold reason');
-    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_HOLD', 'Awaiting details', true, 3)).toBeNull();
+    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_APPROVE', '', true)).toContain('no longer awaiting');
+    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_HOLD', '', true)).toContain('no longer awaiting');
+    expect(decisionError({ ...record, subStageId: 2 }, 'SALES_HOLD', 'Awaiting details', true, 3)).toContain('no longer awaiting');
     expect(decisionError({ ...record, subStageId: 2 }, 'SALES_REQUEST_CHANGES', 'Update the scope', true)).toContain('no longer awaiting');
     expect(decisionError(record, 'SALES_APPROVE', '', false)).toBeNull();
     expect(decisionError(record, 'SALES_HOLD', '', false)).toContain('hold reason');

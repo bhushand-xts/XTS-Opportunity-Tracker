@@ -150,7 +150,8 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
   const visited = useRef<ListFilter['queue']>();
   useEffect(() => { if (allowed) visited.current = queue; }, [allowed, queue]);
   const load = useCallback((signal: AbortSignal) => service.list({ search: query, queue, after, first: 50 }, signal), [service, query, queue, after]);
-  const resource = useResource(load, allowed);
+  const resultScope = JSON.stringify([access.userId, queue, access.approvalStageIds, access.workStageIds]);
+  const resource = useResource(load, allowed, 0, resultScope);
   const title = queue === 'MY_APPROVALS' ? 'My approvals' : queue === 'MY_WORK' ? 'My Work' : 'Opportunity pipeline';
   useSetPageTitle(title);
   const list = resource.data?.nodes ?? [];
@@ -161,7 +162,7 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
     queue !== 'MY_WORK' && access.work ? { path: '/opportunity/work', label: 'Go to My Work' } :
     queue !== 'MY_APPROVALS' && access.approvals ? { path: '/opportunity/approvals', label: 'Go to My approvals' } : undefined
   } />;
-  return <div className="opp-page opp-pipeline-page">
+  return <div className="opp-page opp-pipeline-page" aria-busy={resource.refreshing}>
     <div className="opp-heading"><div><p className="opp-eyebrow">{queue === 'MY_APPROVALS' ? 'OPPORTUNITY REVIEWS' : 'OPPORTUNITY MANAGEMENT'}</p><h2>{title}</h2><p className="text-sm text-muted-foreground">{queue === 'MY_APPROVALS' ? 'Track opportunities across all stages. Open Overview to take the action available to your role.' : queue === 'MY_WORK' ? 'Your preparation, response and review tasks, in one place.' : 'Track every opportunity through approvals, estimation, proposal, negotiation and outcome.'}</p></div>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new"><Plus className="size-4" />Add Opportunity</Link></Button>}</div>
     {resource.loading ? <Loading label="Loading permitted opportunities…" /> : resource.error ? <Notice error={resource.error} retry={resource.reload} title="Pipeline unavailable" /> : resource.data && <>
       <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-3">{[

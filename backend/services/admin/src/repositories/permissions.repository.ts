@@ -1,3 +1,4 @@
+import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import type { PoolClient } from "pg";
 
 import { query, transaction } from "../config/db";
@@ -8,7 +9,7 @@ import {
 } from "../validators/permissions.validator";
 
 // One row of mst_permissions_tracker: a snapshot of a permission as it
-// stood after a change.
+// stood before an update or deletion.
 export interface PermissionHistoryRecord {
   trackerId: number;
   permissionId: number;
@@ -59,27 +60,10 @@ const permissionFields = `
   is_active AS "isActive"
 `;
 
-// Every write to mst_permissions also writes a snapshot of the resulting row
-// to mst_permissions_tracker — always inside the caller's transaction, so the
-// record and its history are saved together or not at all.
-async function recordTracker(
-  client: PoolClient,
-  permissionId: number
-): Promise<void> {
-
-  await client.query(
-    `
-    INSERT INTO mst_permissions_tracker
-      (permission_id, permission_name, permission_key, description,
-       created_dt, created_by, updated_dt, updated_by, is_active)
-    SELECT
-      permission_id, permission_name, permission_key, description,
-      created_dt, created_by, updated_dt, updated_by, is_active
-    FROM mst_permissions
-    WHERE permission_id = $1
-    `,
-    [permissionId]
-  );
+// Archive the previous permission before updating it, inside the caller's
+// transaction. New permissions do not receive a tracker entry.
+async function recordTracker(client: PoolClient, id: number): Promise<void> {
+  await recordPreviousVersion(client, 'mst_permissions', id);
 }
 
 export class PermissionsRepository {
@@ -225,8 +209,6 @@ export class PermissionsRepository {
             ]
           );
 
-        await recordTracker(client, result.rows[0].permissionId);
-
         return result.rows[0];
       });
 
@@ -248,6 +230,7 @@ export class PermissionsRepository {
   ): Promise<PermissionRecord> {
 
     return transaction(async (client) => {
+      await recordTracker(client, permissionId);
 
       const result =
         await client.query<PermissionRecord>(
@@ -285,8 +268,6 @@ export class PermissionsRepository {
         throw new Error("Permission not found.");
       }
 
-      await recordTracker(client, permissionId);
-
       return result.rows[0];
     });
   }
@@ -298,6 +279,7 @@ export class PermissionsRepository {
   ): Promise<PermissionRecord> {
 
     return transaction(async (client) => {
+      await recordTracker(client, permissionId);
 
       const result =
         await client.query<PermissionRecord>(
@@ -321,8 +303,6 @@ export class PermissionsRepository {
       if (!result.rows[0]) {
         throw new Error("Permission not found.");
       }
-
-      await recordTracker(client, permissionId);
 
       return result.rows[0];
     });

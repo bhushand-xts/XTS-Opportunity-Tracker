@@ -1,12 +1,13 @@
+import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import type { PoolClient } from 'pg';
 
 import { query, transaction } from '../config/db';
 
 // ALL SQL for estimation phases. Always use $1 parameters — never string
-// concatenation. is_active = TRUE on master tables, is_current = TRUE on trackers.
+// concatenation. History contains previous versions only.
 
 // One row of tbl_estimation_phases_tracker: a snapshot of a phase as it stood
-// after a change.
+// before an update or deletion.
 export interface PhaseHistory {
   trackerId: number;
   phaseId: number;
@@ -106,23 +107,13 @@ export interface PhaseInput {
   updatedBy?: number | null;
 }
 
-// Every write to mst_estimation_phases also writes a snapshot to
+// Updates archive the previous row in
 // tbl_estimation_phases_tracker, inside the same transaction (README rule 5):
 // the phase and its history are saved together or not at all.
 // opportunity_id is left NULL here — this snapshot is master-data change
 // history, not an opportunity's estimate.
 async function recordTracker(client: PoolClient, id: number): Promise<void> {
-  await client.query(
-    `INSERT INTO tbl_estimation_phases_tracker
-       (phase_id, phase_name, phase_code, description, display_order, created_dt, created_by, updated_dt, updated_by, is_current)
-     SELECT
-       phase_id, phase_name, phase_code, description, display_order,
-       COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, updated_dt, updated_by,
-       COALESCE(is_active, TRUE)
-     FROM mst_estimation_phases
-     WHERE phase_id = $1`,
-    [id]
-  );
+  await recordPreviousVersion(client, 'mst_estimation_phases', id);
 }
 
 // Newest change first.
@@ -162,13 +153,13 @@ async function create(input: PhaseInput, userId: number | null): Promise<Phase> 
         userId,
       ]
     );
-    await recordTracker(client, result.rows[0].id);
     return result.rows[0];
   });
 }
 
 async function update(id: number, input: Partial<PhaseInput>, userId: number | null): Promise<Phase> {
   return transaction(async (client) => {
+    await recordTracker(client, id);
     const result = await client.query<Phase>(
       `UPDATE mst_estimation_phases SET
          phase_name = COALESCE($1, phase_name),
@@ -193,26 +184,14 @@ async function update(id: number, input: Partial<PhaseInput>, userId: number | n
         id,
       ]
     );
-    await recordTracker(client, id);
     return result.rows[0];
   });
 }
 
-// The phase row is deleted, but its history is kept: a final snapshot marked
-// inactive is written first (tbl_estimation_phases_tracker has no foreign key
-// to mst_estimation_phases).
+// Archive the previous phase before deletion; history survives the main row.
 async function remove(id: number, userId: number | null): Promise<void> {
   await transaction(async (client) => {
-    await client.query(
-      `INSERT INTO tbl_estimation_phases_tracker
-         (phase_id, phase_name, phase_code, description, display_order, created_dt, created_by, updated_dt, updated_by, is_current)
-       SELECT
-         phase_id, phase_name, phase_code, description, display_order,
-         COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, CURRENT_TIMESTAMP, $2, FALSE
-       FROM mst_estimation_phases
-       WHERE phase_id = $1`,
-      [id, userId]
-    );
+    await recordTracker(client, id);
     await client.query('DELETE FROM mst_estimation_phases WHERE phase_id = $1', [id]);
   });
 }

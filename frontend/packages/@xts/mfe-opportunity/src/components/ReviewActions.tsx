@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Checkbox, cn, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label } from '@xts/design-system';
 import type { DecisionCommand, OpportunityDetail } from '@xts/api-contracts';
 import { applicableDecisions, decisionError } from '../lib/workflow';
@@ -7,7 +7,7 @@ import { useSave, type ConfirmationTone } from '../hooks/useSave';
 import { Field, Notice, Panel } from './ui';
 import { useCallback, useId } from 'react';
 import { useResource } from '../hooks/useResource';
-import { ArrowRight, Check, Pause, X } from 'lucide-react';
+import { ArrowRight, Check, Pause, Send, X } from 'lucide-react';
 
 const TONE_ICON: Record<ConfirmationTone, typeof Check> = { success: Check, warning: Pause, error: X, info: ArrowRight };
 
@@ -61,7 +61,7 @@ function persistedDecision(o: OpportunityDetail): DecisionCommand['decision'] | 
   if (o.stageId == null) return undefined;
   // Keep the selected look only while the action's own workflow stage is current.
   const decisions: Record<string, DecisionCommand['decision']> = {
-    '1/2': 'SALES_REQUEST_CHANGES', '1/3': 'SALES_HOLD',
+    '1/3': 'SALES_HOLD',
     '2/5': 'GATE1_REQUEST_CHANGES', '2/6': 'GATE1_HOLD',
     '4/9': 'ESTIMATE_HOLD', '5/11': 'BID_SUBMITTED',
   };
@@ -95,7 +95,7 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
   if (descriptions[decision]) return descriptions[decision];
   const stage = o.stageId === 1 ? 'Identified' : o.stageId === 4 ? 'Estimate Review & Approval' : 'Qualifying (Go/No-Go)';
   return decision.endsWith('REQUEST_CHANGES')
-    ? `The opportunity stays in ${stage} and returns to the ${o.stageId === 1 ? 'opportunity creator' : 'Sales Head'} as Changes Requested.`
+    ? `The opportunity stays in ${stage} and returns to the ${o.stageId === 1 ? 'opportunity creator or Sales Head' : 'Sales Head'} as Changes Requested.`
     : `The opportunity stays in ${stage} and moves to On Hold.`;
 }
 
@@ -104,6 +104,9 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel' }: { 
   const [decision, setDecision] = useState<DecisionCommand['decision']>(), [reason, setReason] = useState(''), [confirmed, setConfirmed] = useState(false), [validation, setValidation] = useState<string>();
   const [holdReasonId, setHoldReasonId] = useState('');
   const [completed, setCompleted] = useState<{ id: string; sourceStageId: OpportunityDetail['stageId']; sourceState: OpportunityDetail['state']; stageId: OpportunityDetail['stageId']; subStageId: OpportunityDetail['subStageId']; decision: DecisionCommand['decision'] }>();
+  useEffect(() => {
+    setDecision(undefined); setReason(''); setHoldReasonId(''); setConfirmed(false); setValidation(undefined);
+  }, [o.id, o.stageId, o.subStageId]);
   const holdReasonInputId = useId();
   const staged = o.stageId != null;
   const holding = staged && Boolean(decision?.endsWith('_HOLD'));
@@ -145,6 +148,10 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel' }: { 
     }, null);
   }
 
+  if (o.stageId === 1 && o.subStageId === 2) return <div className="opp-review-actions opp-review-notice" role="status">
+    <Send className="opp-review-button-icon" aria-hidden="true" />
+    <div><strong>Change request sent</strong><span>Waiting for the opportunity creator or Sales Head to update the opportunity.</span></div>
+  </div>;
   if (!displayedDecisions.length) return null;
   const isPrimary = (action: DecisionCommand['decision']) => ['SALES_APPROVE', 'GATE1_GO', 'SUBMIT_ESTIMATE', 'ESTIMATE_APPROVE', 'BID_SUBMITTED', 'START_NEGOTIATION', 'RESUME_NEGOTIATION', 'RESUME_PROPOSAL', 'MARK_WON'].includes(action);
   const primary = decisions.find(isPrimary) ?? displayedDecisions.find(isPrimary);
@@ -163,7 +170,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel' }: { 
   };
   return <section className="opp-review-actions" aria-label="Opportunity actions">
     {displayedDecisions.length > 0 && (variant === 'toolbar'
-      ? <div className="opp-review-buttons opp-review-buttons-toolbar">{displayedDecisions.map(action => actionButton(action, true))}</div>
+      ? <div className="opp-review-buttons opp-review-buttons-toolbar">{displayedDecisions.map(action => actionButton(action))}</div>
       : variant === 'bare'
       ? <div className="opp-review-buttons opp-review-buttons-bare">{displayedDecisions.map(action => actionButton(action))}</div>
       : variant === 'card'

@@ -9,14 +9,14 @@ const users = require('../integrations/userService');
 const admin = require('../integrations/adminService');
 const scope: OpportunityScope = { revision: 0, summary: 'Delivery scope', risks: [], alignment: [] };
 const ctx = () => ({ user: { id: 7 } });
-function setup(t: TestContext, stageId = 3, permitted = true) {
+function setup(t: TestContext, stageId = 3, permitted = true, subStageId = stageId === 3 ? 7 : 4) {
   t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 99, isActive: true }));
   t.mock.method(admin, 'roleAccess', async () => ({
     role: { id: 99, roleCode: 'CUSTOM', roleName: 'Custom role', isActive: true },
     menus: [{ menuId: 1, menuKey: 'opportunities', menuName: 'Opportunities', parentId: null, isActive: true }, { menuId: 2, menuKey: 'pipeline', menuName: 'Pipeline', routePath: '/opportunity', parentId: 1, isActive: true }],
     roleAccess: permitted ? [1, 2].map(menuId => ({ menuId, permissionKey: 'view' })) : [],
   }));
-  t.mock.method(repository, 'findById', async () => ({ opportunityId: 10, stageId, subStageId: stageId === 3 ? 7 : 4 }));
+  t.mock.method(repository, 'findById', async () => ({ opportunityId: 10, stageId, subStageId }));
   return { read: t.mock.method(scopes, 'findScope', async () => scope), write: t.mock.method(scopes, 'saveScope', async () => {}) };
 }
 test('visible opportunities load saved assessment and allow its sections to save at engineering estimation', async t => {
@@ -31,10 +31,18 @@ test('revoked opportunity access blocks assessment reads and writes', async t =>
   await assert.rejects(saveScope(10, scope, 'SCOPE', ctx()), /permission to view/);
   assert.equal(read.mock.calls.length + write.mock.calls.length, 0);
 });
-test('assessment saves are blocked before CEO approval and after engineering estimation', async t => {
-  for (const stage of [1, 2, 4, 5, 6, 7, 8]) {
-    const { write } = setup(t, stage);
-    await assert.rejects(saveScope(10, scope, 'SCOPE', ctx()), /engineering estimation/);
+test('scope, risk and alignment remain editable during pre-approval reviews and held estimation review', async t => {
+  for (const [stageId, subStageId] of [[1, 1], [2, 4], [3, 7], [4, 8], [4, 9], [9, 15], [9, 16], [9, 17]]) {
+    const { write } = setup(t, stageId, true, subStageId);
+    for (const section of ['SCOPE', 'RISKS', 'ALIGNMENT'] as const) await saveScope(10, scope, section, ctx());
+    assert.equal(write.mock.calls.length, 3);
+  }
+});
+
+test('assessment saves are blocked after CEO estimation approval and for closed opportunities', async t => {
+  for (const [stageId, subStageId] of [[5, 10], [6, 12], [7, 13], [8, 14], [9, 18], [10, 19]]) {
+    const { write } = setup(t, stageId, true, subStageId);
+    await assert.rejects(saveScope(10, scope, 'SCOPE', ctx()), /read-only/);
     assert.equal(write.mock.calls.length, 0);
   }
 });

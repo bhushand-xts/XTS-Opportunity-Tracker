@@ -5,6 +5,7 @@ import { useOpportunityService } from '../services/OpportunityService';
 import { useSave } from '../hooks/useSave';
 import { useUnsaved } from '../hooks/useUnsaved';
 import { Notice, Panel } from './ui';
+import { isPreparationLocked } from '../lib/workflow';
 
 function ResponseEditor({ opportunity, response, onSaved, formDirty, readOnly, onDirtyChange }: {
   opportunity: OpportunityDetail; response: ResponseItem; onSaved: (saved: OpportunityDetail) => void;
@@ -14,7 +15,8 @@ function ResponseEditor({ opportunity, response, onSaved, formDirty, readOnly, o
   const [answer, setAnswer] = useState(response.answer);
   const [baseline, setBaseline] = useState({ answer: response.answer, revision: response.revision });
   // The backend grants answer access after checking opportunity visibility.
-  const editable = !readOnly && response.allowedActions.includes('SAVE_ANSWER');
+  const preparationLocked = isPreparationLocked(opportunity);
+  const editable = !readOnly && !preparationLocked && response.allowedActions.includes('SAVE_ANSWER');
   const dirty = editable && answer !== baseline.answer;
   useUnsaved(dirty);
   useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
@@ -49,7 +51,7 @@ function ResponseEditor({ opportunity, response, onSaved, formDirty, readOnly, o
         onChange={event => { if (editable) setAnswer(event.target.value); }} />
     </div>
     <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-      <p className="text-xs text-muted-foreground">{editable ? dirty ? 'Unsaved answer' : response.answer.trim() ? 'Answer saved' : 'No answer saved yet.' : 'Read-only. You do not have access to edit this answer.'}</p>
+      <p className="text-xs text-muted-foreground">{preparationLocked ? 'RFP Q&A is read-only at this workflow stage.' : editable ? dirty ? 'Unsaved answer' : response.answer.trim() ? 'Answer saved' : 'No answer saved yet.' : 'Read-only. You do not have access to edit this answer.'}</p>
       {editable && <Button type="button" disabled={formDirty || mutation.saving || !dirty} onClick={() => void save()}>{mutation.saving ? 'Saving…' : 'Save answer'}</Button>}
     </div>
     {mutation.error && <div className="mt-3"><Notice error={mutation.error} /></div>}

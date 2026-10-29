@@ -220,15 +220,10 @@
 .opp-record-budget { border-top: 1px solid hsl(var(--border)); padding-top: 14px; font-variant-numeric: tabular-nums; }
 @media (max-width: 480px) { .opp-record-details { grid-template-columns: minmax(0,1fr); } }
 .opp-detail-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
-.opp-detail-toolbar > .opp-review-actions { margin-left: auto; max-width: 100%; }
+.opp-detail-toolbar > .opp-review-actions { flex: 0 1 auto; margin-left: auto; max-width: 100%; }
 .opp-detail-toolbar .opp-review-buttons-toolbar { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.opp-detail-toolbar .opp-review-buttons-toolbar > button { flex: 0 0 auto; width: auto; min-height: 34px; padding: 7px 16px; white-space: normal; }
-.opp-detail-toolbar .opp-review-button-label { flex: initial; }
-@media (min-width: 961px) {
-  .opp-detail-toolbar { display: grid; grid-template-columns: minmax(0,1fr) minmax(260px,330px); column-gap: 12px; }
-  .opp-detail-toolbar > .opp-review-actions { width: 100%; margin-left: 0; }
-  .opp-detail-toolbar .opp-review-buttons-toolbar > button { flex: 1 1 0; padding-inline: 10px; }
-}
+.opp-detail-toolbar .opp-review-buttons-toolbar > button { flex: 0 0 auto; width: auto; min-height: 36px; padding: 8px 12px; white-space: nowrap; }
+.opp-detail-toolbar .opp-review-button-label { flex: initial; overflow-wrap: normal; white-space: nowrap; }
 @media (max-width: 480px) {
   .opp-detail-toolbar > .opp-review-actions { margin-left: 0; }
   .opp-detail-toolbar .opp-review-buttons-toolbar { justify-content: flex-start; }
@@ -269,8 +264,12 @@
 .opp-question-input textarea.opp-question-with-section { padding-bottom: 32px; }
 .opp-question-input .opp-question-section { position: absolute; right: 6px; bottom: 6px; width: auto; height: 24px; gap: 4px; padding: 0 8px; font-size: 11px; background: hsl(var(--muted)); border-color: transparent; }
 .opp-question-panel { max-height: 28rem; overflow-y: auto; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 8px; }
-.opp-review-actions { min-width: 0; }
+.opp-review-actions { display: grid; gap: 8px; min-width: 0; }
 .opp-review-actions:empty { display: none; }
+.opp-review-notice { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border: 1px solid hsl(var(--primary) / .25); border-radius: 7px; background: hsl(var(--primary) / .06); color: hsl(var(--foreground)); font-size: 12px; line-height: 18px; }
+.opp-review-notice > svg { margin-top: 2px; color: hsl(var(--primary)); }
+.opp-review-notice strong { display: block; font-weight: 600; }
+.opp-review-notice span { display: block; color: hsl(var(--muted-foreground)); }
 .opp-review-buttons { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; }
 /* The "bare" variant — at the top of the sidebar, right above Opportunity progress — is a plain
    stack of individually-shaped shadcn buttons (no shared Panel card/title/description wrapper

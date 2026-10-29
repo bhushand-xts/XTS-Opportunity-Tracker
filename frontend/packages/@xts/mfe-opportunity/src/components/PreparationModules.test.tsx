@@ -8,9 +8,9 @@ import type { Estimation, OpportunityDetail } from '@xts/api-contracts';
 import { fixtureOpportunity } from '../testing/fixtures';
 import { OpportunityServiceContext, productionOpportunityService } from '../services/OpportunityService';
 import { GET_ESTIMATION_MASTERS } from '../services/estimationMasters.queries';
-import { EstimationModule } from './PreparationModules';
+import { EstimationModule, ScopeModule } from './PreparationModules';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const mastersData = {
   estimationPhasesList: [{ id: 1, phaseName: 'Discovery & Design', phaseCode: 'DISC', displayOrder: 1, isActive: true }],
@@ -68,8 +68,44 @@ it('lets Estimation Team select a phase/role, enter duration & allocation, and s
 }, 180000);
 
 it('keeps estimation read-only once the opportunity has moved past preparation, even if an old edit action is present', async () => {
-  render(withProviders(<OpportunityServiceContext.Provider value={productionOpportunityService}><EstimationModule opportunity={{ ...initial(), state: 'GATE1_PENDING' }} onSaved={vi.fn()} readOnly={false} /></OpportunityServiceContext.Provider>));
+  render(withProviders(<OpportunityServiceContext.Provider value={productionOpportunityService}><EstimationModule opportunity={{ ...initial(), stageId: 4, subStageId: 8, state: 'GATE1_PENDING' }} onSaved={vi.fn()} readOnly={false} /></OpportunityServiceContext.Provider>));
   expect(await screen.findByRole('button', { name: /select phases/i })).toBeDisabled();
   expect(screen.getByRole('button', { name: /select technical roles/i })).toBeDisabled();
   expect(screen.queryByRole('button', { name: 'Save estimation' })).not.toBeInTheDocument();
+});
+
+const scopeOpportunity = (summary: string) => fixtureOpportunity({ stageId: 3, subStageId: 7, allowedActions: ['EDIT_SCOPE'], scope: { revision: 1, summary, alignment: [{ id: '1', text: 'Tech stack' }], risks: [{ id: '2', description: 'Tight deadline', severity: 'HIGH' }] } });
+function renderScope(opportunity: OpportunityDetail, saveScope = vi.fn(async () => opportunity)) {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  render(<OpportunityServiceContext.Provider value={{ ...productionOpportunityService, saveScope }}><ScopeModule opportunity={opportunity} onSaved={vi.fn()} readOnly={false} /></OpportunityServiceContext.Provider>);
+  return saveScope;
+}
+
+it('blocks duplicate alignment and risk additions with an inline hint instead of saving', () => {
+  const saveScope = renderScope(scopeOpportunity('Scope'));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Add alignment item' }), { target: { value: '  tech   STACK ' } });
+  expect(screen.getByText('This alignment item is already listed.')).toBeInTheDocument();
+  expect(within(screen.getByRole('textbox', { name: 'Add alignment item' }).parentElement!).getByRole('button', { name: 'Add' })).toBeDisabled();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Add risk' }), { target: { value: 'tight deadline' } });
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'Add risk' }), { key: 'Enter' });
+  expect(screen.getByText('This risk is already listed.')).toBeInTheDocument();
+  expect(saveScope).not.toHaveBeenCalled();
+});
+
+it('requires a scope that was never saved, with an inline hint', () => {
+  const saveScope = renderScope(scopeOpportunity(''));
+  fireEvent.click(screen.getByRole('button', { name: 'Save scope' }));
+  expect(screen.getByText('Scope is required.')).toBeInTheDocument();
+  expect(saveScope).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Scope summary' }), { target: { value: 'D' } });
+  expect(screen.queryByText('Scope is required.')).not.toBeInTheDocument();
+});
+
+it('removes a previously saved scope after confirmation', async () => {
+  const saveScope = renderScope(scopeOpportunity('Old scope'));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Scope summary' }), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Remove scope' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+  await waitFor(() => expect(saveScope).toHaveBeenCalledWith(expect.objectContaining({ scope: expect.objectContaining({ summary: '' }) })));
+  expect(screen.queryByText('Scope is required.')).not.toBeInTheDocument();
 });

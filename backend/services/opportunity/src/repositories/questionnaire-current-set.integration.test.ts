@@ -2,7 +2,7 @@ import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { pool } from '../config/db';
-import { update, type Opportunity, type OpportunityInput } from './opportunity.repository';
+import { saveAnswer, update, type Opportunity, type OpportunityInput } from './opportunity.repository';
 
 // Opt-in database check. All writes target temporary tables and are rolled back.
 test('only the latest questionnaire remains in the current table while prior questions survive in history', {
@@ -59,14 +59,29 @@ test('only the latest questionnaire remains in the current table while prior que
     await save(old, 1);
     const original = await current();
     assert.equal(original.rows.length, 30);
+    assert.equal((await connection.query('SELECT * FROM pg_temp.tbl_opportunity_questions_answers_tracker')).rows.length, 0,
+      'New questions must not create tracker entries.');
 
     const latest = Array.from({ length: 36 }, (_, index) => `Latest extracted question ${index + 1}`);
     const saved = await save(latest, 2);
     assert.deepEqual((await current()).rows.map(row => row.questiontext), latest);
     assert.equal(saved.proposalQuestions?.length, 36);
     const history = await connection.query('SELECT qa_id, questiontext, questionnaire_type_id, is_current FROM pg_temp.tbl_opportunity_questions_answers_tracker WHERE qa_id = ANY($1::integer[])', [original.rows.map(row => row.qa_id)]);
+    assert.equal(history.rows.length, old.length, 'Each removed question is archived exactly once.');
     for (const text of old) assert.ok(history.rows.some(row => row.questiontext === text && row.questionnaire_type_id === 1));
     assert.ok(history.rows.every(row => row.is_current === false));
+
+    const responseId = (await current()).rows[0].qa_id;
+    await saveAnswer(opportunityId, responseId, 0, 'First answer', userId);
+    await saveAnswer(opportunityId, responseId, 1, 'Second answer', userId);
+    const answers = await connection.query(`SELECT answertext, answered_by, is_current
+      FROM pg_temp.tbl_opportunity_questions_answers_tracker WHERE qa_id = $1 ORDER BY answered_dt NULLS FIRST`, [responseId]);
+    assert.deepEqual(answers.rows, [
+      { answertext: null, answered_by: null, is_current: false },
+      { answertext: 'First answer', answered_by: userId, is_current: false },
+    ]);
+    assert.equal((await connection.query('SELECT answertext FROM pg_temp.tbl_opportunity_questions_answers WHERE qa_id = $1', [responseId])).rows[0].answertext, 'Second answer');
+    await assert.rejects(saveAnswer(opportunityId, responseId, 1, 'Stale answer', userId), /has changed/);
 
     // Old versions left inactive by the previous implementation must also leave the current table.
     await connection.query(`INSERT INTO pg_temp.tbl_opportunity_questions_answers

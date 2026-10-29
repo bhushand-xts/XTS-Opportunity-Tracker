@@ -117,7 +117,7 @@ runs the compiled output.
 2. All SQL lives in repositories/
 3. Always use $1 parameters, never string concatenation
 4. No process.env outside config/env.js
-5. Record + _tracker writes happen in one transaction
+5. Creation writes only to the main table. Updates/deletes archive the previous row in the tracker before changing the main row, in one transaction. The opportunity engagement tracker separately records workflow events.
 6. created_by / updated_by always set — our only audit trail
 7. Never edit a merged migration; write a new one
 8. notification and reporting-audit listen only — never call back into a domain service

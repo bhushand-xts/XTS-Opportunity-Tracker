@@ -18,9 +18,9 @@ function salesReview(overrides: Partial<OpportunityDetail> = {}) {
   });
 }
 
-function mount(opportunity: OpportunityDetail, decide: OpportunityService['decide'] = vi.fn(), onSaved = vi.fn()) {
+function mount(opportunity: OpportunityDetail, decide: OpportunityService['decide'] = vi.fn(), onSaved = vi.fn(), variant: 'panel' | 'bare' | 'card' | 'toolbar' = 'panel') {
   const service = { ...productionOpportunityService, decide, holdReasons: vi.fn(async () => [{ id: 3, name: 'Missing information', description: 'Supporting details are missing.' }]) };
-  const view = (record: OpportunityDetail) => <OpportunityServiceContext.Provider value={service}><ReviewActions opportunity={record} onSaved={onSaved} /></OpportunityServiceContext.Provider>;
+  const view = (record: OpportunityDetail) => <OpportunityServiceContext.Provider value={service}><ReviewActions opportunity={record} onSaved={onSaved} variant={variant} /></OpportunityServiceContext.Provider>;
   const rendered = render(view(opportunity));
   return { onSaved, rerender: (record: OpportunityDetail) => rendered.rerender(view(record)) };
 }
@@ -174,7 +174,8 @@ describe('persisted opportunity review actions', () => {
     const decide = vi.fn();
     mount(salesReview({ stageId, subStageId, allowedActions: ['EDIT', 'RESUBMIT'] }), decide);
     expect(screen.queryByRole('button', { name: 'Resubmit for Review' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    if (stageId === 1) expect(screen.getByRole('status')).toHaveTextContent('Change request sent');
+    else expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Opportunity actions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(decide).not.toHaveBeenCalled();
@@ -189,10 +190,10 @@ describe('persisted opportunity review actions', () => {
   });
 
   it('shows only granted choices and the selected action to the current reviewer', () => {
-    mount(salesReview({ subStageId: 2, allowedActions: ['SALES_APPROVE'] }));
+    mount(salesReview({ subStageId: 3, allowedActions: ['SALES_APPROVE'] }));
     expect(screen.getByRole('button', { name: 'Approve & Send to CEO' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Request Changes', pressed: true })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'On Hold' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'On Hold', pressed: true })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Request Changes' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reject Opportunity' })).not.toBeInTheDocument();
   });
 
@@ -247,7 +248,10 @@ describe('persisted opportunity review actions', () => {
     expect(await screen.findByLabelText(`${stage} — ${substage}`)).toBeVisible();
     expect(success).not.toHaveBeenCalled();
     expect(screen.queryByRole('status', { name: 'Action status' })).not.toBeInTheDocument();
-    if (stageId === 1) expect(screen.getByRole('button', { name: label, pressed: true })).toBeDisabled();
+    if (label === 'Request Changes') {
+      expect(screen.getByRole('status')).toHaveTextContent('Change request sent');
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    } else if (stageId === 1) expect(screen.getByRole('button', { name: label, pressed: true })).toBeDisabled();
     else expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     if (note) {
       expect(screen.queryByText(note)).not.toBeInTheDocument();
@@ -331,14 +335,12 @@ describe('persisted opportunity review actions', () => {
     expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'SALES_REQUEST_CHANGES', reason: 'Correct the submission details.' }));
   });
 
-  it.each([
-    ['SALES_APPROVE', 'Approve & Send to CEO', 2, 4],
-    ['SALES_HOLD', 'On Hold', 1, 3],
-    ['SALES_REJECT', 'Reject Opportunity', 9, 15],
-  ] as const)('keeps %s usable immediately after requesting changes and after reopening', async (action, label, stageId, subStageId) => {
+  it('replaces every Sales Head decision with a persistent notice until the creator or Sales Head updates the opportunity', async () => {
     const current = salesReview({ allowedActions: ['SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_HOLD', 'SALES_REJECT'] });
-    const returned = salesReview({ subStageId: 2, allowedActions: ['EDIT', 'SALES_APPROVE', 'SALES_HOLD', 'SALES_REJECT'] });
-    const saved = salesReview({ stageId, subStageId, allowedActions: [] });
+    // A stale server grant must not expose review choices while the creator is correcting details.
+    const returned = { ...current, subStageId: 2, revision: current.revision + 1 };
+    const resubmitted = { ...current, revision: returned.revision + 1 };
+    const saved = salesReview({ stageId: 2, subStageId: 4, allowedActions: [] });
     const decide = vi.fn<OpportunityService['decide']>().mockResolvedValueOnce(returned).mockResolvedValueOnce(saved);
     const { onSaved, rerender } = mount(current, decide);
     const changes = openDecision('Request Changes');
@@ -346,27 +348,55 @@ describe('persisted opportunity review actions', () => {
     confirmReview(changes);
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(returned));
     rerender(returned);
-    expect(screen.getByRole('button', { name: 'Request Changes', pressed: true })).toHaveClass('shadow-inner');
-    for (const name of ['Approve & Send to CEO', 'On Hold', 'Reject Opportunity']) {
-      expect(screen.getByRole('button', { name })).toBeEnabled();
-    }
+    expect(screen.getByRole('status')).toHaveTextContent('Change request sent');
+    expect(screen.getByRole('status')).toHaveTextContent('Waiting for the opportunity creator or Sales Head to update the opportunity.');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
     cleanup();
     const reopened = mount(returned, decide);
-    expect(screen.getByRole('button', { name: 'Request Changes', pressed: true })).toBeDisabled();
-    for (const name of ['Approve & Send to CEO', 'On Hold', 'Reject Opportunity']) {
+    expect(screen.getByRole('status')).toHaveTextContent('Change request sent');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    reopened.rerender(resubmitted);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    for (const name of ['Approve & Send to CEO', 'Request Changes', 'On Hold', 'Reject Opportunity']) {
       expect(screen.getByRole('button', { name })).toBeEnabled();
     }
-    const dialog = openDecision(label);
-    if (action !== 'SALES_APPROVE') {
-      await selectHoldReason(dialog);
-      fireEvent.change(dialog.getByRole('textbox'), { target: { value: 'Reviewed the details.' } });
-    }
-    confirmReview(dialog);
+    confirmReview(openDecision('Approve & Send to CEO'));
     await waitFor(() => expect(reopened.onSaved).toHaveBeenCalledWith(saved));
-    expect(decide).toHaveBeenLastCalledWith(expect.objectContaining({ decision: action, expectedStageId: 1, expectedSubStageId: 2 }));
+    expect(decide).toHaveBeenLastCalledWith(expect.objectContaining({ decision: 'SALES_APPROVE', expectedRevision: resubmitted.revision, expectedStageId: 1, expectedSubStageId: 1 }));
     reopened.rerender(saved);
-    if (stageId !== 1) expect(screen.queryByRole('button', { name: 'Approve & Send to CEO' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve & Send to CEO' })).not.toBeInTheDocument();
     expect(screen.queryByRole('status', { name: 'Action status' })).not.toBeInTheDocument();
+  });
+
+  it('keeps full action labels in the toolbar for all four Sales Head decisions', () => {
+    mount(salesReview({ allowedActions: ['SALES_REQUEST_CHANGES', 'SALES_APPROVE', 'SALES_HOLD', 'SALES_REJECT'] }), vi.fn(), vi.fn(), 'toolbar');
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual([
+      'Approve & Send to CEO', 'Request Changes', 'On Hold', 'Reject Opportunity',
+    ]);
+    for (const button of screen.getAllByRole('button')) {
+      expect(button.closest('.opp-review-buttons-toolbar')).not.toBeNull();
+      expect(button).toBeEnabled();
+    }
+  });
+
+  it('keeps the original three CEO estimation decisions', () => {
+    const current = salesReview({ stageId: 4, subStageId: 8, allowedActions: ['ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT'] });
+    mount(current, vi.fn(), vi.fn(), 'toolbar');
+    expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual([
+      'Approve Estimation', 'Hold Estimation', 'Reject Estimation',
+    ]);
+  });
+
+  it('does not reopen an outdated review dialog after the creator returns a requested opportunity to review', () => {
+    const current = salesReview();
+    const { rerender } = mount(current);
+    openDecision('Approve & Send to CEO');
+    rerender({ ...current, subStageId: 2 });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    rerender(current);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve & Send to CEO' })).toBeEnabled();
   });
 
   it('requires a reason code and description before retaining the saved Identified hold', async () => {

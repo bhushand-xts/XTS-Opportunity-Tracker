@@ -58,7 +58,7 @@ test('revoked parent or child menu View denies role-only queues and direct workf
     }
     grants = navigationGrants.filter(grant => grant.menuId !== childId);
     assert.equal((await service.get(10, ctx())).opportunityId, 10, 'Pipeline View retains read access');
-    assert.deepEqual(await service.allowedActions(current, ctx()), stageId === 3 ? ['EDIT_SCOPE'] : []);
+    assert.deepEqual(await service.allowedActions(current, ctx()), ['EDIT_SCOPE']);
     await assert.rejects(service.transitionWorkflow(10, action, null, null, ctx()), /role/i);
     await assert.rejects(service.list(ctx(), childId === 2 ? 'MY_APPROVALS' : 'MY_WORK'), /permission/);
   }
@@ -269,7 +269,7 @@ test('projects review actions only for the matching role and active review step'
   const steps = [[1, 1], [1, 2], [1, 3], [2, 4], [2, 5], [2, 6], [3, 7], [4, 8], [5, 10]];
   const cases = [
     { actorRole: 'sales_representative', grants: [{ menuId: 2, permissionKey: 'approve' }, { menuId: 3, permissionKey: 'approve' }], expected: new Map([['1/2', []]]) },
-    { actorRole: 'SH', grants: navigationGrants, expected: new Map([['1/1', sales], ['1/3', sales.filter(action => action !== 'SALES_HOLD')], ['1/2', sales.filter(action => action !== 'SALES_REQUEST_CHANGES')], ['2/4', ['CLOSE_OPPORTUNITY']], ['2/5', ['CLOSE_OPPORTUNITY']], ['2/6', ['CLOSE_OPPORTUNITY']], ['3/7', ['CLOSE_OPPORTUNITY']], ['4/8', ['CLOSE_OPPORTUNITY']], ['5/10', ['BID_SUBMITTED', 'CLOSE_OPPORTUNITY']]]) },
+    { actorRole: 'SH', grants: navigationGrants, expected: new Map([['1/1', sales], ['1/3', sales.filter(action => action !== 'SALES_HOLD')], ['1/2', ['CLOSE_OPPORTUNITY']], ['2/4', ['CLOSE_OPPORTUNITY']], ['2/5', ['CLOSE_OPPORTUNITY']], ['2/6', ['CLOSE_OPPORTUNITY']], ['3/7', ['CLOSE_OPPORTUNITY']], ['4/8', ['CLOSE_OPPORTUNITY']], ['5/10', ['BID_SUBMITTED', 'CLOSE_OPPORTUNITY']]]) },
     { actorRole: 'approver_gate2', grants: navigationGrants, expected: new Map([['1/2', []], ['2/4', gate], ['2/5', gate.filter(action => action !== 'GATE1_REQUEST_CHANGES')], ['2/6', gate.filter(action => action !== 'GATE1_HOLD')], ['4/8', ['ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT']]]) },
   ];
   for (const scenario of cases) {
@@ -278,7 +278,8 @@ test('projects review actions only for the matching role and active review step'
     for (const [stageId, subStageId] of steps) {
       const step = `${stageId}/${subStageId}`;
       const expected = scenario.expected.get(step) ?? [];
-      assert.deepEqual(await service.allowedActions({ ...record, stageId, subStageId }, ctx()), step === '3/7' && grants.some(grant => grant.menuId === 1 && grant.permissionKey === 'view') ? ['EDIT_SCOPE', ...expected] : expected,
+      const actual = await service.allowedActions({ ...record, stageId, subStageId }, ctx());
+      assert.deepEqual(actual.filter(action => action !== 'EDIT_SCOPE'), expected,
         `Unexpected actions at ${step} for ${JSON.stringify(grants)}`);
     }
   }
@@ -304,13 +305,13 @@ test('list, detail and GraphQL action projection agree while preserving edit and
   t.mock.method(repository, 'findAll', async () => records);
   t.mock.method(repository, 'findById', async (id: number) => records.find(opportunity => opportunity.opportunityId === id));
   const expected = [
-    ['EDIT', 'SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_HOLD', 'SALES_REJECT', 'CLOSE_OPPORTUNITY'],
-    ['EDIT', 'SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_REJECT', 'CLOSE_OPPORTUNITY'],
-    ['EDIT', 'SALES_APPROVE', 'SALES_HOLD', 'SALES_REJECT', 'CLOSE_OPPORTUNITY'],
-    ['EDIT', 'SALES_APPROVE', 'SALES_HOLD', 'SALES_REJECT', 'CLOSE_OPPORTUNITY'],
-    ['EDIT', 'CLOSE_OPPORTUNITY'],
-    ['EDIT', 'CLOSE_OPPORTUNITY'],
-    ['EDIT', 'CLOSE_OPPORTUNITY'], ['EDIT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'],
+    ['EDIT', 'SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_HOLD', 'SALES_REJECT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'],
+    ['EDIT', 'SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_REJECT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'],
+    ['EDIT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'],
+    ['EDIT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'],
+    ['EDIT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'],
+    ['EDIT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'],
+    ['EDIT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'], ['EDIT', 'EDIT_SCOPE', 'CLOSE_OPPORTUNITY'],
   ];
   const listed = await service.list(ctx());
   assert.deepEqual(listed.map(opportunity => opportunity.allowedActions), expected);
@@ -349,26 +350,32 @@ test('Sales Head and CEO can hold pending reviews and review held opportunities 
   assert.deepEqual(transition.mock.calls.at(-1)?.arguments.slice(0, 6), [10, 3, 7, null, 7, null]);
 });
 
-test('Sales Head can approve, hold or reject after requesting changes with the same validation and audit', async t => {
-  const current = { ...record, subStageId: 2, createdBy: 99 };
+test('Sales Head decisions wait for a creator correction save before becoming available again', async t => {
+  let current = { ...record, subStageId: 2 };
   let actorRole = 'SH';
   t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
-  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: navigationGrants, role: role(999, actorRole) }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: [...navigationGrants, { menuId: 1, permissionKey: 'edit' }], role: role(999, actorRole) }));
   t.mock.method(repository, 'findById', async () => current);
   t.mock.method(admin, 'holdReasonCode', async () => ({ id: 3, reasonName: 'Missing information', isActive: true }));
   const transition = t.mock.method(repository, 'transitionWorkflow', async (...args: unknown[]) => args);
-  await assert.rejects(service.transitionWorkflow(10, 'REQUEST_CHANGES', 'Again', null, ctx()), /already been requested/);
-  for (const action of ['HOLD', 'REJECT'] as const) {
-    await assert.rejects(service.transitionWorkflow(10, action, 'Details', null, ctx()), /Select a .* reason/);
-    await assert.rejects(service.transitionWorkflow(10, action, ' ', null, ctx(), 3), /Enter a .* description/);
+  const update = t.mock.method(repository, 'update', async () => current = { ...current, subStageId: 1 });
+  const salesActions = ['SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_HOLD', 'SALES_REJECT'];
+  assert.equal((await service.allowedActions(current, ctx())).some(action => salesActions.includes(action)), false);
+  for (const action of ['REQUEST_CHANGES', 'APPROVE', 'HOLD', 'REJECT'] as const) {
+    await assert.rejects(service.transitionWorkflow(10, action, 'Details', null, ctx(), 3), /Wait for the opportunity creator/);
   }
   assert.equal(transition.mock.calls.length, 0);
+  actorRole = 'sales_representative';
+  await service.update(10, { opportunityName: 'Corrected details' }, ctx());
+  assert.equal(update.mock.calls.length, 1);
+  actorRole = 'SH';
+  assert.deepEqual((await service.allowedActions(current, ctx())).filter(action => salesActions.includes(action)), salesActions);
   for (const [action, stageId, subStageId] of [['APPROVE', 2, 4], ['HOLD', 1, 3], ['REJECT', 9, 15]] as const) {
     await service.transitionWorkflow(10, action, action === 'APPROVE' ? null : ' Confirmed details ', null, ctx(), 3);
     const args = transition.mock.calls.at(-1)!.arguments;
     assert.deepEqual(args.slice(0, 6), [10, stageId, subStageId, null, 7, action === 'APPROVE' ? null : 'Confirmed details']);
     assert.deepEqual(args[7], { roleId: 999, roleName: 'Sales Head', reasonCodeId: action === 'APPROVE' ? null : 3 });
-    assert.deepEqual(args[8], { stageId: 1, subStageId: 2 });
+    assert.deepEqual(args[8], { stageId: 1, subStageId: 1 });
   }
   for (const roleCode of ['sales_representative', 'approver_gate2']) {
     actorRole = roleCode;
@@ -437,6 +444,31 @@ test('editing requested changes preserves creator and owner restrictions', async
   assert.equal(transition.mock.calls.length, 0);
   current = { ...current, createdBy: 99 };
   await assert.rejects(service.update(10, { opportunityName: 'Updated' }, ctx()), /cannot edit/);
+});
+
+test('both opportunity saves pass verified Sales Head review capability so own corrections restore decisions', async t => {
+  const current = { ...record, subStageId: 2, createdBy: 99 };
+  let actorRole = 'SH';
+  t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: [...navigationGrants, { menuId: 1, permissionKey: 'edit' }], role: role(999, actorRole) }));
+  t.mock.method(repository, 'findById', async () => current);
+  const update = t.mock.method(repository, 'update', async (...args: unknown[]) => ({ ...current, subStageId: args[4] ? 1 : 2 }));
+  const intakeUpdate = t.mock.method(repository, 'updateRfpIntakeOpportunity', async (...args: unknown[]) => ({ ...current, subStageId: args[4] ? 1 : 2 }));
+  const intake: RfpIntakeOpportunityInput = {
+    opportunityName: 'Corrected details', ownerId: 7, currencyId: 1, estimatedValue: 100, sourceTypeId: 1, rfpType: 2, questions: ['Scope'],
+    client: { clientName: 'Client', accountType: 'Enterprise', sector: 'Technology', city: 'Pune', state: 'Maharashtra', country: 'India' },
+    contacts: [{ fullName: 'Contact', titleRole: 'Buyer', email: 'contact@example.com', phone: '12345', roleInDecision: 1 }],
+  };
+  for (const roleCode of ['SH', 'custom_editor']) {
+    actorRole = roleCode;
+    const salesHead = roleCode === 'SH';
+    const genericSaved = await service.update(10, { opportunityName: 'Corrected details' }, ctx());
+    const intakeSaved = await service.updateRfpIntakeOpportunity(10, intake, ctx());
+    assert.equal(update.mock.calls.at(-1)?.arguments[4], salesHead);
+    assert.equal(intakeUpdate.mock.calls.at(-1)?.arguments[4], salesHead);
+    assert.equal(genericSaved.subStageId, salesHead ? 1 : 2);
+    assert.equal(intakeSaved.subStageId, salesHead ? 1 : 2);
+  }
 });
 
 test('creators update returned corrections in one save with actor audit and no separate decision', async t => {
@@ -531,7 +563,7 @@ test('Sales Representatives can read all creators but cannot update another crea
   for (const subStageId of [1, 2, 3]) {
     current = { ...record, createdBy: 99, assignedTo: 7, subStageId };
     assert.equal((await service.get(10, ctx())).opportunityId, 10);
-    assert.deepEqual(await service.allowedActions(current, ctx()), []);
+    assert.deepEqual(await service.allowedActions(current, ctx()), ['EDIT_SCOPE']);
     await assert.rejects(service.update(10, { opportunityName: 'Another creator' }, ctx()), /cannot edit/);
     await assert.rejects(service.assertExtractionEdit(10, 7), /cannot edit/);
   }
@@ -611,7 +643,7 @@ test('complete role-based flow saves estimation, reviews it, submits a bid, nego
   await step('SUBMIT_ESTIMATE', 4, 8);
   await assert.rejects(service.saveEstimation(10, { revision: 1, rows: [], assumptions: '', total: '' }, ctx()), /Only the Estimation Team/);
   actorRole = 'approver_gate2';
-  assert.deepEqual(await service.allowedActions(current, ctx()), ['ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT']);
+  assert.deepEqual(await service.allowedActions(current, ctx()), ['EDIT_SCOPE', 'ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT']);
   await step('HOLD', 4, 9, true);
   await step('APPROVE', 5, 10);
   actorRole = 'SH';
