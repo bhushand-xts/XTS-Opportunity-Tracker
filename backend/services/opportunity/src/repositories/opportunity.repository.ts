@@ -2,6 +2,7 @@ import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import { query, transaction } from "../config/db";
 import type { PoolClient } from "pg";
 import { conflict, notFound } from '../../../../shared/errors/graphqlErrors';
+import { assertPreparationWritable, preparationModulesLocked } from '../lib/opportunityPreparation';
 
 const GENERIC_RFP_TYPE_ID = 2;
 
@@ -334,9 +335,10 @@ export async function findResponses(opportunityId: number): Promise<OpportunityR
 export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, userId: number): Promise<void> {
   await transaction(async client => {
     // Match the lock order used when opportunity edits synchronise questions.
-    const opportunity = await client.query(`SELECT opportunity_id FROM tbl_opportunity
+    const opportunity = await client.query<{ stageId: number | null; subStageId: number | null }>(`SELECT opportunity_id, stage_id AS "stageId", sub_stage_id AS "subStageId" FROM tbl_opportunity
       WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE`, [opportunityId]);
     if (!opportunity.rows.length) throw notFound('Opportunity not found.');
+    assertPreparationWritable(opportunity.rows[0]);
     const result = await client.query<OpportunityResponse>(`SELECT ${RESPONSE_COLUMNS}
       FROM tbl_opportunity_questions_answers q
       WHERE q.opportunity_id = $1 AND q.qa_id = $2 AND q.is_active = TRUE FOR UPDATE OF q`, [opportunityId, responseId]);
@@ -555,16 +557,40 @@ async function findById(
   return rows[0] || null;
 }
 
-type UpdateWorkflow = Pick<Opportunity, 'stageId' | 'subStageId' | 'createdBy' | 'assignedTo'>;
+type UpdateWorkflow = Pick<Opportunity, 'stageId' | 'subStageId' | 'createdBy' | 'assignedTo' | 'opportunityTypeId'>;
+
+// Full edit forms send the existing question selection too. Once approved,
+// allow that unchanged payload while rejecting additions, removals and edits.
+async function assertLockedProposalQuestionsUnchanged(client: PoolClient, opportunityId: number,
+  current: UpdateWorkflow, input: OpportunityInput): Promise<void> {
+  if (!preparationModulesLocked(current)) return;
+  const opportunityTypeId = input.rfpType ?? input.opportunityTypeId ?? current.opportunityTypeId;
+  if (opportunityTypeId !== current.opportunityTypeId) assertPreparationWritable(current);
+  if (input.proposalQuestionSelections === undefined) return;
+  const saved = await client.query<PersistedRfpQuestionSelection>(`SELECT question_id AS "questionId", questiontext AS question,
+    question_category AS category, questionnaire_type_id AS "questionnaireTypeId"
+    FROM tbl_opportunity_questions_answers WHERE opportunity_id = $1 AND is_active = TRUE ORDER BY qa_id`, [opportunityId]);
+  const selections = input.proposalQuestionSelections;
+  const remaining = [...saved.rows];
+  for (const selection of selections) {
+    const index = remaining.findIndex(row => row.questionId === selection.questionId && row.question === selection.question.trim() &&
+      (row.category?.trim() || 'Other') === (selection.category?.trim() || 'Other') &&
+      (opportunityTypeId === 1 ? row.questionnaireTypeId ?? 1 : null) ===
+        (opportunityTypeId === 1 ? selection.questionnaireTypeId ?? row.questionnaireTypeId ?? 1 : null));
+    if (index < 0) assertPreparationWritable(current);
+    remaining.splice(index, 1);
+  }
+  if (remaining.length) assertPreparationWritable(current);
+}
 
 // Saving corrections returns only the requested review to its pending step.
 // All writes use the caller's transaction, including the review audit.
 async function returnUpdatedOpportunityForReview(client: PoolClient, opportunityId: number,
-  current: UpdateWorkflow, userId: number | null, audit: WorkflowAudit): Promise<UpdateWorkflow> {
+  current: UpdateWorkflow, userId: number | null, audit: WorkflowAudit, salesReviewAuthorized: boolean): Promise<UpdateWorkflow> {
   const salesChanges = current.stageId === 1 && current.subStageId === 2;
   const ceoChanges = current.stageId === 2 && current.subStageId === 5;
   if (!salesChanges && !ceoChanges) return current;
-  if (salesChanges && current.createdBy !== userId) return current;
+  if (salesChanges && current.createdBy !== userId && !salesReviewAuthorized) return current;
   const next = { ...current, subStageId: salesChanges ? 1 : 4, assignedTo: null };
   await client.query(`UPDATE tbl_opportunity SET sub_stage_id = $2, assigned_to = NULL,
     updated_by = $3, updated_dt = CURRENT_TIMESTAMP WHERE opportunity_id = $1`,
@@ -583,12 +609,13 @@ async function updateRfpIntakeOpportunity(
   opportunityId: number,
   input: RfpIntakeOpportunityUpdateInput,
   userId: number,
-  audit: WorkflowAudit = {}
+  audit: WorkflowAudit = {},
+  salesReviewAuthorized = false
 ): Promise<Opportunity | null> {
   return transaction(async (client) => {
     const existing = await client.query<UpdateWorkflow & { clientId: number }>(
       `SELECT client_id AS "clientId", stage_id AS "stageId", sub_stage_id AS "subStageId",
-         created_by AS "createdBy", assigned_to AS "assignedTo"
+         created_by AS "createdBy", assigned_to AS "assignedTo", opportunity_type_id AS "opportunityTypeId"
        FROM tbl_opportunity
        WHERE opportunity_id = $1 AND is_active = TRUE
        FOR UPDATE`,
@@ -596,6 +623,8 @@ async function updateRfpIntakeOpportunity(
     );
     const clientId = existing.rows[0]?.clientId;
     if (!clientId) return null;
+    const questionInput = { proposalQuestionSelections: getRfpQuestionSelections(input), rfpType: input.rfpType };
+    await assertLockedProposalQuestionsUnchanged(client, opportunityId, existing.rows[0], questionInput);
     await recordPreviousVersion(client, 'tbl_opportunity', opportunityId);
     await recordPreviousVersion(client, 'mst_client', clientId);
 
@@ -617,10 +646,9 @@ async function updateRfpIntakeOpportunity(
       Promise.resolve()
     );
 
-    const questionSelections = getRfpQuestionSelections(input);
-    await syncProposalQuestions(client, opportunityId, {
-      proposalQuestionSelections: questionSelections, rfpType: input.rfpType,
-    }, userId);
+    if (!preparationModulesLocked(existing.rows[0])) {
+      await syncProposalQuestions(client, opportunityId, questionInput, userId);
+    }
 
     await client.query(
       `UPDATE tbl_opportunity
@@ -647,7 +675,7 @@ async function updateRfpIntakeOpportunity(
       pre_bidmeeting = COALESCE($5, pre_bidmeeting), lead_received_date = COALESCE($6::TIMESTAMP, lead_received_date) WHERE opportunity_id = $1`,
       [opportunityId, input.opportunityDescription ?? null, input.contractTerm ?? null,
         input.incumbentVendor ?? null, input.preBidmeeting ?? null, input.leadReceivedDate || null]);
-    await returnUpdatedOpportunityForReview(client, opportunityId, existing.rows[0], userId, audit);
+    await returnUpdatedOpportunityForReview(client, opportunityId, existing.rows[0], userId, audit, salesReviewAuthorized);
     const result = await client.query<Opportunity>(
       `SELECT ${OPPORTUNITY_LIST_COLUMNS}
        FROM tbl_opportunity o WHERE o.opportunity_id = $1`,
@@ -1007,18 +1035,20 @@ async function update(
   opportunityId: number,
   input: OpportunityInput,
   userId: number | null,
-  audit: WorkflowAudit = {}
+  audit: WorkflowAudit = {},
+  salesReviewAuthorized = false
 ): Promise<Opportunity> {
   return transaction(async client => {
   const query = async <T = any>(sql: string, params?: any[]): Promise<T[]> => (await client.query(sql, params)).rows;
   const locked = await query<UpdateWorkflow>(`SELECT stage_id AS "stageId", sub_stage_id AS "subStageId",
-    created_by AS "createdBy", assigned_to AS "assignedTo" FROM tbl_opportunity
+    created_by AS "createdBy", assigned_to AS "assignedTo", opportunity_type_id AS "opportunityTypeId" FROM tbl_opportunity
     WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE`, [opportunityId]);
   const current = locked[0];
   if (!current || input.stageId !== undefined && current.stageId !== input.stageId ||
       input.subStageId !== undefined && current.subStageId !== input.subStageId) {
     throw new Error('This opportunity changed while you were editing it. Refresh before saving.');
   }
+  await assertLockedProposalQuestionsUnchanged(client, opportunityId, current, input);
   await recordPreviousVersion(client, 'tbl_opportunity', opportunityId);
   const rows = await query<Opportunity>(
     `UPDATE tbl_opportunity
@@ -1062,7 +1092,7 @@ async function update(
      RETURNING ${SELECT_COLUMNS}`,
     [
       input.opportunityName?.trim() || null,
-      input.rfpType ?? input.opportunityTypeId ?? null,
+      input.rfpType ?? input.opportunityTypeId ?? current.opportunityTypeId,
       input.sourceTypeId ?? null,
       input.clientId ?? null,
       current.stageId,
@@ -1101,9 +1131,9 @@ async function update(
 
   const opportunity = rows[0];
 
-  Object.assign(opportunity, await returnUpdatedOpportunityForReview(client, opportunityId, current, userId, audit));
+  Object.assign(opportunity, await returnUpdatedOpportunityForReview(client, opportunityId, current, userId, audit, salesReviewAuthorized));
 
-  await syncProposalQuestions(client, opportunityId, input, userId);
+  if (!preparationModulesLocked(current)) await syncProposalQuestions(client, opportunityId, input, userId);
   return (await query<Opportunity>(`SELECT ${OPPORTUNITY_LIST_COLUMNS} FROM tbl_opportunity o WHERE o.opportunity_id = $1`, [opportunityId]))[0];
   });
 }

@@ -94,6 +94,19 @@ describe('stage-independent opportunity editing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Update Opportunity' }));
     await waitFor(() => expect(success).toHaveBeenCalledWith('Opportunity updated successfully.'));
   });
+
+  it('reports the return to review when a Sales Head saves another creator’s corrections', async () => {
+    const success = vi.spyOn(toast, 'success');
+    const current = fixtureOpportunity({ stageId: 1, subStageId: 2, allowedActions: ['EDIT'], visibleModules: ['overview'] });
+    current.createdBy = current.owner;
+    const service = testService(current);
+    service.save = vi.fn(async command => ({ ...current, form: command.form, title: command.form.title, subStageId: 1 }));
+    mount(service, '/opportunity/401/edit', '102');
+    fireEvent.change(await screen.findByLabelText(/Opportunity name/), { target: { value: 'Corrected by Sales Head' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update Opportunity' }));
+    await waitFor(() => expect(service.save).toHaveBeenCalledOnce());
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Opportunity updated and sent to Sales Head for review successfully.'));
+  });
 });
 
 describe('RFP preparation', () => {

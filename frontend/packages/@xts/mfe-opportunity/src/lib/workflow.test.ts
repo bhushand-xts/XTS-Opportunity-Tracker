@@ -1,9 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { addMasterQuestionTemplates, canAnswer, canReview, decisionError, estimateTotal, newDraft, pendingSaveErrors, pendingSaveFieldErrors, readinessErrors, SECTION_CATALOG, validDate } from './workflow';
+import { addMasterQuestionTemplates, applicableDecisions, canAnswer, canReview, decisionError, estimateTotal, isPreparationLocked, newDraft, pendingSaveErrors, pendingSaveFieldErrors, readinessErrors, SECTION_CATALOG, validDate } from './workflow';
 import type { OpportunityDetail, ResponseCommand, RfpQuestion, VersionCommand } from '@xts/api-contracts';
 import { createLocalOpportunityService, createLocalOpportunityStore, createMockOpportunityService, createMockOpportunityStore, fixtureOpportunity, MOCK_STORAGE_KEY, type LocalWorkflowDirectory, type MockStorage } from '../testing/fixtures';
 
 describe('workflow boundaries', () => {
+  it('keeps estimation submission at engineering in progress and CEO review limited to approval, hold, or rejection', () => {
+    const review = fixtureOpportunity({ stageId: 4, subStageId: 8, allowedActions: ['ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT', 'SUBMIT_ESTIMATE'] });
+    expect(applicableDecisions(review)).toEqual(['ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT', 'CLOSE_OPPORTUNITY']);
+    expect(applicableDecisions({ ...review, stageId: 3, subStageId: 7 })).toContain('SUBMIT_ESTIMATE');
+    for (const stageId of [2, 3, 4]) {
+      const invalid = { ...review, stageId, subStageId: 5 };
+      expect(applicableDecisions(invalid)).not.toContain('SUBMIT_ESTIMATE');
+      expect(decisionError(invalid, 'SUBMIT_ESTIMATE', '', true)).toContain('no longer awaiting');
+    }
+  });
+  it('waits for the creator update before allowing Sales Head decisions again', () => {
+    const opportunity = fixtureOpportunity({ stageId: 1, subStageId: 2, allowedActions: ['SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_HOLD', 'SALES_REJECT'] });
+    expect(applicableDecisions(opportunity).filter(action => action.startsWith('SALES_'))).toEqual([]);
+    expect(decisionError(opportunity, 'SALES_APPROVE', '', true)).toContain('no longer awaiting');
+    expect(applicableDecisions({ ...opportunity, subStageId: 1 })).toEqual(expect.arrayContaining(['SALES_APPROVE', 'SALES_REQUEST_CHANGES', 'SALES_HOLD', 'SALES_REJECT']));
+  });
+  it('locks preparation after estimate approval without confusing it with CEO Go/No-Go approval', () => {
+    for (const [stageId, subStageId] of [[1, 1], [2, 4], [3, 7], [4, 8], [4, 9]]) {
+      expect(isPreparationLocked(fixtureOpportunity({ stageId, subStageId }))).toBe(false);
+    }
+    for (const [stageId, subStageId] of [[5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19], [10, 20]]) {
+      expect(isPreparationLocked(fixtureOpportunity({ stageId, subStageId }))).toBe(true);
+    }
+    const approved = fixtureOpportunity({ stageId: 5, state: 'IN_PROGRESS' });
+    expect(canAnswer(approved, approved.responses![0], '101')).toBe(false);
+  });
   it('copies active master questions with stable provenance and prevents duplicate imports', () => {
     const template: RfpQuestion = { id: 17, question: 'Describe your delivery approach.', description: 'Delivery template', displayOrder: 1, isActive: true, createdDt: null, updatedDt: null };
     const questions = addMasterQuestionTemplates([], [template, template, { ...template, id: 18, isActive: false }]);

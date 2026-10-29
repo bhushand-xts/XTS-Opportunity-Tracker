@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { query, transaction } from '../config/db';
 import { conflict, notFound } from '../../../../shared/errors/graphqlErrors';
+import { assertPreparationWritable } from '../lib/opportunityPreparation';
 
 export type AssessmentSection = 'ALL' | 'SCOPE' | 'RISKS' | 'ALIGNMENT';
 export interface ScopeRisk { id: string; description: string; severity: 'LOW' | 'MEDIUM' | 'HIGH'; }
@@ -43,22 +44,63 @@ async function snapshot(client: PoolClient, kind: Kind, opportunityId: number, i
 
 interface Item { id: string; description: string; severity?: string; }
 const normalizeDescription = (description: string) => description.trim().replace(/\s+/g, ' ').toLowerCase();
-function validateItems(kind: 'RISKS' | 'ALIGNMENT', incoming: Item[], previous: Item[]) {
-  const stored = new Map(previous.map(item => [item.id, item]));
-  const counts = new Map<string, number>();
-  for (const item of incoming) {
-    const description = normalizeDescription(item.description);
-    counts.set(description, (counts.get(description) ?? 0) + 1);
-  }
-  for (const item of incoming) {
-    if (!item.id.startsWith('draft-') && !stored.has(item.id)) throw notFound('An assessment item is no longer available for this opportunity. Refresh before saving.');
-    const prior = stored.get(item.id), description = normalizeDescription(item.description);
-    // Allow existing duplicates to be removed or corrected without blocking
-    // unrelated edits. Never introduce another duplicate through an add/edit.
-    if (prior && normalizeDescription(prior.description) === description) continue;
-    if ((counts.get(description) ?? 0) > 1) throw conflict(kind === 'RISKS'
+function validateItems(
+  kind: 'RISKS' | 'ALIGNMENT',
+  incoming: Item[],
+  previous: Item[]
+) {
+  const stored = new Map(
+    previous.map(item => [item.id, item])
+  );
+
+  const duplicateMessage =
+    kind === 'RISKS'
       ? 'This risk already exists for this opportunity.'
-      : 'This alignment item already exists for this opportunity.');
+      : 'This alignment already exists for this opportunity.';
+
+  const normalize = (value: string) =>
+    normalizeDescription(value);
+
+  const seen = new Map<string, string>();
+
+  // Include saved items when validating a partial update.
+  // Existing IDs being updated are excluded from this initial set.
+  const incomingIds = new Set(
+    incoming.map(item => item.id)
+  );
+
+  for (const item of previous) {
+    if (!incomingIds.has(item.id)) {
+      seen.set(normalize(item.description), item.id);
+    }
+  }
+
+  for (const item of incoming) {
+    if (
+      !item.id.startsWith('draft-') &&
+      !stored.has(item.id)
+    ) {
+      throw notFound(
+        'This item is no longer available. Please refresh and try again.'
+      );
+    }
+
+    const description = normalize(item.description);
+
+    if (seen.has(description)) {
+      const prior = stored.get(item.id);
+
+      // Permit an unchanged existing duplicate to remain
+      // so that unrelated edits are not blocked.
+      if (
+        !prior ||
+        normalize(prior.description) !== description
+      ) {
+        throw conflict(duplicateMessage);
+      }
+    }
+
+    seen.set(description, item.id);
   }
 }
 async function syncItems(client: PoolClient, kind: 'RISKS' | 'ALIGNMENT', opportunityId: number, incoming: Item[], previous: Item[], userId: number) {
@@ -89,7 +131,7 @@ export async function saveScope(opportunityId: number, scope: OpportunityScope, 
       WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE`, [opportunityId]);
     const opportunity = locked.rows[0];
     if (!opportunity) throw notFound('Opportunity not found.');
-    if (opportunity.stageId !== 3 || opportunity.subStageId !== 7) throw conflict('Scope and assessment can only be updated during engineering estimation.');
+    assertPreparationWritable(opportunity);
     const current = (await client.query<OpportunityScope>(SCOPE_QUERY, [opportunityId])).rows[0];
     if (current.revision !== scope.revision) throw conflict('The saved assessment has changed. Refresh the opportunity before saving again. Your draft has not been saved.');
     // Compare against current rows from this opportunity while its parent row

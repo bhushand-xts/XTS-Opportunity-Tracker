@@ -5,12 +5,12 @@ import { findScope, saveScope, type OpportunityScope } from './scope.repository'
 const db = require('../config/db');
 
 const original: OpportunityScope = { revision: 3, summary: 'Original scope', risks: [{ id: '21', description: 'Access delay', severity: 'HIGH' }], alignment: [{ id: '31', text: 'Client platform' }] };
-function database(t: TestContext, options: { stageId?: number; revision?: number; failHistory?: boolean; scopeActive?: boolean; noScope?: boolean; current?: OpportunityScope } = {}) {
+function database(t: TestContext, options: { stageId?: number; subStageId?: number; revision?: number; failHistory?: boolean; scopeActive?: boolean; noScope?: boolean; current?: OpportunityScope } = {}) {
   const calls: { sql: string; params: unknown[] }[] = [];
   t.mock.method(db.pool, 'connect', async () => ({
     query: async (sql: string, params: unknown[] = []) => {
       calls.push({ sql, params });
-      if (sql.startsWith('SELECT stage_id')) return { rows: [{ stageId: options.stageId ?? 3, subStageId: 7 }] };
+      if (sql.startsWith('SELECT stage_id')) return { rows: [{ stageId: options.stageId ?? 3, subStageId: options.subStageId ?? 7 }] };
       if (sql.includes('::INTEGER AS revision')) return { rows: [{ ...(options.current ?? original), revision: options.revision ?? options.current?.revision ?? original.revision }] };
       if (sql.startsWith('SELECT scope_id')) return { rows: options.noScope ? [] : [{ id: '11', description: original.summary, isActive: options.scopeActive ?? true }] };
       if (options.failHistory && sql.startsWith('INSERT INTO') && sql.includes('_tracker')) throw new Error('History unavailable');
@@ -65,12 +65,24 @@ test('stale revisions, cross-opportunity IDs, and stage changes reject before as
   for (const scenario of [
     { options: { revision: 4 }, input: original, message: /has changed/ },
     { options: {}, input: { ...original, risks: [{ id: '999', description: 'Other opportunity', severity: 'HIGH' as const }] }, message: /no longer available/ },
-    { options: { stageId: 4 }, input: original, message: /engineering estimation/ },
+    ...[[5, 10], [6, 12], [7, 13], [8, 14], [9, 18], [10, 20]].map(([stageId, subStageId]) => ({ options: { stageId, subStageId }, input: original, message: /read-only/ })),
   ]) {
     const calls = database(t, scenario.options);
     await assert.rejects(saveScope(10, scenario.input, 'RISKS', 7), scenario.message);
     assert.equal(calls.some(call => /^(INSERT|UPDATE|DELETE)/.test(call.sql)), false);
     assert.equal(calls.at(-1)?.sql, 'ROLLBACK');
+  }
+});
+
+test('assessment saves recheck the locked pre-approval workflow and permit every assessment section through CEO review', async t => {
+  for (const [stageId, subStageId] of [[1, 1], [2, 4], [3, 7], [4, 8], [4, 9]]) {
+    for (const section of ['SCOPE', 'RISKS', 'ALIGNMENT'] as const) {
+      const calls = database(t, { stageId, subStageId });
+      await saveScope(10, { ...original, summary: 'Revised scope', risks: [], alignment: [] }, section, 7);
+      assert.match(calls[1].sql, /sub_stage_id AS "subStageId"[\s\S]*FOR UPDATE/);
+      assert.ok(calls.some(call => /^(INSERT INTO|UPDATE|DELETE)/.test(call.sql)));
+      assert.equal(calls.at(-1)?.sql, 'COMMIT');
+    }
   }
 });
 

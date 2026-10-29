@@ -60,7 +60,7 @@ import { useOpportunityService } from '../services/OpportunityService';
 import { useSave } from '../hooks/useSave';
 import { randomUUID } from '../lib/uuid';
 import { useUnsaved } from '../hooks/useUnsaved';
-import { estimateTotal, isPreparing, money, RISK_SEVERITY_OPTIONS } from '../lib/workflow';
+import { estimateTotal, isPreparationLocked, isPreparing, money, RISK_SEVERITY_OPTIONS } from '../lib/workflow';
 import { Field, Notice, Panel, Values } from './ui';
 import { CREATE_ESTIMATION_PHASE, GET_ESTIMATION_MASTERS } from '../services/estimationMasters.queries';
 
@@ -165,7 +165,9 @@ export function EstimationModule({
   const [draft, setDraft] = useState<Estimation>(initialEstimation);
   const [baseline, setBaseline] = useState(() => JSON.stringify({ rows: initialEstimation.rows, assumptions: initialEstimation.assumptions }));
   const [validation, setValidation] = useState<string>();
-  const editable = !readOnly && isPreparing(o) && o.allowedActions.includes('EDIT_ESTIMATION');
+  const estimationStep = o.stageId == null ? isPreparing(o) :
+    o.stageId === 3 && o.subStageId === 7;
+  const editable = !readOnly && estimationStep && o.allowedActions.includes('EDIT_ESTIMATION');
 
   const [selectedPhaseIds, setSelectedPhaseIds] = useState<Set<number>>(new Set());
   const [selectedRoleCodes, setSelectedRoleCodes] = useState<Set<string>>(new Set());
@@ -334,18 +336,16 @@ const SEVERITY_BADGE: Record<RiskSeverity, 'success' | 'warning' | 'critical'> =
 const SEVERITY_COLOR: Record<RiskSeverity, string> = { LOW: '#089b6a', MEDIUM: '#f59e0b', HIGH: '#ef4444' };
 const emptyScope: Scope = { revision: 0, summary: '', alignment: [], risks: [] };
 const normalizeAssessmentText = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
-function introducesDuplicate(incoming: { id: string; description: string }[], previous: { id: string; description: string }[]) {
-  return incoming.find(item => {
-    const prior = previous.find(row => row.id === item.id), description = normalizeAssessmentText(item.description);
-    return (!prior || normalizeAssessmentText(prior.description) !== description)
-      && incoming.some(other => other.id !== item.id && normalizeAssessmentText(other.description) === description);
-  });
+/** Mirrors the backend rule: matching ignores case and extra spaces. `exceptId` skips the item being edited. */
+function isListedDuplicate(items: { id: string; text: string }[], text: string, exceptId?: string) {
+  const normalized = normalizeAssessmentText(text);
+  return Boolean(normalized) && items.some(item => item.id !== exceptId && normalizeAssessmentText(item.text) === normalized);
 }
 
 function DuplicateHint({ id, kind }: { id: string; kind: 'risk' | 'alignment item' }) {
-  return <div id={id} role="alert" className="mt-2 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+  return <div id={id} role="alert" className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
     <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-    <p><strong className="font-medium">This {kind} is already listed.</strong> Add a different {kind} or edit the existing one.</p>
+    <p><strong className="font-medium">This {kind} is already listed.</strong> Enter a different {kind} or edit the existing one.</p>
   </div>;
 }
 
@@ -380,12 +380,12 @@ function InlineEditableText({ value, editable, disabled, onCommit, ariaLabel }: 
   return <span className={cn('min-w-0 flex-1 break-words text-sm', editable && 'cursor-text')} onDoubleClick={start} title={editable ? 'Double-click to edit' : undefined}>{value}</span>;
 }
 /** Confirms a Risk/Alignment removal before it happens — a single reusable dialog instance driven by whichever item is pending deletion. */
-function ConfirmRemoveDialog({ open, label, onCancel, onConfirm }: { open: boolean; label: string; onCancel: () => void; onConfirm: () => void }) {
+function ConfirmRemoveDialog({ open, label, onCancel, onConfirm, title = 'Remove this item?', description }: { open: boolean; label: string; onCancel: () => void; onConfirm: () => void; title?: string; description?: string }) {
   return <AlertDialog open={open} onOpenChange={value => { if (!value) onCancel(); }}>
     <AlertDialogContent>
       <AlertDialogHeader>
-        <AlertDialogTitle>Remove this item?</AlertDialogTitle>
-        <AlertDialogDescription>“{label}” will be removed from the scope. This can't be undone.</AlertDialogDescription>
+        <AlertDialogTitle>{title}</AlertDialogTitle>
+        <AlertDialogDescription>{description ?? `“${label}” will be removed from the scope. This can't be undone.`}</AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
@@ -417,64 +417,42 @@ export function ScopeModule({ opportunity: o, onSaved, readOnly }: { opportunity
   const [newAlignment, setNewAlignment] = useState(''), [newRisk, setNewRisk] = useState<{ description: string; severity: RiskSeverity }>({ description: '', severity: 'HIGH' });
   const [validation, setValidation] = useState<string>();
   const [recentlyUpdated, setRecentlyUpdated] = useState<Set<string>>(new Set());
-
-const [pendingDelete, setPendingDelete] = useState<{
-  kind: 'risk' | 'alignment';
-  id: string;
-  label: string;
-} | null>(null);
-
-const [duplicate, setDuplicate] = useState<{
-  section: 'RISKS' | 'ALIGNMENT';
-  id: string;
-  value: string;
-}>();
-
-const hintId = useId();
-
-const duplicateValue =
-  duplicate?.section === 'RISKS'
-    ? duplicate.id === 'new'
-      ? newRisk.description
-      : draft.risks.find(item => item.id === duplicate.id)?.description
-    : duplicate?.id === 'new'
-      ? newAlignment
-      : draft.alignment.find(item => item.id === duplicate?.id)?.text;
-
-const activeDuplicate =
-  duplicate &&
-  duplicateValue !== undefined &&
-  normalizeAssessmentText(duplicateValue) ===
-    normalizeAssessmentText(duplicate.value)
-    ? duplicate
-    : undefined;
-
-const riskDuplicate =
-  activeDuplicate?.section === 'RISKS' ? activeDuplicate : undefined;
-
-const alignmentDuplicate =
-  activeDuplicate?.section === 'ALIGNMENT' ? activeDuplicate : undefined;
-
-// Show a brief "Updated" badge after an inline edit.
-function flagUpdated(id: string) {
-  setRecentlyUpdated(prev => new Set(prev).add(id));
-
-  setTimeout(() => {
-    setRecentlyUpdated(prev => {
+  const [pendingDelete, setPendingDelete] = useState<{ kind: 'risk' | 'alignment'; id: string; label: string } | null>(null);
+  // Duplicates are caught here, before saving, so the user gets an inline hint next to the
+  // input instead of a server error. `rejectedEdit` marks a list whose inline edit was refused.
+  const [rejectedEdit, setRejectedEdit] = useState<'RISKS' | 'ALIGNMENT'>();
+  const [scopeMissing, setScopeMissing] = useState(false), [confirmScopeRemoval, setConfirmScopeRemoval] = useState(false);
+  const riskHintId = useId(), alignmentHintId = useId(), scopeHintId = useId();
+  const riskItems = draft.risks.map(item => ({ id: item.id, text: item.description }));
+  const newRiskDuplicate = isListedDuplicate(riskItems, newRisk.description);
+  const newAlignmentDuplicate = isListedDuplicate(draft.alignment, newAlignment);
+  const showRiskHint = newRiskDuplicate || rejectedEdit === 'RISKS';
+  const showAlignmentHint = newAlignmentDuplicate || rejectedEdit === 'ALIGNMENT';
+  // Show a brief "Updated" badge after an inline edit.
+  function flagUpdated(id: string) {
+    setRecentlyUpdated(prev => new Set(prev).add(id));
+    setTimeout(() => setRecentlyUpdated(prev => {
       if (!prev.has(id)) return prev;
-
       const next = new Set(prev);
       next.delete(id);
       return next;
-    });
-  }, 3000);
-}
+    }), 3000);
+  }
   const baselineScope = JSON.parse(baseline) as Scope;
   const risksChanged = JSON.stringify(draft.risks) !== JSON.stringify(baselineScope.risks);
   const alignmentChanged = JSON.stringify(draft.alignment) !== JSON.stringify(baselineScope.alignment);
   const removingScope = Boolean(baselineScope.summary.trim()) && !draft.summary.trim();
-  const editable = !readOnly && (o.stageId != null ? o.stageId === 3 && o.subStageId === 7 : isPreparing(o)) && o.allowedActions.includes('EDIT_SCOPE');
-  const dirty = JSON.stringify(draft) !== baseline || Boolean(newRisk.description.trim() || newAlignment.trim());
+  const preparationLocked = isPreparationLocked(o);
+  const editable = !readOnly && !preparationLocked && o.allowedActions.includes('EDIT_SCOPE');
+  const dirty = editable && (JSON.stringify(draft) !== baseline || Boolean(newRisk.description.trim() || newAlignment.trim()));
+  useEffect(() => {
+    if (!preparationLocked) return;
+    setDraft(o.scope ?? emptyScope);
+    setBaseline(JSON.stringify(o.scope ?? emptyScope));
+    setNewAlignment('');
+    setNewRisk({ description: '', severity: 'HIGH' });
+    setPendingDelete(null);
+  }, [preparationLocked, o.scope]);
   useUnsaved(dirty);
   const riskSeverityBreakdown = RISK_SEVERITY_OPTIONS.map(option => ({ key: option.id, label: option.label, value: draft.risks.filter(item => item.severity === option.id).length, color: SEVERITY_COLOR[option.id as RiskSeverity] }));
 
@@ -488,27 +466,33 @@ function flagUpdated(id: string) {
     // Only the explicit "Save scope" action enforces the required summary — Alignment and Risks
     // are saved independently (add/remove/edit) and shouldn't be blocked by an unrelated, unsaved
     // summary draft.
-    if (requireSummary && !next.summary.trim()) { setValidation('Enter the project scope before saving.'); return; }
+    // Clearing a previously saved scope is an explicit, confirmed removal; only a scope that
+    // was never saved is required here.
+    if (requireSummary && !next.summary.trim() && !removingScope) { setScopeMissing(true); return; }
     if (next.alignment.some(item => !item.text.trim())) { setValidation('Remove any empty alignment items before saving.'); return; }
     if (next.risks.some(item => !item.description.trim())) { setValidation('Remove any empty risks before saving.'); return; }
     setValidation(undefined);
     await mutation.run(JSON.stringify({ scope: next, revision: o.revision }), key => service.saveScope({ opportunityId: o.id, expectedRevision: o.revision, idempotencyKey: key, scope: next }), value => { if (value.scope) { setDraft(value.scope); setBaseline(JSON.stringify(value.scope)); } onSaved(value); }, label);
   }
   function addAlignment() {
-    const text = newAlignment.trim(); if (!text) return;
+    const text = newAlignment.trim(); if (!text || newAlignmentDuplicate) return;
     setNewAlignment('');
     void persist({ ...draft, alignment: [...draft.alignment, { id: `draft-${randomUUID()}`, text }] }, 'Alignment item added.');
   }
   function removeAlignment(id: string) { void persist({ ...draft, alignment: draft.alignment.filter(item => item.id !== id) }, 'Alignment item removed.'); }
   function addRisk() {
-    const description = newRisk.description.trim(); if (!description) return;
+    const description = newRisk.description.trim(); if (!description || newRiskDuplicate) return;
     setNewRisk({ description: '', severity: 'HIGH' });
     void persist({ ...draft, risks: [...draft.risks, { id: `draft-${randomUUID()}`, description, severity: newRisk.severity }] }, 'Risk added.');
   }
   function removeRisk(id: string) { void persist({ ...draft, risks: draft.risks.filter(item => item.id !== id) }, 'Risk removed.'); }
   function updateRiskSeverity(id: string, severity: RiskSeverity) { void persist({ ...draft, risks: draft.risks.map(item => item.id === id ? { ...item, severity } : item) }, 'Risk severity updated.'); }
-  function updateRiskDescription(id: string, description: string) { flagUpdated(id); void persist({ ...draft, risks: draft.risks.map(item => item.id === id ? { ...item, description } : item) }, 'Risk updated.'); }
-  function updateAlignmentText(id: string, text: string) { flagUpdated(id); void persist({ ...draft, alignment: draft.alignment.map(item => item.id === id ? { ...item, text } : item) }, 'Alignment item updated.'); }
+  function updateRiskDescription(id: string, description: string) {
+    if (isListedDuplicate(riskItems, description, id)) { setRejectedEdit('RISKS'); return; }
+    setRejectedEdit(undefined); flagUpdated(id); void persist({ ...draft, risks: draft.risks.map(item => item.id === id ? { ...item, description } : item) }, 'Risk updated.'); }
+  function updateAlignmentText(id: string, text: string) {
+    if (isListedDuplicate(draft.alignment, text, id)) { setRejectedEdit('ALIGNMENT'); return; }
+    setRejectedEdit(undefined); flagUpdated(id); void persist({ ...draft, alignment: draft.alignment.map(item => item.id === id ? { ...item, text } : item) }, 'Alignment item updated.'); }
   function confirmDelete() {
     if (!pendingDelete) return;
     if (pendingDelete.kind === 'risk') removeRisk(pendingDelete.id); else removeAlignment(pendingDelete.id);
@@ -517,18 +501,26 @@ function flagUpdated(id: string) {
 
   return <div className="opp-assessment-layout grid grid-cols-1 items-start gap-3">
     <div className="opp-assessment-editors space-y-3">
-      <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon headerRight={<span className="text-xs font-semibold text-amber-600">Required</span>}>
-        <Textarea aria-label="Scope summary" rows={4} value={draft.summary} onChange={e => setDraft(d => ({ ...d, summary: e.target.value }))} disabled={!editable || mutation.saving} placeholder="Describe the project scope…" />
+      {preparationLocked && <p role="status" className="opp-notice">Scope &amp; Assessment is read-only at this workflow stage.</p>}
+      <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon headerRight={<span className={cn('text-xs font-semibold', preparationLocked ? 'text-muted-foreground' : 'text-amber-600')}>{preparationLocked ? 'Read only' : 'Required'}</span>}>
+        <Textarea aria-label="Scope summary" rows={4} value={draft.summary} onChange={e => { setDraft(d => ({ ...d, summary: e.target.value })); setScopeMissing(false); }} disabled={!editable || mutation.saving} placeholder="Describe the project scope…" aria-invalid={scopeMissing} aria-describedby={scopeMissing ? scopeHintId : undefined} className={cn(scopeMissing && 'border-amber-400 focus-visible:ring-amber-300')} />
+        {editable && scopeMissing && <div id={scopeHintId} role="alert" className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <p><strong className="font-medium">Scope is required.</strong> Describe the project scope before saving.</p>
+        </div>}
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">{draft.summary.length} characters</span>
-          {editable && <div className="flex items-center gap-3">{draft.summary !== baselineScope.summary && <span className="text-xs text-amber-600">Unsaved changes</span>}<Button type="button" size="sm" disabled={mutation.saving || draft.summary === baselineScope.summary} onClick={() => void persist(draft, 'Scope saved.', true)}>Save scope</Button></div>}
+          {editable && <div className="flex items-center gap-3">{draft.summary !== baselineScope.summary && <span className="text-xs text-amber-600">{removingScope ? 'Saved scope will be removed' : 'Unsaved changes'}</span>}{removingScope
+            ? <Button type="button" size="sm" variant="outline" className="border-destructive/40 text-destructive hover:bg-destructive/5" disabled={mutation.saving} onClick={() => setConfirmScopeRemoval(true)}>Remove scope</Button>
+            : <Button type="button" size="sm" disabled={mutation.saving || draft.summary === baselineScope.summary && Boolean(baselineScope.summary.trim())} onClick={() => void persist(draft, 'Scope saved.', true)}>Save scope</Button>}</div>}
         </div>
       </Panel>
       <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
         <Panel title="Alignment" tone="teal" icon={CheckCircle2} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.alignment.length} item{draft.alignment.length === 1 ? '' : 's'}</span>}>
           <ul className="space-y-1">{draft.alignment.map(item => <li key={item.id} className="flex items-center gap-2 rounded-md bg-teal-50/70 px-2 py-1.5 transition-colors hover:bg-teal-100 dark:bg-teal-950/10 dark:hover:bg-teal-950/30"><span className="size-1.5 shrink-0 rounded-sm bg-teal-500" aria-hidden="true" /><InlineEditableText value={item.text} editable={editable} disabled={mutation.saving} ariaLabel={`Edit alignment item: ${item.text}`} onCommit={text => updateAlignmentText(item.id, text)} />{recentlyUpdated.has(item.id) && <Badge variant="info" size="sm" className="shrink-0">Updated</Badge>}{editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${item.text || 'alignment item'}`} disabled={mutation.saving} onClick={() => setPendingDelete({ kind: 'alignment', id: item.id, label: item.text || 'this alignment item' })}><X className="size-4" /></Button>}</li>)}</ul>
           {!draft.alignment.length && <p className="text-sm text-muted-foreground">No alignment items yet.</p>}
-          {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add alignment item" placeholder="Add alignment item (e.g. tech stack, standard, pricing model)" value={newAlignment} onChange={e => setNewAlignment(e.target.value)} disabled={mutation.saving} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAlignment(); } }} /><Button type="button" variant="outline" disabled={mutation.saving || !newAlignment.trim()} onClick={addAlignment}>Add</Button></div>}
+          {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add alignment item" placeholder="Add alignment item (e.g. tech stack, standard, pricing model)" value={newAlignment} onChange={e => { setNewAlignment(e.target.value); setRejectedEdit(undefined); }} disabled={mutation.saving} aria-invalid={newAlignmentDuplicate} aria-describedby={showAlignmentHint ? alignmentHintId : undefined} className={cn(newAlignmentDuplicate && 'border-amber-400 focus-visible:ring-amber-300')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAlignment(); } }} /><Button type="button" variant="outline" disabled={mutation.saving || !newAlignment.trim() || newAlignmentDuplicate} onClick={addAlignment}>Add</Button></div>}
+          {editable && showAlignmentHint && <DuplicateHint id={alignmentHintId} kind="alignment item" />}
         </Panel>
         <Panel title="Risks" tone="amber" icon={AlertTriangle} accentIcon headerRight={<span className="text-xs text-muted-foreground">{draft.risks.length} item{draft.risks.length === 1 ? '' : 's'}</span>}>
           <ul className="space-y-1">{draft.risks.map(risk => <li key={risk.id} className="flex items-center gap-2 rounded-md bg-amber-50/70 px-2 py-1.5 transition-colors hover:bg-amber-100 dark:bg-amber-950/10 dark:hover:bg-amber-950/30">
@@ -539,10 +531,12 @@ function flagUpdated(id: string) {
             {editable && <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${risk.description || 'risk'}`} disabled={mutation.saving} onClick={() => setPendingDelete({ kind: 'risk', id: risk.id, label: risk.description || 'this risk' })}><X className="size-4" /></Button>}
           </li>)}</ul>
           {!draft.risks.length && <p className="text-sm text-muted-foreground">No risks logged yet.</p>}
-          {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add risk" placeholder="Add risk…" value={newRisk.description} onChange={e => setNewRisk(r => ({ ...r, description: e.target.value }))} disabled={mutation.saving} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRisk(); } }} /><SeveritySelect label="New risk severity" value={newRisk.severity} onChange={severity => setNewRisk(r => ({ ...r, severity }))} disabled={mutation.saving} /><Button type="button" variant="outline" disabled={mutation.saving || !newRisk.description.trim()} onClick={addRisk}>Add</Button></div>}
+          {editable && <div className="mt-3 flex gap-2"><Input aria-label="Add risk" placeholder="Add risk…" value={newRisk.description} onChange={e => { setNewRisk(r => ({ ...r, description: e.target.value })); setRejectedEdit(undefined); }} disabled={mutation.saving} aria-invalid={newRiskDuplicate} aria-describedby={showRiskHint ? riskHintId : undefined} className={cn(newRiskDuplicate && 'border-amber-400 focus-visible:ring-amber-300')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRisk(); } }} /><SeveritySelect label="New risk severity" value={newRisk.severity} onChange={severity => setNewRisk(r => ({ ...r, severity }))} disabled={mutation.saving} /><Button type="button" variant="outline" disabled={mutation.saving || !newRisk.description.trim() || newRiskDuplicate} onClick={addRisk}>Add</Button></div>}
+          {editable && showRiskHint && <DuplicateHint id={riskHintId} kind="risk" />}
         </Panel>
       </div>
       <ConfirmRemoveDialog open={pendingDelete !== null} label={pendingDelete?.label ?? ''} onCancel={() => setPendingDelete(null)} onConfirm={confirmDelete} />
+      <ConfirmRemoveDialog open={confirmScopeRemoval} label="" title="Remove the project scope?" description="The saved scope will be removed from this opportunity. Alignment and risks are not affected." onCancel={() => setConfirmScopeRemoval(false)} onConfirm={() => { setConfirmScopeRemoval(false); void persist(draft, 'Scope removed.', true); }} />
       {(validation || mutation.error) && <Notice error={validation ?? mutation.error!} />}
     </div>
     <aside className="opp-assessment-summary space-y-3" aria-label="Assessment summary">

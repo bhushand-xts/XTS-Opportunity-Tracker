@@ -188,11 +188,12 @@ test('a stale reviewed stage rolls back before any status or engagement writes',
 test('both update paths return requested changes to the correct review and preserve approved stages', async t => {
   for (const intake of [false, true]) {
     for (const [stageId, subStageId, expectedSubstage] of [[1, 2, 1], [2, 5, 4], [1, 1, 1], [1, 3, 3], [2, 4, 4], [3, 7, 7], [4, 8, 8], [5, 10, 10], [6, 12, 12], [7, 13, 13], [8, 14, 14], [9, 15, 15]]) {
-      let current = { opportunityId: 10, stageId, subStageId, createdBy: stageId === 2 ? 99 : 7, assignedTo: 7 as number | null, clientId: 1 };
+      let current = { opportunityId: 10, stageId, subStageId, createdBy: stageId === 2 ? 99 : 7, assignedTo: 7 as number | null, clientId: 1, opportunityTypeId: 2 };
       const calls: { sql: string; params: unknown[] }[] = [];
       t.mock.method(db.pool, 'connect', async () => ({
         query: async (sql: string, params: unknown[] = []) => {
           calls.push({ sql, params });
+          if (sql.startsWith('SELECT question_id AS "questionId"')) return { rows: [] };
           if (sql.includes('SET sub_stage_id = $2')) current = { ...current, subStageId: params[1] as number, assignedTo: null };
           return { rows: sql.startsWith('SELECT') || sql.includes('RETURNING') && sql.includes('opportunity_name = $1') ? [{ ...current }] : [] };
         },
@@ -218,13 +219,15 @@ test('both update paths return requested changes to the correct review and prese
   }
 });
 
-test('an authorized non-creator update saves without resubmitting the creator corrections', async t => {
-  const current = { opportunityId: 10, stageId: 1, subStageId: 2, createdBy: 99, assignedTo: 99, clientId: 1 };
+test('a verified Sales Head correction save restores review while another non-creator edit keeps corrections pending', async t => {
   for (const intake of [false, true]) {
+    for (const salesReviewAuthorized of [false, true]) {
+    let current = { opportunityId: 10, stageId: 1, subStageId: 2, createdBy: 99, assignedTo: 99 as number | null, clientId: 1 };
     const calls: string[] = [];
     t.mock.method(db.pool, 'connect', async () => ({
       query: async (sql: string) => {
         calls.push(sql);
+        if (sql.includes('SET sub_stage_id = $2')) current = { ...current, subStageId: 1, assignedTo: null };
         return { rows: sql.startsWith('SELECT') || sql.includes('RETURNING') ? [current] : [] };
       },
       release: () => {},
@@ -233,10 +236,12 @@ test('an authorized non-creator update saves without resubmitting the creator co
       opportunityName: 'Corrected', ownerId: 7, currencyId: 1, estimatedValue: 100, sourceTypeId: 1, rfpType: 2,
       client: { clientName: 'Client', accountType: 'Enterprise', sector: 'Technology', city: 'Pune', state: 'Maharashtra', country: 'India' },
       contacts: [], questions: [],
-    }, 7, { roleName: 'Sales Head' }) : await update(10, { stageId: 1, subStageId: 2, opportunityName: 'Corrected' }, 7, { roleName: 'Sales Head' });
-    assert.equal(saved?.subStageId, 2);
-    assert.equal(calls.some(sql => sql.includes('SET sub_stage_id = $2')), false);
+    }, 7, { roleName: 'Sales Head' }, salesReviewAuthorized) : await update(10, { stageId: 1, subStageId: 2, opportunityName: 'Corrected' }, 7, { roleName: 'Sales Head' }, salesReviewAuthorized);
+    assert.equal(saved?.subStageId, salesReviewAuthorized ? 1 : 2);
+    assert.equal(calls.some(sql => sql.includes('SET sub_stage_id = $2')), salesReviewAuthorized, 'A role-name label alone does not authorize restoring review.');
+    assert.equal(calls.filter(sql => sql.includes('INSERT INTO tbl_opportunity_engage_tracker')).length, salesReviewAuthorized ? 1 : 0);
     assert.equal(calls.at(-1), 'COMMIT');
+    }
   }
 });
 

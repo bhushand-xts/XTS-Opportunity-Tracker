@@ -16,6 +16,7 @@ import { ClientPicker } from './ClientPicker';
 import { OpportunityOwnerSelect } from './OpportunityOwnerSelect';
 import { RfpPreparation } from './RfpPreparation';
 import { ResponseWorkspace } from './ResponseWorkspace';
+import { toast } from 'sonner';
 
 import { LEAD_SOURCES, SERVICE_LINES } from '../lib/opportunityOptions';
 const EMPTY_LOOKUPS: OpportunityLookups = { currencies: [], industries: [], accountTypes: [] };
@@ -40,7 +41,6 @@ export function OpportunityFormPage() {
   useEffect(() => { if (detail.data) applySaved(detail.data); }, [detail.data, applySaved]);
   const dirty = JSON.stringify(form) !== baseline, confirm = useUnsaved(dirty || uploading);
   const editable = saved ? access.edit && saved.allowedActions.includes('EDIT') : access.add;
-  const reviewTarget = saved?.stageId === 1 && saved.subStageId === 2 && saved.createdBy?.id === access.userId ? 'Sales Head' : saved?.stageId === 2 && saved.subStageId === 5 ? 'CEO' : undefined;
   useSetPageTitle(saved ? 'Opportunity workspace' : 'New opportunity');
   const change = <K extends keyof OpportunityDraft>(key: K, value: OpportunityDraft[K]) => setForm(f => ({ ...f, [key]: value }));
   async function save() {
@@ -51,11 +51,17 @@ export function OpportunityFormPage() {
       return;
     }
     const identity = persistedId.current;
+    const sourceStageId = saved?.stageId, sourceSubStageId = saved?.subStageId;
     await mutation.run(JSON.stringify({ identity, revision: saved?.revision, form }), key => service.save({ id: identity, expectedRevision: saved?.revision ?? null, idempotencyKey: identity ? key : creationKey.current, form }), value => {
+      // Confirm the return to review from the saved server state. Either the
+      // creator or an authorized Sales Head may have made the corrections.
+      const reviewTarget = sourceStageId === 1 && sourceSubStageId === 2 && value.stageId === 1 && value.subStageId === 1 ? 'Sales Head' :
+        sourceStageId === 2 && sourceSubStageId === 5 && value.stageId === 2 && value.subStageId === 4 ? 'CEO' : undefined;
       applySaved(value);
       if (responseDirty) { if (!id) navigate(`/opportunity/${value.id}/edit`, { replace: true }); if (responseDirty) setSaveNote('Opportunity saved. Your unsaved answer or assignment is still here; save it before leaving.'); }
       else navigate(`/opportunity?saved=${encodeURIComponent(value.id)}`);
-    }, reviewTarget ? `Opportunity updated and sent to ${reviewTarget} for review successfully.` : identity ? 'Opportunity updated successfully.' : 'Opportunity saved as Pending and queued for Sales Head.');
+      toast.success(reviewTarget ? `Opportunity updated and sent to ${reviewTarget} for review successfully.` : identity ? 'Opportunity updated successfully.' : 'Opportunity saved as Pending and queued for Sales Head.');
+    }, null);
   }
   if (id && detail.loading && !saved) return <Loading />;
   if (id && detail.error) return <Notice error={detail.error} retry={detail.reload} />;
