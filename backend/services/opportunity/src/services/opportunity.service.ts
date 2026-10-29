@@ -7,7 +7,7 @@ import { documentUploadAudit } from '../lib/documentStorage';
 import { transaction } from "../config/db";
 import { attachSource } from "../extraction/repository";
 import { uuidPattern } from "../extraction/types";
-import { sendOpportunityCreatedEmail } from "../integrations/mailer";
+import { sendOpportunityCreatedEmail, sendOpportunityStatusChangedEmail } from "../integrations/mailer";
 
 import {
   notFound,
@@ -73,6 +73,74 @@ async function notifyOpportunityCreated(opportunityId: number, userId: number) {
     });
   } catch (error) {
     console.error("Could not send the opportunity-created notification email", error);
+  }
+}
+
+// Workflow roles gated by stage, matching the exact gating projectAllowedActions uses
+// (review=Sales Head, gateReview=CEO, estimate=Estimation Team) so "who can act now"
+// and "who should be notified" never drift apart.
+type WorkflowRole = 'SALES_HEAD' | 'CEO' | 'ESTIMATION';
+const ROLE_NAMES: Record<WorkflowRole, string> = { SALES_HEAD: 'Sales Head', CEO: 'CEO/Gate-2 Approver', ESTIMATION: 'Estimation Team' };
+function actorRoleForStage(stageId: number | null): WorkflowRole | null {
+  if (stageId === 1 || stageId === 5 || stageId === 6 || stageId === 10) return 'SALES_HEAD';
+  if (stageId === 2 || stageId === 4) return 'CEO';
+  if (stageId === 3) return 'ESTIMATION';
+  return null;
+}
+// When an action doesn't hand the opportunity to a new role (hold, reject, request
+// changes, or a closing outcome), notify whoever handed it to the current stage instead
+// of re-notifying the role that just acted.
+function downstreamOfStage(stageId: number | null): 'CREATOR' | WorkflowRole {
+  if (stageId === 2) return 'SALES_HEAD';
+  if (stageId === 4) return 'ESTIMATION';
+  return 'CREATOR';
+}
+
+// Best-effort: the transition is already saved by the time this runs, so a
+// notification failure never undoes the decision.
+async function notifyWorkflowTransition(opportunityId: number, userId: number, previousStageId: number | null, comment: string | null) {
+  try {
+    const [opportunity, actor] = await Promise.all([
+      repository.findById(opportunityId),
+      userService.findUser(userId),
+    ]);
+    if (!opportunity) return;
+    const oldRole = actorRoleForStage(previousStageId);
+    const newRole = actorRoleForStage(opportunity.stageId);
+    const advancing = newRole !== null && newRole !== oldRole;
+    const target = advancing ? newRole : downstreamOfStage(previousStageId);
+
+    let recipients: { email: string; name: string }[];
+    if (target === 'CREATOR') {
+      const creator = opportunity.createdBy && opportunity.createdBy !== userId ? await userService.findUser(opportunity.createdBy) : null;
+      recipients = creator?.email ? [{ email: creator.email, name: userName(creator) }] : [];
+    } else {
+      const roleId = await repository.findRoleIdByName(ROLE_NAMES[target]);
+      const users = roleId ? await userService.findActiveUsersByRole(roleId) : [];
+      const seen = new Set<string>();
+      recipients = users.map(user => ({ email: user.email, name: userName(user) }))
+        .filter((recipient): recipient is { email: string; name: string } => !!recipient.email && !seen.has(recipient.email) && !!seen.add(recipient.email));
+    }
+    if (!recipients.length) return;
+
+    const [stageName, subStageName, currencyCode] = await Promise.all([
+      repository.findStageName(opportunity.stageId),
+      repository.findSubStageName(opportunity.subStageId),
+      repository.findCurrencyCode(opportunity.currencyId),
+    ]);
+    await sendOpportunityStatusChangedEmail(recipients, {
+      opportunityNumber: opportunity.opportunityNumber ?? 'Not assigned',
+      opportunityName: opportunity.opportunityName ?? 'Untitled',
+      accountName: opportunity.clientName ?? null,
+      stageName, subStageName,
+      estimatedValue: opportunity.estimatedValue,
+      currency: currencyCode,
+      comment: comment?.trim() || null,
+      changedByName: userName(actor),
+      changedAt: opportunity.updatedDt ?? new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Could not send the opportunity status-change notification email", error);
   }
 }
 
@@ -375,6 +443,23 @@ function persistTransition(current: repository.Opportunity, opportunityId: numbe
 }
 
 async function transitionWorkflow(
+  opportunityId: number,
+  action: WorkflowAction,
+  comment: string | null,
+  opportunityDescription: string | null,
+  ctx: any,
+  reasonCodeId?: number | null
+) {
+  const before = await repository.findById(opportunityId);
+  const result = await transitionWorkflowCore(opportunityId, action, comment, opportunityDescription, ctx, reasonCodeId);
+  if (result && before) {
+    const userId = (await accessFor(ctx)).userId;
+    void notifyWorkflowTransition(opportunityId, userId, before.stageId, comment);
+  }
+  return result;
+}
+
+async function transitionWorkflowCore(
   opportunityId: number,
   action: WorkflowAction,
   comment: string | null,
