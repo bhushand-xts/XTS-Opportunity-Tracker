@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2 } from 'lucide-react';
+import { Briefcase, ChevronLeft, ChevronRight, ChevronsUp, ChevronsDown, Clock, Plus, Search, CheckCircle2 } from 'lucide-react';
 import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, SegmentedProgress, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle } from '@xts/design-system';
 import type { ListFilter, OpportunitySummary, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
@@ -77,9 +77,34 @@ function OpportunityCard({ opportunity: o, highlight }: { opportunity: Opportuni
 function OpportunityBoard({ opportunities, savedId, showAllStages, stageIds }: { opportunities: OpportunitySummary[]; savedId: string | null; showAllStages: boolean; stageIds?: number[] }) {
   const boardRef = useRef<HTMLDivElement>(null);
   const boardId = useId(), helpId = useId();
+  useLayoutEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+    const page = board.closest<HTMLElement>('.opp-pipeline-page');
+    if (!page) return;
+    const root = page.closest<HTMLElement>('.opportunity-root');
+    if (!root) return;
+    const updateHeight = () => {
+      const top = root.getBoundingClientRect().top + window.scrollY;
+      root.style.setProperty('--opp-board-viewport-height', `${Math.max(0, window.innerHeight - top)}px`);
+    };
+    updateHeight();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(updateHeight);
+    observer?.observe(page);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateHeight);
+      root.style.removeProperty('--opp-board-viewport-height');
+    };
+  }, []);
   const scrollStages = (direction: number) => {
     const board = boardRef.current;
     if (board) board.scrollBy({ left: direction * board.clientWidth * 0.8, behavior: 'auto' });
+  };
+  const jumpVertically = (bottom: boolean) => {
+    const board = boardRef.current;
+    if (board) board.scrollTo({ top: bottom ? board.scrollHeight : 0, left: board.scrollLeft, behavior: 'auto' });
   };
   type Lane = { key: string; label: string; state: OpportunityState; order: number; items: OpportunitySummary[] };
   const lanes = new Map<string, Lane>();
@@ -102,17 +127,19 @@ function OpportunityBoard({ opportunities, savedId, showAllStages, stageIds }: {
     <div className="mb-2 flex items-center justify-between gap-3">
       <p id={helpId} className="text-xs text-muted-foreground">{lanes.size} stages · Scroll sideways to view all stages</p>
       <div className="flex shrink-0 gap-1" role="group" aria-label="Board navigation">
+        <Button size="icon" variant="outline" className="size-8" aria-label="Jump to top of board" title="Jump to top" aria-controls={boardId} onClick={() => jumpVertically(false)}><ChevronsUp className="size-4" aria-hidden="true" /></Button>
+        <Button size="icon" variant="outline" className="size-8" aria-label="Jump to bottom of board" title="Jump to bottom" aria-controls={boardId} onClick={() => jumpVertically(true)}><ChevronsDown className="size-4" aria-hidden="true" /></Button>
         <Button size="icon" variant="outline" className="size-8" aria-label="Previous stages" aria-controls={boardId} onClick={() => scrollStages(-1)}><ChevronLeft className="size-4" /></Button>
         <Button size="icon" variant="outline" className="size-8" aria-label="Next stages" aria-controls={boardId} onClick={() => scrollStages(1)}><ChevronRight className="size-4" /></Button>
       </div>
     </div>
-    <div id={boardId} ref={boardRef} className="opp-board" role="region" aria-label="Pipeline stages" aria-describedby={helpId} tabIndex={0}>{Array.from(lanes.values()).sort((a, b) => a.order - b.order).map(lane => <section key={lane.key} className={`opp-lane opp-state-${lane.state}`}>
+    <div id={boardId} ref={boardRef} className="opp-board" role="region" aria-label="Pipeline stages" aria-describedby={helpId} tabIndex={0}><div className="opp-board-track">{Array.from(lanes.values()).sort((a, b) => a.order - b.order).map(lane => <section key={lane.key} className={`opp-lane opp-state-${lane.state}`}>
       <h3 className="flex items-center gap-2 text-sm font-semibold"><span className="opp-lane-dot" aria-hidden="true" /><span className="flex-1">{lane.label}</span><Badge variant="outline">{lane.items.length}</Badge></h3>
       <div className="opp-lane-cards" role="region" aria-label={`${lane.label} opportunities`} tabIndex={0}>
         {lane.items.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={savedId === o.id} />)}
         {!lane.items.length && <p className="opp-empty text-xs">No opportunities in this stage.</p>}
       </div>
-    </section>)}</div>
+    </section>)}</div></div>
   </div>;
 }
 export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue'] }) {
