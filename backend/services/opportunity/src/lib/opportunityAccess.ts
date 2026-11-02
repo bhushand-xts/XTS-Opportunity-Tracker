@@ -72,8 +72,8 @@ export function opportunityAccess(userId: number, menus: AccessMenu[], grants: A
   const readClients = parentView;
   const roleKeys = role?.isActive === true ? [role.roleCode ?? '', role.roleName].map(normalize) : [];
   const review = approvalsView && roleKeys.some(key => ['sh', 'sales_head'].includes(key));
-  const gateReview = approvalsView && roleKeys.some(key => ['approver_gate2', 'ceo', 'ceo/gate_2_approver'].includes(key));
-  const salesRepresentative = roleKeys.some(key => ['sales_representative'].includes(key));
+  const gateReview = approvalsView && roleKeys.some(key => ['approver_gate2', 'ceo', 'ceo/gate_2_approver', 'approver'].includes(key));
+  const salesRepresentative = roleKeys.some(key => ['sales_executive', 'sales_representative'].includes(key));
   const estimate = workView && roleKeys.some(key => key === 'estimation_team');
   const own = (record: WorkflowRecord) => record.createdBy === userId || record.ownerId === userId || record.assignedTo === userId;
   function canListQueue(queue: string) {

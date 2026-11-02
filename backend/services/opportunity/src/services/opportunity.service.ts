@@ -82,7 +82,7 @@ async function notifyOpportunityCreated(opportunityId: number, userId: number) {
 // (review=Sales Head, gateReview=CEO, estimate=Estimation Team) so "who can act now"
 // and "who should be notified" never drift apart.
 type WorkflowRole = 'SALES_HEAD' | 'CEO' | 'ESTIMATION';
-const ROLE_NAMES: Record<WorkflowRole, string> = { SALES_HEAD: 'Sales Head', CEO: 'CEO/Gate-2 Approver', ESTIMATION: 'Estimation Team' };
+const ROLE_NAMES: Record<WorkflowRole, string> = { SALES_HEAD: 'Sales Head', CEO: 'Approver', ESTIMATION: 'Estimation Team' };
 function actorRoleForStage(stageId: number | null): WorkflowRole | null {
   if (stageId === 1 || stageId === 5 || stageId === 6 || stageId === 10) return 'SALES_HEAD';
   if (stageId === 2 || stageId === 4) return 'CEO';
