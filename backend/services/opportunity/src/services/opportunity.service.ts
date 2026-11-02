@@ -114,7 +114,12 @@ async function notifyWorkflowTransition(opportunityId: number, userId: number, p
 
     let recipients: { email: string; name: string }[];
     if (target === 'CREATOR') {
-      const creator = opportunity.createdBy && opportunity.createdBy !== userId ? await userService.findUser(opportunity.createdBy) : null;
+      // Unlike notifyOpportunityCreated (where excluding the actor makes sense —
+      // nobody needs telling about their own action), a status change is
+      // informational for whoever owns the opportunity even if they also
+      // happen to be the one acting on it (e.g. a Sales Head reviewing an
+      // opportunity they created themselves) — so this does NOT exclude the actor.
+      const creator = opportunity.createdBy ? await userService.findUser(opportunity.createdBy) : null;
       recipients = creator?.email ? [{ email: creator.email, name: userName(creator) }] : [];
     } else {
       const roleId = await repository.findRoleIdByName(ROLE_NAMES[target]);
