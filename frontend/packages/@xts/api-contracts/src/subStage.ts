@@ -17,7 +17,7 @@ export interface SubStageInput {
 }
 
 /** One entry of a sub stage's change history (mst_sub_stage_tracker): the
- * sub stage as it stood after a change. Newest first. */
+ * sub stage as it stood before an update or deletion. Newest first. */
 export interface SubStageHistory {
   trackerId: number;
   subStageId: number;

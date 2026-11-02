@@ -47,12 +47,17 @@ export function newDraft(ownerId: string): OpportunityDraft {
   };
 }
 export function isPreparing(o: OpportunityDetail) { return o.state === 'PREPARATION_PENDING' || o.state === 'IN_PROGRESS' || o.state === 'SALES_REVIEW'; }
+// Approved estimates stay fixed throughout proposal, negotiation, and outcomes. Stage 9
+// (No-Bid / Declined: Sales reject, CEO No-Go, estimate rejected, closed by Sales) is locked too.
+export function isPreparationLocked(o: Pick<OpportunityDetail, 'stageId' | 'subStageId'>) {
+  return [5, 6, 7, 8, 9, 10].includes(o.stageId ?? 0);
+}
 export function may(o: OpportunityDetail, action: Action) { return o.allowedActions.includes(action); }
 export function canAnswer(o: OpportunityDetail, r: ResponseItem, userId: string | undefined) {
-  return isPreparing(o) && r.owner?.active === true && r.owner.id === userId && ['ASSIGNED', 'DRAFT', 'CHANGES_REQUESTED'].includes(r.state);
+  return !isPreparationLocked(o) && isPreparing(o) && r.owner?.active === true && r.owner.id === userId && ['ASSIGNED', 'DRAFT', 'CHANGES_REQUESTED'].includes(r.state);
 }
 export function canReview(o: OpportunityDetail, r: ResponseItem, userId: string | undefined) {
-  return isPreparing(o) && r.state === 'SUBMITTED' && r.reviewer?.active === true && r.reviewer.id === userId && r.owner?.id !== userId && r.submittedRevision === r.revision;
+  return !isPreparationLocked(o) && isPreparing(o) && r.state === 'SUBMITTED' && r.reviewer?.active === true && r.reviewer.id === userId && r.owner?.id !== userId && r.submittedRevision === r.revision;
 }
 export function userLabel(user: DirectoryUser | null) { return user ? `${user.name || user.email}${user.active ? '' : ' (inactive)'}` : 'Unassigned'; }
 export function pendingSaveFieldErrors(form: OpportunityDraft): Record<string, string> {
@@ -78,6 +83,10 @@ export function pendingSaveFieldErrors(form: OpportunityDraft): Record<string, s
   for (const field of ['questionsDue', 'submissionDeadline'] as const) {
     const value = form.dates[field];
     if (value && !validDate(value)) errors[field === 'questionsDue' ? 'Questions due' : 'Submission deadline'] = 'Please enter a valid date.';
+  }
+  const { questionsDue, submissionDeadline } = form.dates;
+  if (questionsDue && validDate(questionsDue) && submissionDeadline && validDate(submissionDeadline) && questionsDue >= submissionDeadline) {
+    errors['Questions due'] = 'Questions due must be earlier than the Submission deadline.';
   }
   return errors;
 }
@@ -112,7 +121,9 @@ export function estimateTotal(rows: EstimateRow[]): Decimal {
 }
 export function money(value: Decimal, code: string) {
   try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(Number(value)); }
-  catch { return `${code} ${value}`; }
+  // Not a recognized ISO currency code (e.g. test/seed data): still group digits
+  // (5,81,564.10) instead of a raw, hard-to-scan decimal string.
+  catch { return `${code} ${new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value))}`; }
 }
 export function decisionError(o: OpportunityDetail, decision: Action, reason: string, confirmed: boolean, reasonCodeId?: number | null): string | null {
   if (!may(o, decision)) return 'You are not permitted to make this decision.';
@@ -136,9 +147,9 @@ export function decisionError(o: OpportunityDetail, decision: Action, reason: st
 export function applicableDecisions(o: OpportunityDetail): Action[] {
   const stage = o.stageId, substage = o.subStageId;
   const decisions: Action[] = [];
-  if (stage === 1 && [1, 2, 3].includes(substage ?? 0)) {
+  if (stage === 1 && [1, 3].includes(substage ?? 0)) {
     decisions.push('SALES_APPROVE');
-    if (substage !== 2) decisions.push('SALES_REQUEST_CHANGES');
+    decisions.push('SALES_REQUEST_CHANGES');
     if (substage !== 3) decisions.push('SALES_HOLD');
     decisions.push('SALES_REJECT');
   }

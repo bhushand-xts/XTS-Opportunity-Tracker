@@ -93,14 +93,14 @@ Non-GraphQL routes on 4001: `GET /login` (login page), `GET /admin` (admin dashb
 |---|---|---|---|
 | `rolesList` (Q) | — | `[Role]` | |
 | `role` (Q) | `id: Int!` | `Role` | Error "Role not found" if missing |
-| `roleHistory` (Q) | `roleId: Int!` | `[RoleHistory!]!` | Every change to the role, newest first (from `mst_roles_tracker`). Still available after the role is deleted |
+| `roleHistory` (Q) | `roleId: Int!` | `[RoleHistory!]!` | Previous versions of the role, newest first (from `mst_roles_tracker`). Still available after the role is deleted |
 | `createRole` (M) | `input: CreateRoleInput!` `{ roleName!, roleCode, description, isActive, createdBy }` | `Role` | `roleName` required; name and code must be unique (any case). Max lengths: name 100, code 50, description 100 |
 | `updateRole` (M) | `id: Int!`, `input: UpdateRoleInput!` (all fields optional, incl. `updatedBy`) | `Role` | `roleName` cannot be empty; name/code unique; same max lengths |
-| `deleteRole` (M) | `id: Int!`, `updatedBy: Int` | `Boolean` | Refused if any user has the role (asks the user service, so **4001 must be running**). A final inactive snapshot is kept in the history |
+| `deleteRole` (M) | `id: Int!`, `updatedBy: Int` | `Boolean` | Refused if any user has the role (asks the user service, so **4001 must be running**). The previous row is kept in history before deletion |
 
 `createdBy` / `updatedBy` are optional; the signed-in user is recorded automatically (see the notes at the top). `Role` returns `createdBy` and `updatedBy`.
 
-Every create / update / delete writes a snapshot to `mst_roles_tracker` **in the same transaction** as the change.
+Creation writes only to `mst_roles`. Updates and deletes archive the previous row in `mst_roles_tracker` **in the same transaction**, before changing the main row.
 
 ```graphql
 query { rolesList { id roleName roleCode description isActive createdDt createdBy updatedDt updatedBy } }
@@ -142,7 +142,7 @@ mutation { toggleMenuStatus(menuId: 3, isActive: false, updatedBy: 1) { menuId i
 |---|---|---|---|
 | `permissions` (Q) | — | `[Permission!]!` | |
 | `permission` (Q) | `permissionId: Int!` | `Permission` | |
-| `permissionHistory` (Q) | `permissionId: Int!` | `[PermissionHistory!]!` | Every change to the permission, newest first (from `mst_permissions_tracker`) |
+| `permissionHistory` (Q) | `permissionId: Int!` | `[PermissionHistory!]!` | Previous versions of the permission, newest first (from `mst_permissions_tracker`) |
 | `menusForPermissionMapping` (Q) | — | `[MenuForPermissionMapping!]!` `{ menuId, menuName }` | Menu dropdown for the mapping screen |
 | `menuPermissions` (Q) | `menuId: Int!` | `[Permission!]!` | Permissions currently mapped to a menu; "not found" if menu missing |
 | `menuPermissionMappings` (Q) | — | `[MenuPermissionMapping!]!` | All menu ↔ permission links |
@@ -151,7 +151,7 @@ mutation { toggleMenuStatus(menuId: 3, isActive: false, updatedBy: 1) { menuId i
 | `togglePermissionStatus` (M) | `permissionId: Int!`, `isActive: Boolean!`, `updatedBy: Int!` | `Permission!` | |
 | `saveMenuPermissions` (M) | `input` `{ menuId!, permissionIds!, updatedBy! }` | `[Permission!]!` | Sets the menu's permissions (table `tbl_menuwise_permission`); at least one permissionId required; the menu and every permission must exist. All-or-nothing (one transaction). Any role grant for a permission the menu no longer allows is revoked |
 
-Create / update / status changes write a snapshot to `mst_permissions_tracker` in the same transaction. Column limits: name 100, key 100, description 500.
+Creation writes only to `mst_permissions`. Updates and status changes archive the previous row in `mst_permissions_tracker` before changing it, in the same transaction. Column limits: name 100, key 100, description 500.
 
 ```graphql
 query { permissions { permissionId permissionName permissionKey isActive } }

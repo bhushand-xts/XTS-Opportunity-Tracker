@@ -46,6 +46,19 @@ function testService(initial = fixtureOpportunity()): OpportunityService {
   };
 }
 describe('stage-independent opportunity editing', () => {
+  it('lets a reviewer save an answer from RFP Q&A when the backend grants answer access', async () => {
+    const current = fixtureOpportunity({ stageId: 4, subStageId: 8, allowedActions: [] });
+    const service = testService(current);
+    service.answer = vi.fn(async command => ({ ...current, responses: current.responses!.map(item => item.id === command.responseId ? { ...item, answer: command.answer, revision: item.revision + 1 } : item) }));
+    mount(service, '/opportunity/401/review?tab=qa');
+    const field = await screen.findByRole('textbox', { name: 'Answer' });
+    expect(field).not.toHaveAttribute('readonly');
+    fireEvent.change(field, { target: { value: 'Reviewer answer.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save answer' }));
+    await waitFor(() => expect(service.answer).toHaveBeenCalledWith(expect.objectContaining({ opportunityId: '401', responseId: '301', answer: 'Reviewer answer.' })));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save answer' })).toBeDisabled());
+  });
+
   it.each([[1, 2], [2, 4], [2, 5], [3, 7], [4, 8], [5, 10], [6, 12], [7, 13], [8, 14], [9, 15]])('allows an authorized update at stage %s / %s', async (stageId, subStageId) => {
     const current = fixtureOpportunity({ stageId, subStageId, state: 'GATE1_GO', allowedActions: ['EDIT'], visibleModules: ['overview'] });
     current.form.estimatedValueUsd = '3000';
@@ -80,6 +93,19 @@ describe('stage-independent opportunity editing', () => {
     fireEvent.change(await screen.findByLabelText(/Opportunity name/), { target: { value: 'Details updated' } });
     fireEvent.click(screen.getByRole('button', { name: 'Update Opportunity' }));
     await waitFor(() => expect(success).toHaveBeenCalledWith('Opportunity updated successfully.'));
+  });
+
+  it('reports the return to review when a Sales Head saves another creator’s corrections', async () => {
+    const success = vi.spyOn(toast, 'success');
+    const current = fixtureOpportunity({ stageId: 1, subStageId: 2, allowedActions: ['EDIT'], visibleModules: ['overview'] });
+    current.createdBy = current.owner;
+    const service = testService(current);
+    service.save = vi.fn(async command => ({ ...current, form: command.form, title: command.form.title, subStageId: 1 }));
+    mount(service, '/opportunity/401/edit', '102');
+    fireEvent.change(await screen.findByLabelText(/Opportunity name/), { target: { value: 'Corrected by Sales Head' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update Opportunity' }));
+    await waitFor(() => expect(service.save).toHaveBeenCalledOnce());
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Opportunity updated and sent to Sales Head for review successfully.'));
   });
 });
 
@@ -255,7 +281,7 @@ describe('Opportunity UI using test-only service fixtures', () => {
     expect(main).toHaveAttribute('href', '/opportunity/401/details');
     expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument();
     fireEvent.click(main);
-    const edit = await screen.findByRole('link', { name: 'Edit Opportunity' });
+    const edit = await screen.findByRole('link', { name: 'Edit opportunity' });
     expect(edit).toHaveAttribute('href', '/opportunity/401/edit');
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(edit);
@@ -264,9 +290,9 @@ describe('Opportunity UI using test-only service fixtures', () => {
   it('allows a Sales Head creator to correct returned details from the review page', async () => {
     const current = fixtureOpportunity({ stageId: 1, subStageId: 2, allowedActions: ['EDIT'] });
     mount(testService(current), '/opportunity/401/review');
-    expect(await screen.findByRole('link', { name: 'Edit Opportunity' })).toHaveAttribute('href', '/opportunity/401/edit');
+    expect(await screen.findByRole('link', { name: 'Edit opportunity' })).toHaveAttribute('href', '/opportunity/401/edit');
     expect(screen.queryByRole('button', { name: 'Resubmit for Review' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: 'Edit Opportunity' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Edit opportunity' }));
     expect(await screen.findByLabelText(/Opportunity name/)).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Update Opportunity' })).toBeEnabled();
   });

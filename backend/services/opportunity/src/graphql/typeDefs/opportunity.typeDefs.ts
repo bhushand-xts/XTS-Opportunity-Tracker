@@ -3,6 +3,7 @@ export const opportunityTypeDefs = `#graphql
   type Opportunity {
     responses: [OpportunityResponse!]!
     estimation: OpportunityEstimation
+    scope: OpportunityScope
     stageHistory: [OpportunityStageHistory!]!
     allowedActions: [String!]!
     opportunityId: Int!
@@ -99,6 +100,13 @@ export const opportunityTypeDefs = `#graphql
   }
 
   type OpportunityEstimationRow { id: String!, workItem: String!, hours: String!, people: Int!, hourlyRate: String! }
+  enum OpportunityAssessmentSection { ALL SCOPE RISKS ALIGNMENT }
+  type OpportunityRisk { id: ID!, description: String!, severity: String! }
+  type OpportunityAlignment { id: ID!, text: String! }
+  type OpportunityScope { revision: Int!, summary: String!, risks: [OpportunityRisk!]!, alignment: [OpportunityAlignment!]! }
+  input OpportunityRiskInput { id: ID!, description: String!, severity: String! }
+  input OpportunityAlignmentInput { id: ID!, text: String! }
+  input OpportunityScopeInput { revision: Int!, summary: String!, risks: [OpportunityRiskInput!]!, alignment: [OpportunityAlignmentInput!]! }
   type OpportunityEstimation { revision: Int!, rows: [OpportunityEstimationRow!]!, assumptions: String!, total: String! }
   input OpportunityEstimationRowInput { id: String!, workItem: String!, hours: String!, people: Int!, hourlyRate: String! }
   input OpportunityEstimationInput { revision: Int!, rows: [OpportunityEstimationRowInput!]!, assumptions: String!, total: String }
@@ -345,6 +353,7 @@ export const opportunityTypeDefs = `#graphql
   }
 
   extend type Mutation {
+    saveOpportunityScope(opportunityId: Int!, scope: OpportunityScopeInput!, section: OpportunityAssessmentSection = ALL): Opportunity!
     saveOpportunityAnswer(opportunityId: Int!, responseId: Int!, revision: Int!, answer: String!): Opportunity!
     saveOpportunityEstimation(opportunityId: Int!, estimation: OpportunityEstimationInput!): Opportunity!
     updateOpportunityClient(clientId: Int!, client: RfpIntakeClientInput!, contacts: [RfpIntakeContactInput!]!): OpportunityDirectoryClient!

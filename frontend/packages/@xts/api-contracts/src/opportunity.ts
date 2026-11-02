@@ -52,8 +52,10 @@ export type RiskSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
 export interface AlignmentItem { id: string; text: string; }
 export interface RiskItem { id: string; description: string; severity: RiskSeverity; }
 export interface Scope { revision: number; summary: string; alignment: AlignmentItem[]; risks: RiskItem[]; }
+export type AssessmentSection = 'ALL' | 'SCOPE' | 'RISKS' | 'ALIGNMENT';
 export interface ResponseItem {
   id: string; title: string; sourceValidated: boolean; sourceReference: string | null;
+  category?: string | null;
   owner: DirectoryUser | null; reviewer: DirectoryUser | null; dueDate: LocalDate | null;
   answer: string; state: ResponseState; revision: number; submittedRevision: number | null;
   approvedRevision: number | null; reviewComment: string | null; allowedActions: Action[];

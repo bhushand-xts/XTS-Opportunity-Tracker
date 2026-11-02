@@ -1,3 +1,4 @@
+import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import type { PoolClient } from "pg";
 import { query, transaction } from "../config/db";
 
@@ -24,7 +25,7 @@ export interface StageInput {
   updatedBy?: number | null;
 }
 
-// One row of mst_stage_tracker: a snapshot of a stage as it stood after a change.
+// One row of mst_stage_tracker: a snapshot of a stage as it stood before an update or deletion.
 export interface StageHistory {
   trackerId: number;
   stageId: number;
@@ -93,24 +94,14 @@ async function isInUse(stageId: number): Promise<boolean> {
   return rows[0]?.exists ?? false;
 }
 
-// Every write to mst_stage also writes a snapshot to mst_stage_tracker
+// Updates to mst_stage archive the previous row in mst_stage_tracker
 // (a pre-existing table, not created by this feature), inside the same
 // transaction: the stage and its history are saved together or not at all.
 // No foreign key from the tracker back to mst_stage, so history survives
 // the stage's deletion (if that's ever added later). is_current, not
 // is_active, is this table's own existing status-snapshot column name.
 async function recordTracker(client: PoolClient, id: number): Promise<void> {
-  await client.query(
-    `INSERT INTO mst_stage_tracker
-       (stage_id, stage_name, description, gate, win_percentage, display_order, created_dt, created_by, updated_dt, updated_by, is_current)
-     SELECT
-       stage_id, stage_name, description, gate, win_percentage, display_order,
-       COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, updated_dt, updated_by,
-       COALESCE(is_active, TRUE)
-     FROM mst_stage
-     WHERE stage_id = $1`,
-    [id]
-  );
+  await recordPreviousVersion(client, 'mst_stage', id);
 }
 
 // Newest change first.
@@ -150,13 +141,13 @@ async function create(input: StageInput, userId: number): Promise<Stage> {
         userId,
       ]
     );
-    await recordTracker(client, result.rows[0].id);
     return result.rows[0];
   });
 }
 
 async function update(id: number, input: Partial<StageInput>, userId: number | null): Promise<Stage> {
   return transaction(async (client) => {
+    await recordTracker(client, id);
     const result = await client.query<Stage>(
       `UPDATE mst_stage SET
          stage_name = COALESCE($1, stage_name),
@@ -179,7 +170,6 @@ async function update(id: number, input: Partial<StageInput>, userId: number | n
         id,
       ]
     );
-    await recordTracker(client, id);
     return result.rows[0];
   });
 }

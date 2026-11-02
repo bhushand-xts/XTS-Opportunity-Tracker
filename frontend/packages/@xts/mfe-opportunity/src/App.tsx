@@ -11,9 +11,8 @@ import { OpportunityServiceContext, productionOpportunityService } from "./servi
 import { createLocalWorkflowService } from "./services/localWorkflowService";
 import "./opportunity.css";
 
-// Layers browser-local scope/estimation persistence over the real Opportunity
-// record so those tabs are usable for every user ahead of the backend
-// implementing those modules (see localWorkflowService.ts for details).
+// Estimation retains its existing preview adapter. Scope and assessment reads
+// and saves pass through to the production backend.
 const opportunityService = createLocalWorkflowService(productionOpportunityService);
 
 function OpportunityRoutes() {

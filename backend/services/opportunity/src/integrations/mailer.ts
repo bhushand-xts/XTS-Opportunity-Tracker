@@ -129,4 +129,97 @@ async function sendOpportunityCreatedEmail(recipients: OpportunityCreatedRecipie
   })));
 }
 
-export { sendOpportunityCreatedEmail };
+export interface OpportunityStatusChangedDetails {
+  opportunityNumber: string;
+  opportunityName: string;
+  accountName: string | null;
+  stageName: string | null;
+  subStageName: string | null;
+  estimatedValue: number | null;
+  currency: string | null;
+  comment: string | null;
+  changedByName: string;
+  changedAt: string;
+}
+
+async function sendOpportunityStatusChangedEmail(recipients: OpportunityCreatedRecipient[], details: OpportunityStatusChangedDetails): Promise<void> {
+  const mailer = getTransporter();
+  if (!mailer || recipients.length === 0) return;
+  const subject = `Opportunity Update: ${details.opportunityName} — ${details.stageName ?? 'Status changed'}`;
+  const rows: [string, string][] = [
+    ['Opportunity number', details.opportunityNumber],
+    ['Opportunity name', details.opportunityName],
+    ['Account', details.accountName ?? 'Not specified'],
+    ['Amount', money(details.estimatedValue, details.currency)],
+    ['Status', details.stageName ?? 'Not specified'],
+    ['Sub-status', details.subStageName ?? 'Not specified'],
+    ['Updated by', details.changedByName],
+    ['Updated on', dateTime(details.changedAt)],
+    ...(details.comment ? [['Note', details.comment] as [string, string]] : []),
+  ];
+  const lastIndex = rows.length - 1;
+  await Promise.all(recipients.map(recipient => mailer.sendMail({
+    from: env.smtp!.from,
+    to: recipient.email,
+    subject,
+    text: `Hi ${recipient.name},\n\n${details.changedByName} updated this opportunity and it is ready for your review.\n\n` +
+      `${rows.map(([label, value]) => `${label}: ${value}`).join('\n')}\n\nPlease review the details.`,
+    html: `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light only">
+<title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#eef1f6;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#eef1f6" style="background-color:#eef1f6;">
+  <tr>
+    <td align="center" style="padding: 32px 16px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="#ffffff"
+        style="width:600px; max-width:100%; background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; font-family:Arial, Helvetica, sans-serif;">
+        <tr>
+          <td bgcolor="#312e81" style="background-color:#312e81; padding:20px 28px;">
+            <span style="color:#ffffff; font-size:16px; font-weight:bold; letter-spacing:0.2px;">XTS Opportunity Tracker</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 28px 8px 28px;">
+            <p style="margin:0 0 4px 0; font-size:12px; font-weight:bold; letter-spacing:1px; color:#6366f1; text-transform:uppercase;">Opportunity update</p>
+            <p style="margin:0 0 20px 0; font-size:20px; font-weight:bold; color:#0f172a;">${escapeHtml(details.opportunityName)}</p>
+            <p style="margin:0 0 4px 0; font-size:14px; color:#334155;">Hi ${escapeHtml(recipient.name)},</p>
+            <p style="margin:0 0 20px 0; font-size:14px; color:#334155; line-height:1.5;"><strong>${escapeHtml(details.changedByName)}</strong> updated this opportunity and it is ready for your review.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 28px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+              ${rows.map(([label, value], index) => `
+                <tr bgcolor="${index % 2 === 0 ? '#f8fafc' : '#ffffff'}" style="background-color:${index % 2 === 0 ? '#f8fafc' : '#ffffff'};">
+                  <td style="padding:12px 16px; font-size:13px; color:#64748b; width:42%; vertical-align:top; ${index !== lastIndex ? 'border-bottom:1px solid #e2e8f0;' : ''}">${escapeHtml(label)}</td>
+                  <td style="padding:12px 16px; font-size:13px; color:#0f172a; font-weight:bold; ${index !== lastIndex ? 'border-bottom:1px solid #e2e8f0;' : ''}">${escapeHtml(value)}</td>
+                </tr>`).join('')}
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:20px 28px 28px 28px;">
+            <p style="margin:0; font-size:14px; color:#334155;">Please review the details.</p>
+          </td>
+        </tr>
+        <tr>
+          <td bgcolor="#f8fafc" style="background-color:#f8fafc; padding:16px 28px; border-top:1px solid #e2e8f0;">
+            <p style="margin:0; font-size:12px; color:#94a3b8;">XTS Opportunity Tracker</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`,
+  })));
+}
+
+export { sendOpportunityCreatedEmail, sendOpportunityStatusChangedEmail };

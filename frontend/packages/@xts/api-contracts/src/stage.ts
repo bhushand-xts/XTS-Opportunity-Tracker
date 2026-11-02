@@ -21,7 +21,7 @@ export interface StageInput {
 }
 
 /** One entry of a stage's change history (mst_stage_tracker): the stage as
- * it stood after a change. Newest first. */
+ * it stood before an update or deletion. Newest first. */
 export interface StageHistory {
   trackerId: number;
   stageId: number;

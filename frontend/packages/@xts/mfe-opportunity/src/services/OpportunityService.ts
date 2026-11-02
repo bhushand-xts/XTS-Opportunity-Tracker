@@ -1,9 +1,9 @@
 import { createContext, useContext } from 'react';
-import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION } from './opportunity.queries';
+import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE } from './opportunity.queries';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY, type OwnerDirectoryData } from './userDirectory.queries';
 import { mapOwnerDirectory } from './useOwnerDirectory';
 import { getApolloClient } from '@xts/api-client';
-import type { Action, ClientDraft, DecisionCommand, DirectoryUser, Estimation, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
+import type { Action, AssessmentSection, ClientDraft, DecisionCommand, DirectoryUser, Estimation, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
 import { CREATE_OPPORTUNITY_CLIENT, UPDATE_OPPORTUNITY_CLIENT, GET_CLIENT_CREATE_ACCESS, CREATE_OPPORTUNITY, GET_OPPORTUNITY, GET_OPPORTUNITY_LOOKUPS, LIST_OPPORTUNITIES, LIST_OPPORTUNITY_CLIENTS, UPDATE_OPPORTUNITY, TRANSITION_OPPORTUNITY, GET_HOLD_REASON_CODES } from './opportunity.queries';
 
 // The opportunity service's own base URL (its direct REST endpoints, not the
@@ -32,7 +32,7 @@ export interface OpportunityService {
   extract(command: VersionCommand & { documentId: string }): Promise<OpportunityDetail>;
   extractionStatus(opportunityId: string, jobId: string, signal?: AbortSignal): Promise<OpportunityDetail>;
   saveEstimation(command: VersionCommand & { estimation: Estimation }): Promise<OpportunityDetail>;
-  saveScope(command: VersionCommand & { scope: Scope }): Promise<OpportunityDetail>;
+  saveScope(command: VersionCommand & { scope: Scope; section?: AssessmentSection }): Promise<OpportunityDetail>;
   assign(command: ResponseCommand & { ownerId: string; reviewerId: string; dueDate: string }): Promise<OpportunityDetail>;
   answer(command: ResponseCommand & { answer: string; submit: boolean }): Promise<OpportunityDetail>;
   reviewAnswer(command: ResponseCommand & { approved: boolean; reason: string; submittedRevision: number }): Promise<OpportunityDetail>;
@@ -51,6 +51,7 @@ interface BackendOpportunity {
   createdDt?: string | null;
   stageHistory?: { id: string; stageId: number; subStageId: number; reachedAt: string; updatedBy?: number | null; comment?: string | null }[];
   estimation?: Estimation | null;
+  scope?: Scope | null;
   allowedActions?: Action[];
   opportunityId: number; opportunityNumber: string | null; opportunityName: string | null;
   sourceTypeId: number | null; clientId: number | null; stageId: number | null; subStageId: number | null;
@@ -156,13 +157,13 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
       context: { instructions: '', submissionRequirements: '', opportunityOverview: o.opportunityDescription ?? '', scopeOfWork: '', requirements: '', notes: o.workflowComment ?? '' },
       rfp: { type: rfpType(o.rfpType), questionnaireTypeId: o.rfpType === 1 ? o.proposalQuestionnaireTypeIds?.find((id): id is 1 | 2 => id === 1 || id === 2) ?? null : null, source: o.fileName ? { id: o.filePath ?? o.fileName, name: o.fileName, storagePath: o.filePath ?? undefined, downloadUrl: null } : null, extraction: null, questions: questions.filter(q => q.masterQuestionId === null), sections: questions.filter(q => q.masterQuestionId !== null).map(q => ({ key: String(q.masterQuestionId), instructions: q.text })), submissionFormat: 'TECHNICAL_COST', outputFormat: 'PDF', evaluation: o.evaluationBasis ?? '' },
     },
-    client, visibleModules: o.stageId != null && o.stageId >= 3 || o.estimation || actions(o).includes('EDIT_ESTIMATION') ? ['overview', 'estimation', 'activity'] : ['overview', 'activity'],
+    client, visibleModules: o.stageId != null && o.stageId >= 3 || o.estimation || actions(o).includes('EDIT_ESTIMATION') ? ['overview', 'scope', 'estimation', 'activity'] : ['overview', 'activity'],
     responses: (o.responses ?? []).map(response => ({
-      id: String(response.id), title: response.title, sourceValidated: true, sourceReference: response.category,
+      id: String(response.id), title: response.title, sourceValidated: true, sourceReference: response.category, category: response.category,
       owner: null, reviewer: null, dueDate: null, answer: response.answer, revision: response.revision,
       state: response.answer.trim() ? 'DRAFT' : 'UNASSIGNED', submittedRevision: null, approvedRevision: null,
       reviewComment: null, allowedActions: response.allowedActions,
-    })), estimation: o.estimation ?? null, scope: null,
+    })), estimation: o.estimation ?? null, scope: o.scope ?? null,
     activity: [], responsible: user(o.assignedTo, directory) ?? owner, approvalAssignees: o.assignedTo ? [user(o.assignedTo, directory)!] : [],
     readiness: { ready: true, issues: [] }, salesRecommendation: null,
   };
@@ -330,7 +331,15 @@ export const productionOpportunityService: OpportunityService = {
     if (!data?.saveOpportunityEstimation?.opportunityId) throw new Error('No saved estimation was returned. Refresh before retrying.');
     return productionOpportunityService.detail(String(data.saveOpportunityEstimation.opportunityId));
   },
-  saveScope: () => unavailable('Scope persistence'),
+  async saveScope(command) {
+    const { revision, summary, risks, alignment } = command.scope;
+    const scope = { revision, summary, risks: risks.map(({ id, description, severity }) => ({ id, description, severity })), alignment: alignment.map(({ id, text }) => ({ id, text })) };
+    const { data } = await getApolloClient().mutate<{ saveOpportunityScope: { opportunityId: number } | null }>({
+      mutation: SAVE_OPPORTUNITY_SCOPE, variables: { opportunityId: Number(command.opportunityId), scope, section: command.section ?? 'ALL' }, errorPolicy: 'none',
+    });
+    if (!data?.saveOpportunityScope?.opportunityId) throw new Error('The assessment was not saved. Refresh before retrying.');
+    return productionOpportunityService.detail(String(data.saveOpportunityScope.opportunityId));
+  },
   assign: () => unavailable('Response assignment'),
   async answer(command) {
     if (command.submit) throw new Error('Save the answer directly in RFP Q&A. Answer review is not available.');

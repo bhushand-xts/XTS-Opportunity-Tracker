@@ -1,11 +1,12 @@
+import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import type { PoolClient } from 'pg';
 
 import { query, transaction } from '../config/db';
 
 // ALL SQL for roles. Always use $1 parameters — never string concatenation.
-// is_active = TRUE on master tables, is_current = TRUE on trackers.
+// History contains previous versions only.
 
-// One row of mst_roles_tracker: a snapshot of a role as it stood after a change.
+// One row of mst_roles_tracker: a snapshot of a role as it stood before an update or deletion.
 export interface RoleHistory {
   trackerId: number;
   roleId: number;
@@ -83,22 +84,12 @@ export interface RoleInput {
   updatedBy?: number | null;
 }
 
-// Every write to mst_roles also writes a snapshot to mst_roles_tracker, inside
+// Updates and deletes archive the previous role in mst_roles_tracker, inside
 // the same transaction (README rule 5): the role and its history are saved
 // together or not at all. mst_roles.created_dt / is_active are nullable while
 // the tracker's are NOT NULL, hence the COALESCEs.
 async function recordTracker(client: PoolClient, id: number): Promise<void> {
-  await client.query(
-    `INSERT INTO mst_roles_tracker
-       (role_id, role_name, role_code, description, created_dt, created_by, updated_dt, updated_by, is_active)
-     SELECT
-       role_id, role_name, role_code, description,
-       COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, updated_dt, updated_by,
-       COALESCE(is_active, TRUE)
-     FROM mst_roles
-     WHERE role_id = $1`,
-    [id]
-  );
+  await recordPreviousVersion(client, 'mst_roles', id);
 }
 
 // Newest change first.
@@ -130,13 +121,13 @@ async function create(input: RoleInput, userId: number | null): Promise<Role> {
        RETURNING ${SELECT_COLUMNS}`,
       [input.roleName, input.roleCode ?? null, input.description ?? null, input.isActive ?? null, userId]
     );
-    await recordTracker(client, result.rows[0].id);
     return result.rows[0];
   });
 }
 
 async function update(id: number, input: Partial<RoleInput>, userId: number | null): Promise<Role> {
   return transaction(async (client) => {
+    await recordTracker(client, id);
     const result = await client.query<Role>(
       `UPDATE mst_roles SET
          role_name = COALESCE($1, role_name),
@@ -158,25 +149,14 @@ async function update(id: number, input: Partial<RoleInput>, userId: number | nu
         id,
       ]
     );
-    await recordTracker(client, id);
     return result.rows[0];
   });
 }
 
-// The role row is deleted, but its history is kept: a final snapshot marked
-// inactive is written first (mst_roles_tracker has no foreign key to mst_roles).
+// Archive the previous role before deletion; history survives the main row.
 async function remove(id: number, userId: number | null): Promise<void> {
   await transaction(async (client) => {
-    await client.query(
-      `INSERT INTO mst_roles_tracker
-         (role_id, role_name, role_code, description, created_dt, created_by, updated_dt, updated_by, is_active)
-       SELECT
-         role_id, role_name, role_code, description,
-         COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, CURRENT_TIMESTAMP, $2, FALSE
-       FROM mst_roles
-       WHERE role_id = $1`,
-      [id, userId]
-    );
+    await recordTracker(client, id);
     await client.query('DELETE FROM mst_roles WHERE role_id = $1', [id]);
   });
 }

@@ -1,6 +1,10 @@
 -- DDL for the admin service's database.
 -- Source: the live database (admin_db dump of 2026-09-21).
 --
+-- Tracker convention: creation writes only to the main table. Updates and
+-- deletes archive the previous row before changing the main table, in one
+-- transaction. See shared/trackerHistory.ts. Existing historical rows are kept.
+--
 -- Admin-owned tables: master data + access control.
 --   master data     mst_stage, mst_sub_stage, mst_estimation_phases, mst_rate,
 --                   tbl_reason_codes, mst_proposal_section, mst_rfp_questions,
@@ -43,7 +47,7 @@ CREATE TABLE mst_stage (
 
 CREATE UNIQUE INDEX ux_mst_stage_stage_name ON mst_stage (LOWER(stage_name));
 
--- History of mst_stage: one snapshot row per change, written in the same
+-- History of mst_stage: previous versions archived before update/delete, in the same
 -- transaction as the change (see stages.repository.ts). No foreign key, so
 -- history survives the stage's deletion (if that's ever added). Column is
 -- stage_id here (the live table), not previous_stage_id as an earlier
@@ -108,9 +112,8 @@ CREATE TABLE mst_estimation_phases (
 CREATE UNIQUE INDEX ux_mst_estimation_phases_phase_name ON mst_estimation_phases (LOWER(phase_name));
 CREATE UNIQUE INDEX ux_mst_estimation_phases_phase_code ON mst_estimation_phases (LOWER(phase_code)) WHERE phase_code IS NOT NULL;
 
--- History of mst_estimation_phases: one snapshot row per change (including a
--- final inactive snapshot when a phase is deleted), written in the same
--- transaction as the change (see phases.repository.ts). No foreign key, so
+-- History of mst_estimation_phases: previous versions before update/delete,
+-- in the same transaction (see phases.repository.ts). No foreign key, so
 -- history survives the phase's deletion. opportunity_id is unrelated to this
 -- master-data history — it is reserved for the estimation service to snapshot
 -- the phase a given opportunity's estimate used at the time (left NULL here).
@@ -160,7 +163,7 @@ CREATE TABLE tbl_reason_codes (
 
 CREATE UNIQUE INDEX ux_tbl_reason_codes_reason_name ON tbl_reason_codes (LOWER(reason_name));
 
--- History of tbl_reason_codes: one snapshot row per change, written in the
+-- History of tbl_reason_codes: previous versions before update/delete, in the
 -- same transaction as the change (see reason-codes.repository.ts). No
 -- foreign key to tbl_reason_codes, so history survives a reason code's
 -- deletion. Unlike some sibling trackers (e.g. tbl_estimation_phases_tracker),
@@ -211,8 +214,8 @@ CREATE UNIQUE INDEX ux_mst_industry_industry_name ON mst_industry (LOWER(industr
 -- Client (Client Master) — a client/account and its contact people. Was
 -- already live (predates this documentation) — definitions here match the
 -- live database exactly, including street_address's unusually short limit.
--- Same tracker convention as tbl_reason_codes: every write also writes a
--- snapshot, no foreign key back to the master so history survives deletion.
+-- Same tracker convention as tbl_reason_codes: archive the previous row on
+-- update/delete. No foreign key back to the master, so history survives deletion.
 CREATE TABLE mst_client (
   client_id SERIAL PRIMARY KEY,
   client_name VARCHAR(255),
@@ -318,7 +321,7 @@ CREATE TABLE mst_rfp_questions (
 
 CREATE UNIQUE INDEX ux_mst_rfp_questions_question ON mst_rfp_questions (LOWER(question));
 
--- History of mst_rfp_questions: one snapshot row per change, written in the
+-- History of mst_rfp_questions: previous versions before update/delete, in the
 -- same transaction as the change (see rfp-questions.repository.ts). No
 -- foreign key, so history survives beyond any single question row.
 CREATE TABLE mst_rfp_questions_tracker (
@@ -368,7 +371,7 @@ CREATE TABLE mst_permissions (
   is_active BOOLEAN DEFAULT TRUE NOT NULL
 );
 
--- History of mst_permissions: one snapshot row per change, written in the
+-- History of mst_permissions: previous versions before update/delete, in the
 -- same transaction as the change (see permissions.repository.ts).
 CREATE TABLE mst_permissions_tracker (
   tracker_id SERIAL PRIMARY KEY,
@@ -398,8 +401,8 @@ CREATE TABLE mst_roles (
 CREATE UNIQUE INDEX ux_mst_roles_role_name ON mst_roles (LOWER(role_name));
 CREATE UNIQUE INDEX ux_mst_roles_role_code ON mst_roles (LOWER(role_code)) WHERE role_code IS NOT NULL;
 
--- History of mst_roles: one snapshot row per change (including a final
--- inactive snapshot when a role is deleted), written in the same transaction
+-- History of mst_roles: previous versions before update/delete,
+-- written in the same transaction
 -- as the change (see roles.repository.ts). No foreign key, so history
 -- survives the role's deletion.
 CREATE TABLE mst_roles_tracker (
@@ -457,7 +460,6 @@ CREATE INDEX idx_rmp_menu_id ON tbl_role_menu_permission (menu_id);
 ALTER TABLE mst_sub_stage ADD CONSTRAINT fk_mst_sub_stage_stage_id FOREIGN KEY (stage_id) REFERENCES mst_stage(stage_id);
 ALTER TABLE mst_sub_stage_tracker ADD CONSTRAINT fk_mst_sub_stage_tracker_stage_id FOREIGN KEY (stage_id) REFERENCES mst_stage(stage_id);
 ALTER TABLE mst_sub_stage_tracker ADD CONSTRAINT fk_mst_sub_stage_tracker_sub_stage_id FOREIGN KEY (sub_stage_id) REFERENCES mst_sub_stage(sub_stage_id);
-ALTER TABLE tbl_estimation_phases_tracker ADD CONSTRAINT fk_tbl_estimation_phases_tracker_phase_id FOREIGN KEY (phase_id) REFERENCES mst_estimation_phases(phase_id);
 
 -- Deleting a menu, permission or role removes its mappings and grants.
 ALTER TABLE tbl_menuwise_permission ADD CONSTRAINT fk_menu_permissions_menu FOREIGN KEY (menu_id) REFERENCES mst_menus(menu_id) ON DELETE CASCADE;

@@ -27,6 +27,7 @@ import {
 } from '../services/QuestionExtractionService';
 import { useOpportunityService } from '../services/OpportunityService';
 import { randomUUID } from '../lib/uuid';
+import { isPreparationLocked } from '../lib/workflow';
 import { DocumentDownload } from './DocumentDownload';
 export const GET_PROPOSAL_SECTIONS = gql`query OpportunityProposalSections { rfpQuestionsList { id question description displayOrder isActive } }`;
 import { Choice, Field, Notice } from './ui';
@@ -35,6 +36,13 @@ const extractedQuestion = (question: PreparedQuestion) => question.id.startsWith
 // Same fixed list the backend asks the AI to choose from, in tab order.
 const QUESTION_CATEGORIES = ['Company & Qualifications', 'Team', 'Approach & Delivery', 'Technical', 'Security & Compliance', 'Pricing & Commercial', 'References', 'Other'];
 const normalizeQuestion = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
+/** Shifts an ISO (YYYY-MM-DD) date by `days`; used to cap the native date pickers so Questions due can't land on or after Submission deadline. */
+function shiftDate(value: string, days: number): string | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const d = new Date(`${value}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 function extractionState(state: QuestionExtractionStatus['state']): NonNullable<RfpDraft['extraction']>['state'] {
   if (state === 'SUCCEEDED') return 'SUCCEEDED';
   if (state === 'QUEUED' || state === 'PROCESSING') return 'PROCESSING';
@@ -55,7 +63,8 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
   const service = useOpportunityService();
   const uploadPending = useRef(false);
   const mounted = useRef(true);
-  const disabled = readOnly || uploading;
+  const preparationLocked = saved != null && isPreparationLocked(saved);
+  const disabled = readOnly || uploading || preparationLocked;
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; onUploadingChange?.(false); };
@@ -235,7 +244,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
   const { data, loading, error: sectionsError } = useQuery<{ rfpQuestionsList: ({ id: number; question: string; displayOrder: number | null; isActive: boolean } | null)[] }>(GET_PROPOSAL_SECTIONS, { skip: form.rfp.type !== 'GENERIC' });
   const sections = (data?.rfpQuestionsList ?? []).filter((s): s is NonNullable<typeof s> => s !== null && s.isActive).sort((a, b) => (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) || a.id - b.id);
   const rfp = form.rfp;
-  const update = (patch: Partial<RfpDraft>) => setForm({ ...form, rfp: { ...rfp, ...patch } });
+  const update = (patch: Partial<RfpDraft>) => { if (!locked) setForm({ ...form, rfp: { ...rfp, ...patch } }); };
   function solicitation<K extends keyof Solicitation>(key: K, value: Solicitation[K]) { setForm({ ...form, solicitation: { ...form.solicitation, [key]: value } }); }
   function date<K extends keyof ImportantDates>(key: K, value: ImportantDates[K]) { setForm({ ...form, dates: { ...form.dates, [key]: value } }); }
   function choose(type: RfpDraft['type']) {
@@ -343,7 +352,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
       update({ questions: rfp.questions.filter(q => q.id !== question.id) });
     }}><Trash2 className="size-4" /></Button>
   </div>;
-  return <div className="space-y-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="RFP type" aria-invalid={Boolean(rfpTypeError)}>{([{ type: 'QUESTIONNAIRE', label: 'Questionnaire-based', hint: 'Fixed set of questions', icon: MessageCircle }, { type: 'GENERIC', label: 'Generic RFP', hint: 'Full written proposal', icon: FileText }] as const).map(choice => <Button key={choice.type} type="button" variant="outline" className={`opp-type ${rfp.type === choice.type ? 'opp-selected' : ''}`} aria-pressed={rfp.type === choice.type} disabled={locked} onClick={() => choose(choice.type)}><span className="opp-type-icon" aria-hidden="true"><choice.icon className="size-4" /></span><span className="min-w-0 flex-1 text-left"><strong className="block">{choice.label}</strong><span className="mt-1 block text-xs font-normal text-muted-foreground">{choice.hint}</span></span><span className="opp-type-indicator" aria-hidden="true">{rfp.type === choice.type && <Check className="size-3" />}</span></Button>)}</div>
+  return <div className="space-y-3">{preparationLocked && <p role="status" className="opp-notice">RFP preparation is read-only at this workflow stage.</p>}<div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="RFP type" aria-invalid={Boolean(rfpTypeError)}>{([{ type: 'QUESTIONNAIRE', label: 'Questionnaire-based', hint: 'Fixed set of questions', icon: MessageCircle }, { type: 'GENERIC', label: 'Generic RFP', hint: 'Full written proposal', icon: FileText }] as const).map(choice => <Button key={choice.type} type="button" variant="outline" className={`opp-type ${rfp.type === choice.type ? 'opp-selected' : ''}`} aria-pressed={rfp.type === choice.type} disabled={locked} onClick={() => choose(choice.type)}><span className="opp-type-icon" aria-hidden="true"><choice.icon className="size-4" /></span><span className="min-w-0 flex-1 text-left"><strong className="block">{choice.label}</strong><span className="mt-1 block text-xs font-normal text-muted-foreground">{choice.hint}</span></span><span className="opp-type-indicator" aria-hidden="true">{rfp.type === choice.type && <Check className="size-3" />}</span></Button>)}</div>
     {rfpTypeError && <p role="alert" className="text-xs text-destructive">{rfpTypeError}</p>}
     {!saved && <p className="text-xs text-muted-foreground">Save queues the opportunity for Sales Head approval.</p>}
     <details className="opp-details" open><summary>Solicitation & procurement details</summary><div className="opp-fields opp-procurement-fields p-3">
@@ -357,7 +366,7 @@ export function RfpPreparation({ form, setForm, saved, disabled: readOnly, onUpl
       <Choice label="Pre-bid meeting" value={form.solicitation.preBidMeeting} options={[{ id: 'UNCONFIRMED', label: 'To be confirmed' }, { id: 'YES', label: 'Yes' }, { id: 'NO', label: 'No' }]} onChange={v => solicitation('preBidMeeting', v as Solicitation['preBidMeeting'])} disabled={locked} />
       </>}
     </div></details>
-    <details className="opp-details" open><summary>Important dates</summary><div className="opp-fields p-3">{(['questionsDue', 'submissionDeadline'] as const).map((key, i) => <Field key={key} label={['Questions due', 'Submission deadline'][i]} value={form.dates[key]} type="date" onChange={v => date(key, v)} disabled={locked} required={key === 'submissionDeadline'} />)}</div></details>
+    <details className="opp-details" open><summary>Important dates</summary><div className="opp-fields p-3">{(['questionsDue', 'submissionDeadline'] as const).map((key, i) => <Field key={key} label={['Questions due', 'Submission deadline'][i]} value={form.dates[key]} type="date" onChange={v => date(key, v)} disabled={locked} required={key === 'submissionDeadline'} max={key === 'questionsDue' ? shiftDate(form.dates.submissionDeadline, -1) : undefined} min={key === 'submissionDeadline' ? shiftDate(form.dates.questionsDue, 1) : undefined} />)}</div></details>
     {rfp.type && <>
       <div className="opp-upload">
         <Label htmlFor="opportunity-source" className={tabbed ? 'sr-only' : undefined}>{rfp.type === 'GENERIC' ? 'Source document / brief' : 'Source questionnaire'}</Label>

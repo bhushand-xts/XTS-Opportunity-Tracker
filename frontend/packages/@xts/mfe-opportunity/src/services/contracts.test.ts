@@ -22,7 +22,6 @@ describe('workflow contract', () => {
   });
   it('fails closed for unsupported workflow capabilities instead of claiming success', async () => {
     await expect(productionOpportunityService.extract({ opportunityId: '401', expectedRevision: 1, idempotencyKey: 'test', documentId: 'test.txt' })).rejects.toMatchObject({ code: 'INTEGRATION_UNAVAILABLE' });
-    await expect(productionOpportunityService.saveScope({ opportunityId: '401', expectedRevision: 1, idempotencyKey: 'test', scope: { revision: 0, summary: '', alignment: [], risks: [] } })).rejects.toMatchObject({ code: 'INTEGRATION_UNAVAILABLE' });
   });
 });
 

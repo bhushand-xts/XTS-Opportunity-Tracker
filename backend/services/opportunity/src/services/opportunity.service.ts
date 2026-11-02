@@ -1,13 +1,15 @@
 import * as repository from "../repositories/opportunity.repository";
+import * as scopeRepository from '../repositories/scope.repository';
 import * as validator from "../validators/opportunity.validator";
 import * as userService from "../integrations/userService";
 import { roleAccess, holdReasonCode } from '../integrations/adminService';
 import { opportunityAccess, type OpportunityAccess } from '../lib/opportunityAccess';
+import { assertPreparationWritable, preparationModulesLocked } from '../lib/opportunityPreparation';
 import { documentUploadAudit } from '../lib/documentStorage';
 import { transaction } from "../config/db";
 import { attachSource } from "../extraction/repository";
 import { uuidPattern } from "../extraction/types";
-import { sendOpportunityCreatedEmail } from "../integrations/mailer";
+import { sendOpportunityCreatedEmail, sendOpportunityStatusChangedEmail } from "../integrations/mailer";
 
 import {
   notFound,
@@ -76,6 +78,79 @@ async function notifyOpportunityCreated(opportunityId: number, userId: number) {
   }
 }
 
+// Workflow roles gated by stage, matching the exact gating projectAllowedActions uses
+// (review=Sales Head, gateReview=CEO, estimate=Estimation Team) so "who can act now"
+// and "who should be notified" never drift apart.
+type WorkflowRole = 'SALES_HEAD' | 'CEO' | 'ESTIMATION';
+const ROLE_NAMES: Record<WorkflowRole, string> = { SALES_HEAD: 'Sales Head', CEO: 'Approver', ESTIMATION: 'Estimation Team' };
+function actorRoleForStage(stageId: number | null): WorkflowRole | null {
+  if (stageId === 1 || stageId === 5 || stageId === 6 || stageId === 10) return 'SALES_HEAD';
+  if (stageId === 2 || stageId === 4) return 'CEO';
+  if (stageId === 3) return 'ESTIMATION';
+  return null;
+}
+// When an action doesn't hand the opportunity to a new role (hold, reject, request
+// changes, or a closing outcome), notify whoever handed it to the current stage instead
+// of re-notifying the role that just acted.
+function downstreamOfStage(stageId: number | null): 'CREATOR' | WorkflowRole {
+  if (stageId === 2) return 'SALES_HEAD';
+  if (stageId === 4) return 'ESTIMATION';
+  return 'CREATOR';
+}
+
+// Best-effort: the transition is already saved by the time this runs, so a
+// notification failure never undoes the decision.
+async function notifyWorkflowTransition(opportunityId: number, userId: number, previousStageId: number | null, comment: string | null) {
+  try {
+    const [opportunity, actor] = await Promise.all([
+      repository.findById(opportunityId),
+      userService.findUser(userId),
+    ]);
+    if (!opportunity) return;
+    const oldRole = actorRoleForStage(previousStageId);
+    const newRole = actorRoleForStage(opportunity.stageId);
+    const advancing = newRole !== null && newRole !== oldRole;
+    const target = advancing ? newRole : downstreamOfStage(previousStageId);
+
+    let recipients: { email: string; name: string }[];
+    if (target === 'CREATOR') {
+      // Unlike notifyOpportunityCreated (where excluding the actor makes sense —
+      // nobody needs telling about their own action), a status change is
+      // informational for whoever owns the opportunity even if they also
+      // happen to be the one acting on it (e.g. a Sales Head reviewing an
+      // opportunity they created themselves) — so this does NOT exclude the actor.
+      const creator = opportunity.createdBy ? await userService.findUser(opportunity.createdBy) : null;
+      recipients = creator?.email ? [{ email: creator.email, name: userName(creator) }] : [];
+    } else {
+      const roleId = await repository.findRoleIdByName(ROLE_NAMES[target]);
+      const users = roleId ? await userService.findActiveUsersByRole(roleId) : [];
+      const seen = new Set<string>();
+      recipients = users.map(user => ({ email: user.email, name: userName(user) }))
+        .filter((recipient): recipient is { email: string; name: string } => !!recipient.email && !seen.has(recipient.email) && !!seen.add(recipient.email));
+    }
+    if (!recipients.length) return;
+
+    const [stageName, subStageName, currencyCode] = await Promise.all([
+      repository.findStageName(opportunity.stageId),
+      repository.findSubStageName(opportunity.subStageId),
+      repository.findCurrencyCode(opportunity.currencyId),
+    ]);
+    await sendOpportunityStatusChangedEmail(recipients, {
+      opportunityNumber: opportunity.opportunityNumber ?? 'Not assigned',
+      opportunityName: opportunity.opportunityName ?? 'Untitled',
+      accountName: opportunity.clientName ?? null,
+      stageName, subStageName,
+      estimatedValue: opportunity.estimatedValue,
+      currency: currencyCode,
+      comment: comment?.trim() || null,
+      changedByName: userName(actor),
+      changedAt: opportunity.updatedDt ?? new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Could not send the opportunity status-change notification email", error);
+  }
+}
+
 type AuditedAccess = OpportunityAccess & { actorRoleId?: number; actorRoleName?: string | null };
 
 async function accessFor(ctx: any): Promise<AuditedAccess> {
@@ -114,9 +189,9 @@ function validateProposalQuestions(input: OpportunityInput) {
 
 function projectAllowedActions(opportunity: repository.Opportunity, access: OpportunityAccess): string[] {
   const actions = access.canEdit(opportunity) ? ['EDIT'] : [];
-  if (opportunity.stageId === 1 && [1, 2, 3].includes(opportunity.subStageId ?? 0) && access.review) {
+  if (opportunity.stageId === 1 && [1, 3].includes(opportunity.subStageId ?? 0) && access.review) {
     actions.push('SALES_APPROVE');
-    if (opportunity.subStageId !== 2) actions.push('SALES_REQUEST_CHANGES');
+    actions.push('SALES_REQUEST_CHANGES');
     if (opportunity.subStageId !== 3) actions.push('SALES_HOLD');
     actions.push('SALES_REJECT');
   }
@@ -127,6 +202,7 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
     actions.push('GATE1_NO_GO');
   }
   if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('EDIT_ESTIMATION', 'SUBMIT_ESTIMATE');
+  if (!preparationModulesLocked(opportunity) && access.canView(opportunity)) actions.push('EDIT_SCOPE');
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) {
     actions.push('ESTIMATE_APPROVE');
     if (opportunity.subStageId === 8) actions.push('ESTIMATE_HOLD');
@@ -285,7 +361,7 @@ async function updateRfpIntakeOpportunity(
   assertCanEdit(current, access);
   if (input.ownerId !== current.ownerId) throw conflict("The opportunity owner cannot be changed during review.");
 
-  const updated = await repository.updateRfpIntakeOpportunity(opportunityId, input, userId, workflowAudit(access));
+  const updated = await repository.updateRfpIntakeOpportunity(opportunityId, input, userId, workflowAudit(access), access.review);
   if (!updated) throw notFound("Opportunity not found.");
   return updated;
 }
@@ -308,6 +384,7 @@ async function assertExtractionEdit(opportunityId: number, userId: number, ctx?:
   const current = await repository.findById(opportunityId);
   if (!current) throw notFound("Opportunity not found.");
   assertCanEdit(current, await accessFor(ctx ?? { user: { id: userId } }));
+  assertPreparationWritable(current);
 }
 
 async function reviewBySalesHead(
@@ -324,8 +401,11 @@ async function reviewBySalesHead(
     throw conflict("The Sales Head role and a pending, changes-requested or held sales review are required.");
   }
 
+  if (opportunity.subStageId === 2) {
+    throw conflict('Changes have been requested. Wait for the opportunity creator or Sales Head to update the opportunity before reviewing again.');
+  }
+
   if (action === "REQUEST_CHANGES") {
-    if (opportunity.subStageId === 2) throw conflict('Changes have already been requested. Choose another available action.');
     if (!comment?.trim()) throw validationFailed("Add the changes requested for the opportunity creator.");
     return persistTransition(opportunity, opportunityId, 1, 2, opportunity.createdBy, userId, comment.trim(), null, audit);
   }
@@ -382,13 +462,30 @@ async function transitionWorkflow(
   ctx: any,
   reasonCodeId?: number | null
 ) {
+  const before = await repository.findById(opportunityId);
+  const result = await transitionWorkflowCore(opportunityId, action, comment, opportunityDescription, ctx, reasonCodeId);
+  if (result && before) {
+    const userId = (await accessFor(ctx)).userId;
+    void notifyWorkflowTransition(opportunityId, userId, before.stageId, comment);
+  }
+  return result;
+}
+
+async function transitionWorkflowCore(
+  opportunityId: number,
+  action: WorkflowAction,
+  comment: string | null,
+  opportunityDescription: string | null,
+  ctx: any,
+  reasonCodeId?: number | null
+) {
   const access = await accessFor(ctx), userId = access.userId;
   const opportunity = await repository.findById(opportunityId);
   if (!opportunity) throw notFound('Opportunity not found.');
   const audit = workflowAudit(access);
   if (action === 'RESUBMIT') throw validationFailed('Use Update Opportunity to save corrections and send the opportunity for review.');
   if (action === 'OPPORTUNITY_HOLD') throw validationFailed('Hold is not available after bid submission. Choose Under Negotiation, Won or Lost.');
-  const reviewingSales = opportunity.stageId === 1 && [1, 2, 3].includes(opportunity.subStageId ?? 0) && access.review;
+  const reviewingSales = opportunity.stageId === 1 && [1, 3].includes(opportunity.subStageId ?? 0) && access.review;
   const reviewingCeo = opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const reviewingEstimate = opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const submittedBid = opportunity.stageId === 5 && opportunity.subStageId === 11;
@@ -475,7 +572,8 @@ async function update(
     opportunityId,
     { ...current, ...patch, ...documentUploadAudit(patch.filePath === undefined ? current.filePath : patch.filePath, userId, current) },
     userId,
-    workflowAudit(access)
+    workflowAudit(access),
+    access.review
   );
   const sourceDocumentId = (input as OpportunityInput & { sourceDocumentId?: string | null }).sourceDocumentId;
   if (sourceDocumentId !== undefined) await attachSourceDocument(opportunityId, userId, sourceDocumentId);
@@ -563,17 +661,109 @@ export async function getEstimation(opportunityId: number, ctx: any) {
 }
 
 export async function getResponses(opportunityId: number, ctx: any) {
-  await get(opportunityId, ctx);
-  const access = await accessFor(ctx);
+  const opportunity = await get(opportunityId, ctx);
   return (await repository.findResponses(opportunityId)).map(response => ({
-    ...response, allowedActions: access.estimate ? ['SAVE_ANSWER'] : [],
+    ...response, allowedActions: preparationModulesLocked(opportunity) ? [] : ['SAVE_ANSWER'],
   }));
+}
+
+export async function getScope(opportunityId: number, ctx: any) {
+  await get(opportunityId, ctx);
+  return scopeRepository.findScope(opportunityId);
+}
+
+export async function saveScope(
+  opportunityId: number,
+  scope: scopeRepository.OpportunityScope,
+  section: scopeRepository.AssessmentSection = 'ALL',
+  ctx: any
+) {
+  const opportunity = await get(opportunityId, ctx);
+  const access = await accessFor(ctx);
+
+  assertPreparationWritable(opportunity);
+
+  if (
+    !scope ||
+    !Number.isSafeInteger(scope.revision) ||
+    scope.revision < 0 ||
+    !['ALL', 'SCOPE', 'RISKS', 'ALIGNMENT'].includes(section)
+  ) {
+    throw validationFailed(
+      'Provide a valid assessment revision and section.'
+    );
+  }
+
+  const text = (value: unknown) =>
+    typeof value === 'string' &&
+    value.trim().length > 0 &&
+    value.length <= 100000;
+
+  // Scope is optional and independent of Risks and Alignment.
+  // Removed mandatory Scope description validation.
+
+  const validateItems = (
+    items: { id: string }[] | undefined,
+    description: (item: any) => unknown
+  ) => {
+    const ids = new Set<string>();
+
+    if (!Array.isArray(items) || items.length > 500) {
+      throw validationFailed(
+        'Provide at most 500 assessment items per section.'
+      );
+    }
+
+    for (const item of items) {
+      if (
+        !item ||
+        typeof item.id !== 'string' ||
+        !/^(?:[1-9]\d{0,9}|draft-[a-zA-Z0-9-]{1,100})$/.test(item.id) ||
+        ids.has(item.id) ||
+        !text(description(item))
+      ) {
+        throw validationFailed(
+          'Each assessment item needs a unique saved or draft ID and a description (maximum 100,000 characters).'
+        );
+      }
+
+      ids.add(item.id);
+    }
+  };
+
+  // Risks are independent of Scope and Alignment.
+  if (section === 'ALL' || section === 'RISKS') {
+    validateItems(scope.risks, item => item.description);
+
+    if (
+      scope.risks.some(
+        item => !['LOW', 'MEDIUM', 'HIGH'].includes(item.severity)
+      )
+    ) {
+      throw validationFailed(
+        'Select Low, Medium or High risk severity.'
+      );
+    }
+  }
+
+  // Alignment is independent of Scope and Risks.
+  if (section === 'ALL' || section === 'ALIGNMENT') {
+    validateItems(scope.alignment, item => item.text);
+  }
+
+  await scopeRepository.saveScope(
+    opportunityId,
+    scope,
+    section,
+    access.userId
+  );
+
+  return get(opportunityId, ctx);
 }
 
 export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, ctx: any) {
   const access = await accessFor(ctx);
-  if (!access.estimate) throw conflict('Only the Estimation Team can answer opportunity questions.');
-  await get(opportunityId, ctx);
+  assertPreparationWritable(await get(opportunityId, ctx));
   if (!Number.isSafeInteger(responseId) || responseId <= 0 || !Number.isSafeInteger(revision) || revision < 0) {
     throw validationFailed('Select a saved opportunity question and its current revision.');
   }

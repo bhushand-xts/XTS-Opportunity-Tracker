@@ -83,19 +83,45 @@ export function opportunityMenuArea(menu: OpportunityMenuRecord): 'opportunities
   return null;
 }
 
-/** CRUD uses menu grants; the approval queue follows the signed-in reviewer role. */
-export function opportunityMenuPermissions(menus: OpportunityMenuRecord[], hasPermission: (key: string, permission: string) => boolean, roleName?: string | null) {
-  const granted = (area: ReturnType<typeof opportunityMenuArea>, permission: string) =>
-    menus.some(menu => opportunityMenuArea(menu) === area && hasPermission(menu.menuKey, permission));
-  const reviewer = ['sales_head', 'ceo', 'ceo/gate_2_approver'].includes(normalize(roleName ?? ''));
-  const estimator = normalize(roleName ?? '') === 'estimation_team';
+/** Navigation requires the parent and individual child grants, regardless of role. */
+export function opportunityMenuPermissions(menus: OpportunityMenuRecord[], hasPermission: (key: string, permission: string) => boolean, _roleName?: string | null) {
+  const byId = new Map(menus.map(menu => [menu.menuId, menu]));
+  const candidates = resolveOpportunityMenus(menus);
+  const activeHierarchy = (menu: OpportunityMenuRecord) => {
+    const seen = new Set<number>();
+    let current: OpportunityMenuRecord | undefined = menu;
+    while (current) {
+      if (!current.isActive || seen.has(current.menuId)) return false;
+      seen.add(current.menuId);
+      if (current.parentId === null) return true;
+      const parent: OpportunityMenuRecord | undefined = byId.get(current.parentId);
+      if (!parent || !hasPermission(parent.menuKey, 'view')) return false;
+      current = parent;
+    }
+    return false;
+  };
+  const parents = candidates.filter(menu => opportunityMenuArea(menu) === 'opportunities' && activeHierarchy(menu) && hasPermission(menu.menuKey, 'view'));
+  const parentIds = new Set(parents.map(menu => menu.menuId));
+  const hasGrantedParent = (menu: OpportunityMenuRecord) => {
+    if (!activeHierarchy(menu)) return false;
+    let parentId = menu.parentId;
+    while (parentId !== null) {
+      const parent = byId.get(parentId)!;
+      if (opportunityMenuArea(parent) === 'opportunities') return parentIds.has(parentId);
+      parentId = parent.parentId;
+    }
+    return false;
+  };
+  const grantedChild = (area: 'pipeline' | 'work' | 'approvals') => candidates.some(menu =>
+    opportunityMenuArea(menu) === area && hasGrantedParent(menu) && hasPermission(menu.menuKey, 'view'));
+  const approvals = grantedChild('approvals');
   return {
-    view: granted('opportunities', 'view'),
-    add: granted('opportunities', 'add'),
-    edit: granted('opportunities', 'edit'),
-    pipeline: granted('opportunities', 'view') || granted('pipeline', 'view'),
-    work: estimator || granted('work', 'view'),
-    approvals: reviewer,
-    approve: reviewer,
+    view: parents.length > 0,
+    add: parents.some(menu => hasPermission(menu.menuKey, 'add')),
+    edit: parents.some(menu => hasPermission(menu.menuKey, 'edit')),
+    pipeline: grantedChild('pipeline'),
+    work: grantedChild('work'),
+    approvals,
+    approve: approvals,
   };
 }

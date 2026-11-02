@@ -19,7 +19,7 @@ export const PIPELINE_STAGE_IDS = [1, 2, 3, 4, 5, 6, 7, 9];
 export function approvalStagesForRole(roleName?: string | null): number[] {
   const role = (roleName ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (['sh', 'sales_head'].includes(role)) return [1, 5, 6];
-  if (['ceo', 'approver_gate2', 'ceo/gate_2_approver'].includes(role)) return [2, 4];
+  if (['ceo', 'approver_gate2', 'ceo/gate_2_approver', 'approver'].includes(role)) return [2, 4];
   return [];
 }
 

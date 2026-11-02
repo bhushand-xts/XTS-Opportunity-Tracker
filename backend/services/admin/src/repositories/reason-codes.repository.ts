@@ -1,3 +1,4 @@
+import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import type { PoolClient } from 'pg';
 
 import { query, transaction } from '../config/db';
@@ -8,7 +9,7 @@ import { query, transaction } from '../config/db';
 // is_active column, not an is_current stand-in — see schema.sql).
 
 // One row of tbl_reason_codes_tracker: a snapshot of a reason code as it
-// stood after a change.
+// stood before an update or deletion.
 export interface ReasonCodeHistory {
   trackerId: number;
   reasonCodeId: number;
@@ -94,23 +95,13 @@ export interface ReasonCodeInput {
   updatedBy?: number | null;
 }
 
-// Every write to tbl_reason_codes also writes a snapshot to
+// Updates archive the previous row in
 // tbl_reason_codes_tracker, inside the same transaction (README rule 5): the
 // reason code and its history are saved together or not at all. No foreign
 // key from the tracker back to tbl_reason_codes, so history survives the
 // reason code's deletion.
 async function recordTracker(client: PoolClient, id: number): Promise<void> {
-  await client.query(
-    `INSERT INTO tbl_reason_codes_tracker
-       (reason_code_id, reason_name, description, display_order, created_dt, created_by, updated_dt, updated_by, is_active)
-     SELECT
-       reason_code_id, reason_name, description, display_order,
-       COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, updated_dt, updated_by,
-       COALESCE(is_active, TRUE)
-     FROM tbl_reason_codes
-     WHERE reason_code_id = $1`,
-    [id]
-  );
+  await recordPreviousVersion(client, 'tbl_reason_codes', id);
 }
 
 // Newest change first.
@@ -142,13 +133,13 @@ async function create(input: ReasonCodeInput, userId: number | null): Promise<Re
        RETURNING ${SELECT_COLUMNS}`,
       [input.reasonName, input.description ?? null, input.displayOrder ?? null, input.isActive ?? null, userId]
     );
-    await recordTracker(client, result.rows[0].id);
     return result.rows[0];
   });
 }
 
 async function update(id: number, input: Partial<ReasonCodeInput>, userId: number | null): Promise<ReasonCode> {
   return transaction(async (client) => {
+    await recordTracker(client, id);
     const result = await client.query<ReasonCode>(
       `UPDATE tbl_reason_codes SET
          reason_name = COALESCE($1, reason_name),
@@ -170,26 +161,14 @@ async function update(id: number, input: Partial<ReasonCodeInput>, userId: numbe
         id,
       ]
     );
-    await recordTracker(client, id);
     return result.rows[0];
   });
 }
 
-// The reason code row is deleted, but its history is kept: a final snapshot
-// marked inactive is written first (tbl_reason_codes_tracker has no foreign
-// key to tbl_reason_codes).
+// Archive the previous reason code before deletion; history survives the main row.
 async function remove(id: number, userId: number | null): Promise<void> {
   await transaction(async (client) => {
-    await client.query(
-      `INSERT INTO tbl_reason_codes_tracker
-         (reason_code_id, reason_name, description, display_order, created_dt, created_by, updated_dt, updated_by, is_active)
-       SELECT
-         reason_code_id, reason_name, description, display_order,
-         COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, CURRENT_TIMESTAMP, $2, FALSE
-       FROM tbl_reason_codes
-       WHERE reason_code_id = $1`,
-      [id, userId]
-    );
+    await recordTracker(client, id);
     await client.query('DELETE FROM tbl_reason_codes WHERE reason_code_id = $1', [id]);
   });
 }

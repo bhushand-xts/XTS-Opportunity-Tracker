@@ -1,6 +1,7 @@
 import { useQuery } from "@apollo/client";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
+  ArrowUp,
   Bell,
   Briefcase,
   Building2,
@@ -33,7 +34,7 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
@@ -64,7 +65,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth, type AppPermission } from "@/lib/auth";
 import { GET_NAV_MENUS } from "@/lib/nav.queries";
-import { GET_OPPORTUNITY_MENUS, opportunityMenuPermissions, resolveOpportunityMenus, type OpportunityMenuRecord } from "@/lib/opportunityMenu";
+import { GET_OPPORTUNITY_MENUS, opportunityMenuArea, opportunityMenuPermissions, resolveOpportunityMenus, type OpportunityMenuRecord } from "@/lib/opportunityMenu";
 import { usePageTitle } from "@/lib/pageTitle";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -482,16 +483,13 @@ function AdminNavGroup({
   );
 }
 
-// All real active Opportunity menu records can grant access to this MFE.
-// Keep one navigation surface and use the first accessible record's label/icon.
+// Opportunity navigation requires the parent and each child's own View grant.
 function OpportunityMenuLink({
   pathname,
-  hasMenuAccess,
 }: {
   pathname: string;
-  hasMenuAccess: (menuKey: string) => boolean;
 }) {
-  const { hasPermission, roleName } = useAuth();
+  const { hasPermission } = useAuth();
   const onOpportunity = pathname === "/opportunity" || pathname.startsWith("/opportunity/");
   const [opportunityOpen, setOpportunityOpen] = useState(onOpportunity);
   useEffect(() => {
@@ -501,8 +499,8 @@ function OpportunityMenuLink({
     fetchPolicy: "cache-and-network",
   });
   const menus = resolveOpportunityMenus(data?.menus ?? []);
-  const permissions = opportunityMenuPermissions(menus, hasPermission, roleName);
-  const menu = menus.find(record => hasMenuAccess(record.menuKey)) ?? (permissions.approvals || permissions.work ? menus[0] : undefined);
+  const permissions = opportunityMenuPermissions(data?.menus ?? [], hasPermission);
+  const menu = permissions.view ? menus.find(record => opportunityMenuArea(record) === 'opportunities' && hasPermission(record.menuKey, 'view')) : undefined;
   if (error && !menu) return (
     <SidebarMenuItem>
       <SidebarMenuButton onClick={() => void refetch().catch(() => undefined)} disabled={loading} tooltip="Retry loading Opportunities menu">
@@ -542,7 +540,7 @@ function OpportunityMenuLink({
 function OpportunityCreateShortcut() {
   const { hasPermission } = useAuth();
   const { data, error } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, { fetchPolicy: 'cache-and-network' });
-  const permissions = opportunityMenuPermissions(resolveOpportunityMenus(data?.menus ?? []), hasPermission);
+  const permissions = opportunityMenuPermissions(data?.menus ?? [], hasPermission);
   if (error || !permissions.add) return null;
   return <Button asChild size="icon" className="size-9 rounded-full" aria-label="New opportunity">
     <Link to="/opportunity/new"><Plus className="size-[18px]" /></Link>
@@ -612,7 +610,7 @@ function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
 
-          <OpportunityMenuLink pathname={pathname} hasMenuAccess={hasMenuAccess} />
+          <OpportunityMenuLink pathname={pathname} />
 
           {can("admin") && (
             <Collapsible open={adminOpen} onOpenChange={setAdminOpen} className="group/admin">
@@ -649,6 +647,51 @@ function AppSidebar({
         </SidebarMenu>
       </SidebarContent>
     </Sidebar>
+  );
+}
+
+const SCROLL_THRESHOLD = 200;
+
+/** Appears once any scrollable area on the page — the document itself, or an
+ * inner panel like the Pipeline board's per-lane scroll (.opp-lane doesn't
+ * scroll the window at all) — has scrolled past a short threshold. Listens
+ * with `capture: true` because scroll events don't bubble, so this is the
+ * only way a single window-level listener can see scrolling inside nested
+ * elements. Clicking resets the window and every tracked panel to the top. */
+function ScrollToTopButton() {
+  const [visible, setVisible] = useState(false);
+  const scrolledElsRef = useRef<Set<HTMLElement>>(new Set());
+  useEffect(() => {
+    const scrolledEls = scrolledElsRef.current;
+    const update = () => setVisible(window.scrollY > SCROLL_THRESHOLD || scrolledEls.size > 0);
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        if (target.scrollTop > SCROLL_THRESHOLD) scrolledEls.add(target);
+        else scrolledEls.delete(target);
+      }
+      update();
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, []);
+  if (!visible) return null;
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      className="fixed bottom-6 right-6 z-30 size-10 rounded-full border-sidebar-border bg-card shadow-md hover:bg-accent"
+      aria-label="Scroll to top"
+      onClick={() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        scrolledElsRef.current.forEach((el) => el.scrollTo({ top: 0, behavior: "smooth" }));
+        scrolledElsRef.current.clear();
+        setVisible(false);
+      }}
+    >
+      <ArrowUp className="size-4" />
+    </Button>
   );
 }
 
@@ -724,6 +767,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
         </SidebarInset>
       </SidebarProvider>
       <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
+      <ScrollToTopButton />
     </TooltipProvider>
   );
 }

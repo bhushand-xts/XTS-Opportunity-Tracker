@@ -18,8 +18,8 @@ it.each([['INR', '₹43,540.00'], ['EUR', '€43,540.00'], ['GBP', '£43,540.00'
   mount(code, '1200.50');
   const card = within(await screen.findByRole('link', { name: 'View Cloud transformation' }));
   expect(card.getByText(expected)).toBeInTheDocument();
-  expect(card.getByText('$1,200.50')).toBeInTheDocument();
-  expect(card.getByText('Client budget (USD)')).toBeInTheDocument();
+  expect(card.getByText('($1,200.50)')).toBeInTheDocument();
+  expect(card.getByText('Client budget')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'List' }));
   const table = within(screen.getByRole('table', { hidden: true }));
   expect(table.getByText(expected)).toBeInTheDocument();
@@ -30,7 +30,7 @@ it('uses the configured currency symbol even when the code is nonstandard', asyn
   const card = within(await screen.findByRole('link', { name: 'View Cloud transformation' }));
   expect(card.getByText('฿ 43,540.00')).toBeInTheDocument();
 });
-it.each([['', 'Not provided'], ['0', '$0.00']])('distinguishes a missing USD estimate from zero (%s)', async (usd, expected) => {
+it.each([['', '(USD not provided)'], ['0', '($0.00)']])('distinguishes a missing USD estimate from zero (%s)', async (usd, expected) => {
   mount('EUR', usd);
   const card = within(await screen.findByRole('link', { name: 'View Cloud transformation' }));
   expect(card.getByText(expected)).toBeInTheDocument();

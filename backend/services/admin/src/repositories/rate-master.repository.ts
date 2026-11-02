@@ -1,3 +1,4 @@
+import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import { query, transaction } from "../config/db";
 
 import {
@@ -174,46 +175,6 @@ async create(input: CreateRateMasterInput): Promise<RateMasterRecord> {
 
       const created = result.rows[0];
 
-      await client.query(
-        `
-        INSERT INTO mst_rate_tracker
-        (
-          ratemaster_id,
-          role_name,
-          role_code,
-          currency_id,
-          rate_type,
-          default_rate,
-          location,
-          description,
-          created_dt,
-          created_by,
-          updated_dt,
-          updated_by,
-          is_active
-        )
-        VALUES
-        (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10, $11, $12, $13
-        )
-        `,
-        [
-          created.ratemasterId,
-          created.roleName,
-          created.roleCode,
-          created.currencyId,
-          created.rateType,
-          created.defaultRate,
-          created.location,
-          created.description,
-          created.createdDt,
-          created.createdBy,
-          created.updatedDt,
-          created.updatedBy,
-          created.isActive
-        ]
-      );
 
       return created;
     });
@@ -237,6 +198,7 @@ async update(
   input: UpdateRateMasterInput
 ): Promise<RateMasterRecord> {
   return transaction(async (client) => {
+    await recordPreviousVersion(client, 'mst_rate', ratemasterId);
     const result =
       await client.query<RateMasterRecord>(
         `
@@ -274,46 +236,6 @@ async update(
       throw new Error("Rate master not found.");
     }
 
-    await client.query(
-      `
-      INSERT INTO mst_rate_tracker
-      (
-        ratemaster_id,
-        role_name,
-        role_code,
-        currency_id,
-        rate_type,
-        default_rate,
-        location,
-        description,
-        created_dt,
-        created_by,
-        updated_dt,
-        updated_by,
-        is_active
-      )
-      VALUES
-      (
-        $1, $2, $3, $4, $5, $6, $7,
-        $8, $9, $10, $11, $12, $13
-      )
-      `,
-      [
-        updated.ratemasterId,
-        updated.roleName,
-        updated.roleCode,
-        updated.currencyId,
-        updated.rateType,
-        updated.defaultRate,
-        updated.location,
-        updated.description,
-        updated.createdDt,
-        updated.createdBy,
-        updated.updatedDt,
-        updated.updatedBy,
-        updated.isActive
-      ]
-    );
 
     return updated;
   });
@@ -325,6 +247,7 @@ async updateStatus(
   updatedBy: number
 ): Promise<RateMasterRecord> {
   return transaction(async (client) => {
+    await recordPreviousVersion(client, 'mst_rate', ratemasterId);
     const result =
       await client.query<RateMasterRecord>(
         `
@@ -346,46 +269,6 @@ async updateStatus(
       throw new Error("Rate master not found.");
     }
 
-    await client.query(
-      `
-      INSERT INTO mst_rate_tracker
-      (
-        ratemaster_id,
-        role_name,
-        role_code,
-        currency_id,
-        rate_type,
-        default_rate,
-        location,
-        description,
-        created_dt,
-        created_by,
-        updated_dt,
-        updated_by,
-        is_active
-      )
-      VALUES
-      (
-        $1, $2, $3, $4, $5, $6, $7,
-        $8, $9, $10, $11, $12, $13
-      )
-      `,
-      [
-        updated.ratemasterId,
-        updated.roleName,
-        updated.roleCode,
-        updated.currencyId,
-        updated.rateType,
-        updated.defaultRate,
-        updated.location,
-        updated.description,
-        updated.createdDt,
-        updated.createdBy,
-        updated.updatedDt,
-        updated.updatedBy,
-        updated.isActive
-      ]
-    );
 
     return updated;
   });
