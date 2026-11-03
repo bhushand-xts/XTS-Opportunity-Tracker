@@ -158,3 +158,18 @@ it('rejects duplicate role codes before sending a creation request', () => {
   expect(screen.getByRole('alert')).toHaveTextContent('already exists');
   expect(onCreated).not.toHaveBeenCalled();
 });
+
+
+it('uses USD costs and rates when the opportunity client budget uses currency B', async () => {
+  const otherCurrency = { ...currency, currencyId: 2, currencyCode: 'B', currencySymbol: 'bb' };
+  const otherRole = { ...role, ratemasterId: 99, roleName: 'Non USD role', roleCode: 'OTHER', currencyId: 2 };
+  render(<MockedProvider mocks={[{ ...queryMock(), result: { data: { ...masters, currencies: [currency, otherCurrency], rateMasters: [role, otherRole] } } }]}>
+    <EstimationModule opportunity={{ ...opportunity(), currencyCode: 'B', currencySymbol: 'bb' }} onSaved={vi.fn()} readOnly={false} showActions={false} />
+  </MockedProvider>);
+  await screen.findByRole('spinbutton', { name: 'Discovery duration in weeks' });
+  expect(screen.getByText('Estimated cost (USD)')).toHaveTextContent('$1,000.00');
+  expect(screen.queryByText(/B 1,000/)).not.toBeInTheDocument();
+  openMenu(screen.getByLabelText('All technical roles (1)'));
+  expect(screen.getByRole('menuitemcheckbox', { name: /Project Manager/ })).toHaveTextContent('$4,000.00');
+  expect(screen.queryByRole('menuitemcheckbox', { name: /Non USD role/ })).not.toBeInTheDocument();
+});
