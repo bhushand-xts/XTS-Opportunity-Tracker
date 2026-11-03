@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { EstimationModule } from './PreparationModules';
 import { EstimationRoleDialog } from './EstimationRoleDialog';
 import { fixtureOpportunity } from '../testing/fixtures';
-import { CREATE_ESTIMATION_ROLE, GET_ESTIMATION_MASTERS } from '../services/estimationMasters.queries';
+import { CREATE_ESTIMATION_PHASE, CREATE_ESTIMATION_ROLE, GET_ESTIMATION_MASTERS } from '../services/estimationMasters.queries';
 
 // Radix focus/visibility checks are slow in the Windows jsdom runner.
 vi.setConfig({ testTimeout: 180000 });
@@ -27,6 +27,40 @@ const createdRole = { ...role, ratemasterId: 11, roleName: 'QA Engineer', roleCo
 const masters = { estimationPhasesList: [{ id: 1, phaseName: 'Discovery', phaseCode: 'DISC', displayOrder: 1, isActive: true }], rateMasters: [role], currencies: [currency] };
 const queryMock = () => ({ request: { query: GET_ESTIMATION_MASTERS }, result: { data: masters }, maxUsageCount: 100 });
 const opportunity = () => fixtureOpportunity({ stageId: 3, subStageId: 7, currencyCode: 'USD', allowedActions: ['EDIT_ESTIMATION'], estimation: { revision: 1, assumptions: 'Draft assumptions', total: '1000', rows: [{ id: 'grid-1-PM', workItem: 'Discovery — Project Manager', hours: '40', people: 1, hourlyRate: '25' }] } });
+
+it('adds a phase from the persistent dropdown action without resetting existing estimate inputs', async () => {
+  const created = { id: 2, phaseName: 'Deployment', phaseCode: 'DEP', displayOrder: 2, isActive: true };
+  let phaseData = masters;
+  const mutation = vi.fn(() => { phaseData = { ...masters, estimationPhasesList: [...masters.estimationPhasesList, created] }; return { data: { createEstimationPhase: created } }; });
+  render(<MockedProvider mocks={[
+    { request: { query: GET_ESTIMATION_MASTERS }, result: () => ({ data: phaseData }), maxUsageCount: 100 },
+    { request: { query: CREATE_ESTIMATION_PHASE, variables: { input: { phaseName: 'Deployment', isActive: true, createdBy: 101 } } }, result: mutation },
+  ]}><EstimationModule opportunity={opportunity()} onSaved={vi.fn()} readOnly={false} showActions={false} /></MockedProvider>);
+  const duration = await screen.findByRole('spinbutton', { name: 'Discovery duration in weeks' });
+  fireEvent.change(duration, { target: { value: '2' } });
+  const allocation = screen.getByRole('spinbutton', { name: /Project Manager resource allocation/ });
+  fireEvent.change(allocation, { target: { value: '0.5' } });
+  openMenu(screen.getByRole('button', { name: 'All phases (1)' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Add phase' }));
+  const dialog = within(await screen.findByRole('dialog', { name: 'Add phase' }));
+  fireEvent.change(dialog.getByRole('textbox', { name: 'New phase name' }), { target: { value: 'Deployment' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Add phase' }));
+  expect(await screen.findByRole('spinbutton', { name: 'Deployment duration in weeks' })).toHaveValue(1);
+  expect(duration).toHaveValue(2);
+  expect(allocation).toHaveValue(0.5);
+  expect(mutation).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('dialog', { name: 'Add phase' })).not.toBeInTheDocument();
+});
+
+it('shows the phase action with an explanation when master Add permission is missing', async () => {
+  permission.add = false;
+  render(<MockedProvider mocks={[queryMock()]}><EstimationModule opportunity={opportunity()} onSaved={vi.fn()} readOnly={false} /></MockedProvider>);
+  await screen.findByRole('spinbutton', { name: 'Discovery duration in weeks' });
+  openMenu(screen.getByRole('button', { name: 'All phases (1)' }));
+  expect(await screen.findByRole('menuitem', { name: 'Add phase' })).toHaveAttribute('aria-disabled', 'true');
+  expect(screen.getByText('Phase Master Add permission is required.')).toBeVisible();
+  expect(screen.queryByRole('dialog', { name: 'Add phase' })).not.toBeInTheDocument();
+});
 
 it('creates and selects a shared technical role while retaining unsaved estimate values', async () => {
   const mutation = vi.fn(() => ({ data: { createRateMaster: createdRole } }));
@@ -59,9 +93,9 @@ it('filters roles without clearing selection and opens rate references beside se
   openMenu(screen.getByLabelText('1 selected'));
   fireEvent.change(screen.getByRole('textbox', { name: 'Search technical roles' }), { target: { value: 'Developer' } });
   expect(screen.getAllByRole('menuitemcheckbox')).toHaveLength(1);
-  expect(screen.getByRole('menuitemcheckbox', { name: /Developer/ })).toHaveAttribute('aria-checked', 'false');
+  expect(screen.getByRole('menuitemcheckbox', { name: /DEV/ })).toHaveAttribute('aria-checked', 'false');
   fireEvent.change(screen.getByRole('textbox', { name: 'Search technical roles' }), { target: { value: '' } });
-  expect(screen.getByRole('menuitemcheckbox', { name: /Project Manager/ })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('menuitemcheckbox', { name: /PM/ })).toHaveAttribute('aria-checked', 'true');
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
   await waitFor(() => expect(screen.getByLabelText('1 selected')).toHaveFocus());
   fireEvent.click(screen.getByText('Rate master', { selector: 'button' }));

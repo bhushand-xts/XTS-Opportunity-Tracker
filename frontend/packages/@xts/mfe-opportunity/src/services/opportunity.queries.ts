@@ -170,8 +170,8 @@ export const UPDATE_OPPORTUNITY = gql`
 `;
 
 export const TRANSITION_OPPORTUNITY = gql`
-  mutation TransitionOpportunity($opportunityId: Int!, $action: OpportunityWorkflowAction!, $comment: String, $reasonCodeId: Int, $estimation: OpportunityEstimationInput) {
-    transitionOpportunity(opportunityId: $opportunityId, action: $action, comment: $comment, reasonCodeId: $reasonCodeId, estimation: $estimation) {
+  mutation TransitionOpportunity($opportunityId: Int!, $action: OpportunityWorkflowAction!, $comment: String, $reasonCodeId: Int, $estimation: OpportunityEstimationInput, $estimationVersionId: ID) {
+    transitionOpportunity(opportunityId: $opportunityId, action: $action, comment: $comment, reasonCodeId: $reasonCodeId, estimation: $estimation, estimationVersionId: $estimationVersionId) {
       opportunityId
       stageId
       subStageId
@@ -190,4 +190,6 @@ const ESTIMATION_VERSION_FIELDS = gql`fragment EstimationVersionFields on Opport
   estimation { revision status assumptions total rows { id workItem hours people hourlyRate } grid { phaseIds roleCodes durations { phaseId weeks } allocations { phaseId roleCode effort } } }
 }`;
 export const GET_ESTIMATION_VERSIONS = gql`query EstimationVersions($opportunityId: Int!) { estimationVersions(opportunityId: $opportunityId) { ...EstimationVersionFields } } ${ESTIMATION_VERSION_FIELDS}`;
-export const SAVE_ESTIMATION_VERSION = gql`mutation SaveEstimationVersion($opportunityId: Int!, $estimation: OpportunityEstimationInput!, $name: String!, $requestKey: String!) { saveEstimationVersion(opportunityId: $opportunityId, estimation: $estimation, name: $name, requestKey: $requestKey) { ...EstimationVersionFields } } ${ESTIMATION_VERSION_FIELDS}`;
+export const SAVE_ESTIMATION_VERSION = gql`mutation SaveEstimationVersion($opportunityId: Int!, $estimation: OpportunityEstimationInput!, $name: String!, $requestKey: String!, $sourceVersionId: ID) { saveEstimationVersion(opportunityId: $opportunityId, estimation: $estimation, name: $name, requestKey: $requestKey, sourceVersionId: $sourceVersionId) { ...EstimationVersionFields } } ${ESTIMATION_VERSION_FIELDS}`;
+
+export const DELETE_ESTIMATION_VERSION = gql`mutation DeleteEstimationVersion($opportunityId: Int!, $versionId: ID!) { deleteEstimationVersion(opportunityId: $opportunityId, versionId: $versionId) }`;

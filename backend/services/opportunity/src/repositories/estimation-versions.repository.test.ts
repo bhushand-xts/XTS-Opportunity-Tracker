@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { saveEstimationVersion, saveEstimation, transitionWorkflow, type OpportunityEstimation } from './opportunity.repository';
+import { saveEstimationVersion, deleteEstimationVersion, saveEstimation, transitionWorkflow, type OpportunityEstimation } from './opportunity.repository';
 const db = require('../config/db');
 const estimate: OpportunityEstimation = { revision: 2, rows: [{ id: 'grid-1-PM', workItem: 'Discovery — PM', hours: '40', people: 1, hourlyRate: '25' }], assumptions: 'Original', total: '1000', grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '1' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] } };
 function database(t: TestContext, options: { duplicate?: boolean; failSnapshot?: boolean; stale?: boolean; submitted?: boolean } = {}) {
@@ -10,7 +10,9 @@ function database(t: TestContext, options: { duplicate?: boolean; failSnapshot?:
     calls.push({ sql, params });
     if (sql.startsWith('SELECT stage_id, sub_stage_id')) return { rows: [{ stage_id: 3, sub_stage_id: 7 }] };
     if (sql.startsWith('SELECT stage_id AS')) return { rows: [{ stageId: 3, subStageId: 7 }] };
+    if (sql.startsWith('SELECT status')) return { rows: [{ status: options.submitted ? 'SUBMITTED' : 'SAVED', deleted_dt: null }] };
     if (sql.startsWith('SELECT revision FROM')) return { rows: [{ revision: 2 }] };
+    if (sql.startsWith('SELECT v.snapshot AS estimation')) return { rows: [{ estimation: estimate, name: 'Baseline' }] };
     if (sql.includes('FROM tbl_opportunity_estimation_versions WHERE') && sql.includes('request_key =')) return { rows: options.duplicate ? [{ id: '10', version: 1 }] : [] };
     if (sql.startsWith('INSERT INTO tbl_opportunity_estimation_matrix')) return { rows: options.stale ? [] : [{ revision: 3 }] };
     if (sql.startsWith('INSERT INTO tbl_opportunity_estimation_versions')) {
@@ -57,5 +59,40 @@ test('submission snapshots its exact persisted matrix in the workflow transactio
   const snapshot = calls.find(call => call.sql.startsWith('INSERT INTO tbl_opportunity_estimation_versions'))!;
   assert.deepEqual(snapshot.params, [10, 'Submitted estimate', 'SUBMITTED', 7, 'submitted-2']);
   assert.ok(calls.some(call => call.sql.includes('INSERT INTO tbl_opportunity_engage_tracker')));
+  assert.equal(calls.at(-1)?.sql, 'COMMIT');
+});
+
+test('selected-version submission restores the saved matrix and snapshots it atomically with the transition', async t => {
+  const calls = database(t);
+  await transitionWorkflow(10, 4, 8, null, 7, 'Review Baseline', null, {}, { stageId: 3, subStageId: 7, estimationRevision: 2, selectedVersionId: '7' });
+  const selected = calls.find(call => call.sql.startsWith('SELECT v.snapshot AS estimation'))!;
+  assert.deepEqual(selected.params, [10, '7']);
+  const saved = calls.find(call => call.sql.startsWith('INSERT INTO tbl_opportunity_estimation_matrix'))!;
+  assert.deepEqual(JSON.parse(saved.params[1] as string), estimate.rows);
+  const snapshot = calls.find(call => call.sql.startsWith('INSERT INTO tbl_opportunity_estimation_versions'))!;
+  assert.deepEqual(snapshot.params, [10, 'Submitted: Baseline', 'SUBMITTED', 7, 'submitted-3']);
+  assert.equal(calls.at(-1)?.sql, 'COMMIT');
+});
+
+test('Update creates a linked snapshot without overwriting the original', async t => {
+  const calls = database(t);
+  await saveEstimationVersion(10, estimate, 'Revised', 7, 'update-request', '9');
+  assert.ok(calls.some(call => call.sql.includes('SET supersedes_id') && JSON.stringify(call.params) === JSON.stringify(['11', '9'])));
+  assert.equal(calls.some(call => call.sql.includes('SET snapshot')), false);
+  assert.equal(calls.at(-1)?.sql, 'COMMIT');
+});
+test('submitted versions cannot be edited or deleted', async t => {
+  const calls = database(t, { submitted: true });
+  await assert.rejects(saveEstimationVersion(10, estimate, 'Revised', 7, 'update-request', '9'));
+  await assert.rejects(deleteEstimationVersion(10, '9', 7));
+  assert.equal(calls.some(call => call.sql.startsWith('INSERT')), false);
+  assert.equal(calls.at(-1)?.sql, 'ROLLBACK');
+});
+test('Delete archives the scoped version with actor and timestamp under the workflow lock', async t => {
+  const calls = database(t);
+  assert.equal(await deleteEstimationVersion(10, '9', 7), true);
+  const archived = calls.find(call => call.sql.includes('SET deleted_dt'))!;
+  assert.deepEqual(archived.params, [10, '9', 7]);
+  assert.equal(calls.some(call => call.sql.startsWith('DELETE')), false);
   assert.equal(calls.at(-1)?.sql, 'COMMIT');
 });

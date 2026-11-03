@@ -1,9 +1,9 @@
 import { QuestionViewer } from './QuestionViewer';
 import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Lock, Pencil } from 'lucide-react';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Badge, type BadgeProps, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
-import type { Estimation, OpportunityDetail, OpportunityState } from '@xts/api-contracts';
+import type { Estimation, EstimationVersion, OpportunityDetail, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource } from '../hooks/useResource';
 import { useUnsaved } from '../hooks/useUnsaved';
@@ -178,9 +178,12 @@ function Overview({
 }
 type TabKey = 'overview' | 'qa' | 'scope' | 'estimation' | 'documents' | 'activity';
 export function OpportunityDetailsPage({ review = false }: { review?: boolean }) {
+  const [selectedVersion, setSelectedVersion] = useState<EstimationVersion | null>(null);
+  const [estimationSidebar, setEstimationSidebar] = useState<HTMLDivElement | null>(null);
   const estimationDraft = useRef<(() => Estimation) | null>(null);
   const registerDraft = useCallback((reader: (() => Estimation) | null) => { estimationDraft.current = reader; }, []);
   const { id } = useParams(), service = useOpportunityService(), access = useOpportunityAccess(), [params, setParams] = useSearchParams();
+  useEffect(() => { setSelectedVersion(null); }, [id]);
   const approvalView = review || access.approvals;
   const load = useCallback((signal: AbortSignal) => service.detail(id!, signal, approvalView ? 'REVIEW' : 'DETAILS'), [service, id, approvalView]);
   const resource = useResource(load, Boolean(id && access.view)), confirm = useUnsaved(false);
@@ -206,7 +209,13 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
   return <div className="opp-page">
     <header className="opp-detail-heading">
       <div className="flex flex-wrap items-center justify-between gap-4">
-      <Link to="/opportunity" className="opp-back">← Back to Pipeline</Link>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2">
+          <Link to="/opportunity" className="opp-back shrink-0">← Back to Pipeline</Link>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-primary/5 px-3 py-2" aria-label="Current opportunity">
+            <Badge variant="muted" className="shrink-0 border-primary/20 bg-primary/10 font-semibold text-primary">{o.number || o.id}</Badge>
+            <h1 className="min-w-0 break-words text-base font-semibold text-foreground">{o.title}</h1>
+          </div>
+        </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {access.edit && o.allowedActions.includes('EDIT') && <Button variant="outline" asChild><Link to={`/opportunity/${o.id}/edit`}><Pencil className="size-3.5" aria-hidden="true" />Edit opportunity</Link></Button>}
         </div>
@@ -215,7 +224,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
     <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}>
       <div className="opp-detail-toolbar">
         <TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>)}</TabsList>
-        <ReviewActions opportunity={active === 'estimation' ? { ...o, allowedActions: o.allowedActions.filter(action => action !== 'SUBMIT_ESTIMATE') } : o} onSaved={resource.setData} variant="toolbar" getEstimation={() => estimationDraft.current?.()} />
+        <ReviewActions opportunity={active === 'estimation' ? { ...o, allowedActions: o.allowedActions.filter(action => action !== 'SUBMIT_ESTIMATE') } : o} onSaved={resource.setData} variant="toolbar" selectedVersion={selectedVersion} getEstimation={() => estimationDraft.current?.()} />
       </div>
       <div className="opp-detail-layout mt-3">
       <div className="opp-detail-workspace">
@@ -225,7 +234,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
           <h3 className="mt-3 text-sm font-semibold">Available after CEO approval</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">This opportunity is currently in {o.stageId === 1 ? 'Identified' : 'Qualifying (Go/No-Go)'}. {tab.label} will be available once the CEO approves this opportunity and it moves to the Solution/Scoping Estimation (Engineering) stage.</p>
         </div> : tab.key === 'overview' ? <Overview opportunity={o} />
-          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} registerDraft={registerDraft} />
+          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} registerDraft={registerDraft} sidebarTarget={estimationSidebar} selectedVersion={selectedVersion} onSelectVersion={setSelectedVersion} />
           : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} />
           : tab.key === 'documents' ? <Documents opportunity={o} />
           : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />
@@ -234,6 +243,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
       </div>
       <aside className="opp-detail-sidebar" aria-label="Opportunity progress">
         <OpportunityProgress opportunity={o} />
+        {active === 'estimation' && !awaitingEstimation && <div ref={setEstimationSidebar} className="min-w-0" />}
       </aside>
       </div>
     </Tabs>

@@ -353,6 +353,30 @@
 .opp-substage-history > li.active > strong, .opp-substage-current > strong { color: hsl(var(--primary)); }
 .opp-assignment { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,.9fr); gap: 12px; align-items: start; }.opp-task { white-space: normal; height: auto; width: 100%; text-align: left; justify-content: start; padding: 9px 10px; }
 .opp-estimation-scroll { overflow-x: auto; max-width: 100%; }.opp-estimation-scroll table { min-width: 720px; }.opp-estimation-scroll td:first-child { min-width: 200px; }.opp-estimation-scroll td { min-width: 110px; }
+/* The combined matrix has one scroll container so headers and phase identifiers
+   stay aligned without affecting the other estimation/version tables. */
+.opp-estimation-workspace .opp-estimation-matrix { max-height: min(65vh,640px); overflow: auto; isolation: isolate; border-radius: 6px; }
+.opp-estimation-workspace .opp-estimation-matrix > div { overflow: visible; }
+.opp-estimation-workspace .opp-estimation-matrix table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.opp-estimation-workspace .opp-estimation-matrix :is(th,td) { border-width: 0 1px 1px 0; min-width: 64px; padding: 4px 4px; font-size: 12px; }
+.opp-estimation-workspace .opp-estimation-matrix input { width: 46px; height: 24px; padding: 2px 3px; font-size: 12px; }
+.opp-estimation-workspace .opp-estimation-matrix thead th { position: sticky; top: 0; z-index: 3; height: 28px; font-size: 11px; background: hsl(var(--muted)); }
+.opp-estimation-workspace .opp-estimation-matrix thead tr:first-child th:not(.matrix-duration) { white-space: nowrap; }
+.opp-estimation-workspace .opp-estimation-matrix thead tr:nth-child(2) th { top: 28px; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-index { position: sticky; left: 0; z-index: 2; width: 32px; min-width: 32px; max-width: 32px; text-align: center; background: hsl(var(--card)); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-phase { position: sticky; left: 32px; z-index: 2; width: 160px; min-width: 160px; max-width: 160px; white-space: normal; text-align: left; background: hsl(var(--card)); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-duration { position: sticky; left: 192px; z-index: 2; width: 80px; min-width: 80px; max-width: 80px; background: hsl(var(--card)); box-shadow: 2px 0 3px hsl(var(--foreground) / .06); }
+.opp-estimation-workspace .opp-estimation-matrix thead :is(.matrix-index,.matrix-phase,.matrix-duration) { z-index: 5; background: hsl(var(--muted)); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-allocation { background: color-mix(in srgb,hsl(var(--card)) 95%,#6366f1); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-effort { background: color-mix(in srgb,hsl(var(--card)) 93%,#14b8a6); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-cost { min-width: 84px; background: color-mix(in srgb,hsl(var(--card)) 92%,#f59e0b); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-allocation { background: color-mix(in srgb,hsl(var(--card)) 84%,#6366f1); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-effort { background: color-mix(in srgb,hsl(var(--card)) 82%,#14b8a6); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-cost { background: color-mix(in srgb,hsl(var(--card)) 80%,#f59e0b); }
+@media (max-width: 650px) {
+  .opp-estimation-workspace .opp-estimation-matrix .matrix-phase { width: 120px; min-width: 120px; max-width: 120px; }
+  .opp-estimation-workspace .opp-estimation-matrix .matrix-duration { left: 152px; width: 72px; min-width: 72px; max-width: 72px; }
+}
 /* Keep compact controls scoped to this MFE and its portalled drawers/dialogs. */
 :is(.opportunity-root, .opp-drawer, .opp-dialog) .opp-field > label { font-size: 14px; line-height: 20px; }
 :is(.opportunity-root, .opp-drawer, .opp-dialog) .opp-field :is(input, button[role="combobox"]) { height: 36px; min-height: 36px; padding-block: 6px; }

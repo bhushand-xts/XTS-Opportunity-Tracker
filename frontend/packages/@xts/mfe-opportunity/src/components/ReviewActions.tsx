@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Checkbox, cn, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label } from '@xts/design-system';
 import { toast } from 'sonner';
 import { estimationSubmissionError } from '../lib/estimationValidation';
-import type { DecisionCommand, OpportunityDetail } from '@xts/api-contracts';
+import type { DecisionCommand, EstimationVersion, OpportunityDetail } from '@xts/api-contracts';
 import { applicableDecisions, decisionError } from '../lib/workflow';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useSave, type ConfirmationTone } from '../hooks/useSave';
@@ -83,7 +83,7 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
     SALES_REJECT: 'This closes the opportunity as No-Bid / Declined · Rejected by Sales Head.',
     GATE1_NO_GO: 'This closes the opportunity as No-Bid / Declined · No-Go by CEO.',
     ESTIMATE_REJECT: 'This closes the opportunity as No-Bid / Declined · Estimate Rejected by CEO.',
-    SUBMIT_ESTIMATE: 'This validates and saves the completed estimate and sends it for CEO/Gate-2 review.',
+    SUBMIT_ESTIMATE: 'This sends the selected saved estimation for CEO/Gate-2 review. Unsaved editor changes are not included.',
     ESTIMATE_APPROVE: 'Approval moves this opportunity to Proposal / Bid Submission · Proposal In Preparation.',
     BID_SUBMITTED: 'This records the proposal / bid as submitted to the client.',
     START_NEGOTIATION: 'This moves the opportunity to Negotiation · Under Negotiation.',
@@ -101,7 +101,7 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
     : `The opportunity stays in ${stage} and moves to On Hold.`;
 }
 
-export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getEstimation }: { getEstimation?: () => OpportunityDetail['estimation'] | undefined; opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void; variant?: 'panel' | 'bare' | 'card' | 'toolbar' }) {
+export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getEstimation, selectedVersion }: { selectedVersion?: EstimationVersion | null; getEstimation?: () => OpportunityDetail['estimation'] | undefined; opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void; variant?: 'panel' | 'bare' | 'card' | 'toolbar' }) {
   const service = useOpportunityService(), mutation = useSave();
   const [decision, setDecision] = useState<DecisionCommand['decision']>(), [reason, setReason] = useState(''), [confirmed, setConfirmed] = useState(false), [validation, setValidation] = useState<string>();
   const [holdReasonId, setHoldReasonId] = useState('');
@@ -134,7 +134,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
 
   async function decide() {
     if (!decision) return;
-    const error = decisionError(o, decision, reason, staged || confirmed, selectedReason?.id);
+    const error = decision === 'SUBMIT_ESTIMATE' && !selectedVersion ? 'Select a saved estimation before submitting to CEO.' : decisionError(o, decision, reason, staged || confirmed, selectedReason?.id);
     setValidation(error ?? undefined);
     if (error) return;
     const command = {
@@ -143,7 +143,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
       ...(requiresCode ? { reasonCodeId: selectedReason!.id } : {}),
       decision, reason: reason.trim(), confirmed: staged || confirmed,
     };
-    await mutation.run(JSON.stringify(command), key => service.decide({ ...command, ...(decision === 'SUBMIT_ESTIMATE' && getEstimation ? { estimation: getEstimation() ?? undefined } : {}), idempotencyKey: key }), value => {
+    await mutation.run(JSON.stringify(command), key => service.decide({ ...command, ...(decision === 'SUBMIT_ESTIMATE' ? { estimationVersionId: selectedVersion!.id } : {}), idempotencyKey: key }), value => {
       setDecision(undefined);
       setCompleted({ id: value.id, sourceStageId: o.stageId, sourceState: o.state, stageId: value.stageId, subStageId: value.subStageId, decision: command.decision });
       onSaved(value);
@@ -164,12 +164,12 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
     const selected = action === selectedDecision;
     const Icon = selected ? Check : TONE_ICON[actionTone(action)];
     return <Button key={action} type="button" size="sm" variant="outline"
-      aria-pressed={selected} title={selected ? 'Action completed' : undefined}
+      aria-pressed={selected} title={selected ? 'Action completed' : action === 'SUBMIT_ESTIMATE' && !selectedVersion ? 'Select a saved estimation first' : undefined}
       className={`${buttonTone(action)}${action === primary ? ' opp-review-primary' : ''}${selected ? ` ${CONFIRMATION_STYLES[confirmationTone(action)]} border shadow-inner ring-2 ring-inset ring-current disabled:opacity-100` : ''}`}
-      disabled={mutation.saving || selected || !decisions.includes(action)} onClick={() => {
+      disabled={mutation.saving || selected || !decisions.includes(action) || action === 'SUBMIT_ESTIMATE' && !selectedVersion} onClick={() => {
         if (action === 'SUBMIT_ESTIMATE') {
           try {
-            const error = estimationSubmissionError(getEstimation?.() ?? o.estimation);
+            const error = estimationSubmissionError(selectedVersion?.estimation);
             if (error) { toast.error(error, { id: `estimate-validation-${o.id}`, duration: 6000 }); return; }
           } catch (error) {
             toast.error(error instanceof Error ? error.message : 'Check the estimate before submitting.', { id: `estimate-validation-${o.id}`, duration: 6000 });
@@ -203,6 +203,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
           <DialogTitle>{decision ? LABELS[decision] : 'Review decision'}</DialogTitle>
           <DialogDescription>{o.number}{staged ? '. ' : ` · package revision ${o.packageRevision}. `}{decision && decisionDescription(o, decision, staged)}</DialogDescription>
         </DialogHeader>
+        {decision === 'SUBMIT_ESTIMATE' && selectedVersion && <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm"><strong>{selectedVersion.name}</strong> ? V{selectedVersion.version}</p>}
         {requiresCode && <div className="space-y-1"><Label htmlFor={holdReasonInputId}>{reasonLabel} reason (required)</Label><select id={holdReasonInputId} value={holdReasonId} required disabled={mutation.saving || holdReasons.loading || Boolean(holdReasons.error)} onChange={event => setHoldReasonId(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"><option value="">{holdReasons.loading ? 'Loading hold reasons…' : 'Select a reason'}</option>{holdReasons.data?.map(option => <option key={option.id} value={String(option.id)}>{option.name}</option>)}</select>{selectedReason?.description && <p className="text-xs text-muted-foreground">{selectedReason.description}</p>}{holdReasons.error && <Notice error={holdReasons.error} retry={holdReasons.reload} />}{!holdReasons.loading && !holdReasons.error && holdReasons.data?.length === 0 && <p className="text-sm text-muted-foreground">No active reasons are available.</p>}</div>}
         {decision !== 'RESUBMIT' && <Field label={requiresCode ? `${reasonLabel} description (required)` : decision?.endsWith('REQUEST_CHANGES') ? 'Changes requested (required)' : requiresReason ? 'Reason (required)' : 'Decision note (optional)'} value={reason} onChange={setReason} multiline disabled={mutation.saving} required={Boolean(requiresReason)} />}
         {!staged && <Label className="flex items-start gap-3 leading-relaxed">

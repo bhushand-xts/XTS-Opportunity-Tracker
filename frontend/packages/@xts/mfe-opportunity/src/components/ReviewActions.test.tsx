@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DecisionCommand, OpportunityDetail } from '@xts/api-contracts';
+import type { DecisionCommand, Estimation, EstimationVersion, OpportunityDetail } from '@xts/api-contracts';
 import { useState } from 'react';
 import { OpportunityServiceContext, productionOpportunityService, type OpportunityService } from '../services/OpportunityService';
 import { fixtureOpportunity } from '../testing/fixtures';
@@ -13,6 +13,8 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const validEstimate = () => ({ revision: 2, rows: [{ id: 'grid-1-PM', workItem: 'Engineering', hours: '80', people: 1, hourlyRate: '25' }], assumptions: 'Unsaved assumptions', total: '2000', grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] } });
 
+const versionOf = (estimation: Estimation): EstimationVersion => ({ id: '1', version: 1, name: 'Baseline', status: 'SAVED', currencyCode: 'USD', personWeeks: '2', createdBy: 1, createdAt: '2026-11-03T00:00:00Z', estimation });
+
 function salesReview(overrides: Partial<OpportunityDetail> = {}) {
   return fixtureOpportunity({
     stageId: 1, subStageId: 1, state: 'SALES_REVIEW', packageRevision: null,
@@ -20,9 +22,9 @@ function salesReview(overrides: Partial<OpportunityDetail> = {}) {
   });
 }
 
-function mount(opportunity: OpportunityDetail, decide: OpportunityService['decide'] = vi.fn(), onSaved = vi.fn(), variant: 'panel' | 'bare' | 'card' | 'toolbar' = 'panel') {
+function mount(opportunity: OpportunityDetail, decide: OpportunityService['decide'] = vi.fn(), onSaved = vi.fn(), variant: 'panel' | 'bare' | 'card' | 'toolbar' = 'panel', selectedVersion: EstimationVersion | null = versionOf(opportunity.estimation ?? validEstimate())) {
   const service = { ...productionOpportunityService, decide, holdReasons: vi.fn(async () => [{ id: 3, name: 'Missing information', description: 'Supporting details are missing.' }]) };
-  const view = (record: OpportunityDetail) => <OpportunityServiceContext.Provider value={service}><ReviewActions opportunity={record} onSaved={onSaved} variant={variant} /></OpportunityServiceContext.Provider>;
+  const view = (record: OpportunityDetail) => <OpportunityServiceContext.Provider value={service}><ReviewActions opportunity={record} onSaved={onSaved} variant={variant} selectedVersion={selectedVersion} /></OpportunityServiceContext.Provider>;
   const rendered = render(view(opportunity));
   return { onSaved, rerender: (record: OpportunityDetail) => rendered.rerender(view(record)) };
 }
@@ -44,6 +46,16 @@ async function selectHoldReason(dialog: ReturnType<typeof within>) {
 }
 
 describe('persisted opportunity review actions', () => {
+  it('disables CEO submission until a saved estimation is selected', () => {
+    const decide = vi.fn();
+    mount(salesReview({ stageId: 3, subStageId: 7, allowedActions: ['SUBMIT_ESTIMATE'] }), decide, vi.fn(), 'toolbar', null);
+    const button = screen.getByRole('button', { name: 'Submit Estimation to CEO' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'Select a saved estimation first');
+    fireEvent.click(button);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(decide).not.toHaveBeenCalled();
+  });
   it.each([
     ['blank effort', '', '2', '25', /Enter effort/],
     ['zero duration', '1', '0', '25', /positive duration/],
@@ -92,18 +104,18 @@ describe('persisted opportunity review actions', () => {
     expect(screen.getByRole('button', { name: 'Proposal / Bid Submitted' })).toBeEnabled();
   });
 
-  it('submits outstanding matrix edits and records the manual decision note', async () => {
+  it('submits the selected saved version and records the manual decision note', async () => {
     const current = salesReview({ stageId: 3, subStageId: 7, allowedActions: ['SUBMIT_ESTIMATE'], estimation: null });
     const saved = { ...current, stageId: 4, subStageId: 8, allowedActions: [] };
     const decide = vi.fn(async () => saved);
     const estimation = validEstimate();
     const onSaved = vi.fn();
-    render(<OpportunityServiceContext.Provider value={{ ...productionOpportunityService, decide }}><ReviewActions opportunity={current} onSaved={onSaved} getEstimation={() => estimation} /></OpportunityServiceContext.Provider>);
+    render(<OpportunityServiceContext.Provider value={{ ...productionOpportunityService, decide }}><ReviewActions opportunity={current} onSaved={onSaved} selectedVersion={versionOf(estimation)} getEstimation={() => estimation} /></OpportunityServiceContext.Provider>);
     const dialog = openDecision('Submit Estimation to CEO');
     fireEvent.change(dialog.getByRole('textbox'), { target: { value: 'Please review the prepared estimate.' } });
     confirmReview(dialog);
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved));
-    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'SUBMIT_ESTIMATE', estimation, reason: 'Please review the prepared estimate.' }));
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'SUBMIT_ESTIMATE', estimationVersionId: '1', reason: 'Please review the prepared estimate.' }));
   });
 
   it.each([

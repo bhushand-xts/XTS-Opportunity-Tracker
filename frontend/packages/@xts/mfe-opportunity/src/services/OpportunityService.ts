@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE, GET_ESTIMATION_VERSIONS, SAVE_ESTIMATION_VERSION } from './opportunity.queries';
+import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE, GET_ESTIMATION_VERSIONS, SAVE_ESTIMATION_VERSION, DELETE_ESTIMATION_VERSION } from './opportunity.queries';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY, type OwnerDirectoryData } from './userDirectory.queries';
 import { mapOwnerDirectory } from './useOwnerDirectory';
 import { getApolloClient } from '@xts/api-client';
@@ -32,7 +32,8 @@ export interface OpportunityService {
   extract(command: VersionCommand & { documentId: string }): Promise<OpportunityDetail>;
   extractionStatus(opportunityId: string, jobId: string, signal?: AbortSignal): Promise<OpportunityDetail>;
   estimationVersions?(opportunityId: string): Promise<EstimationVersion[]>;
-  saveEstimationVersion?(command: VersionCommand & { estimation: Estimation; name: string }): Promise<{ version: EstimationVersion; opportunity: OpportunityDetail }>;
+  deleteEstimationVersion?(opportunityId: string, versionId: string): Promise<void>;
+  saveEstimationVersion?(command: VersionCommand & { estimation: Estimation; name: string; sourceVersionId?: string }): Promise<{ version: EstimationVersion; opportunity: OpportunityDetail }>;
   saveEstimation(command: VersionCommand & { estimation: Estimation }): Promise<OpportunityDetail>;
   saveScope(command: VersionCommand & { scope: Scope; section?: AssessmentSection }): Promise<OpportunityDetail>;
   assign(command: ResponseCommand & { ownerId: string; reviewerId: string; dueDate: string }): Promise<OpportunityDetail>;
@@ -328,9 +329,13 @@ export const productionOpportunityService: OpportunityService = {
     const { data } = await getApolloClient().query<{ estimationVersions: EstimationVersion[] }>({ query: GET_ESTIMATION_VERSIONS, variables: { opportunityId: Number(opportunityId) }, fetchPolicy: 'network-only', errorPolicy: 'none' });
     return data.estimationVersions;
   },
+  async deleteEstimationVersion(opportunityId, versionId) {
+    const { data } = await getApolloClient().mutate<{ deleteEstimationVersion: boolean }>({ mutation: DELETE_ESTIMATION_VERSION, variables: { opportunityId: Number(opportunityId), versionId }, errorPolicy: 'none' });
+    if (!data?.deleteEstimationVersion) throw new Error('The estimate was not deleted. Please retry.');
+  },
   async saveEstimationVersion(command) {
     const { revision, rows, assumptions, grid } = command.estimation;
-    const { data } = await getApolloClient().mutate<{ saveEstimationVersion: EstimationVersion }>({ mutation: SAVE_ESTIMATION_VERSION, variables: { opportunityId: Number(command.opportunityId), estimation: { revision, rows: rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })), assumptions, grid }, name: command.name, requestKey: command.idempotencyKey }, errorPolicy: 'none' });
+    const { data } = await getApolloClient().mutate<{ saveEstimationVersion: EstimationVersion }>({ mutation: SAVE_ESTIMATION_VERSION, variables: { opportunityId: Number(command.opportunityId), estimation: { revision, rows: rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })), assumptions, grid }, name: command.name, requestKey: command.idempotencyKey, sourceVersionId: command.sourceVersionId }, errorPolicy: 'none' });
     if (!data?.saveEstimationVersion) throw new Error('The estimation version was not saved. Please retry.');
     return { version: data.saveEstimationVersion, opportunity: await productionOpportunityService.detail(command.opportunityId) };
   },
@@ -400,6 +405,7 @@ export const productionOpportunityService: OpportunityService = {
     const { data } = await client.mutate<{ transitionOpportunity: { opportunityId: number } | null }>({
       mutation: TRANSITION_OPPORTUNITY,
       variables: { opportunityId: Number(command.opportunityId), action, comment: command.reason.trim() || null,
+        ...(action === 'SUBMIT_ESTIMATE' ? { estimationVersionId: command.estimationVersionId } : {}),
         ...(action === 'SUBMIT_ESTIMATE' && command.estimation ? { estimation: { revision: command.estimation.revision, rows: command.estimation.rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })), assumptions: command.estimation.assumptions, grid: command.estimation.grid } } : {}),
         ...(['HOLD', 'REJECT', 'OPPORTUNITY_HOLD'].includes(action) ? { reasonCodeId: command.reasonCodeId ?? null } : {}),
       },

@@ -90,6 +90,7 @@ export interface ResponseCommand extends VersionCommand { responseId: string; re
 export interface DecisionCommand extends VersionCommand {
   packageRevision: number | null;
   estimation?: Estimation;
+  estimationVersionId?: string;
   expectedStageId?: number | null; expectedSubStageId?: number | null;
   reasonCodeId?: number | null;
   decision: 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT';

@@ -38,7 +38,8 @@ export const opportunityResolvers = {
   },
 
   Mutation: {
-    saveEstimationVersion: (_: unknown, args: { opportunityId: number; estimation: Parameters<typeof service.saveEstimationVersion>[1]; name: string; requestKey: string }, ctx: any) => service.saveEstimationVersion(args.opportunityId, args.estimation, args.name, args.requestKey, ctx),
+    saveEstimationVersion: (_: unknown, args: { opportunityId: number; estimation: Parameters<typeof service.saveEstimationVersion>[1]; name: string; requestKey: string; sourceVersionId?: string }, ctx: any) => service.saveEstimationVersion(args.opportunityId, args.estimation, args.name, args.requestKey, ctx, args.sourceVersionId),
+    deleteEstimationVersion: (_: unknown, args: { opportunityId: number; versionId: string }, ctx: any) => service.deleteEstimationVersion(args.opportunityId, args.versionId, ctx),
     saveOpportunityScope: async (_: unknown, args: { opportunityId: number; scope: Parameters<typeof service.saveScope>[1]; section?: Parameters<typeof service.saveScope>[2] }, ctx: any) =>
       service.saveScope(args.opportunityId, args.scope, args.section ?? 'ALL', ctx),
     saveOpportunityAnswer: async (_: unknown, args: { opportunityId: number; responseId: number; revision: number; answer: string }, ctx: any) =>
@@ -61,8 +62,9 @@ export const opportunityResolvers = {
       opportunityDescription?: string | null;
       reasonCodeId?: number | null;
       estimation?: import("../../repositories/opportunity.repository").OpportunityEstimation;
+      estimationVersionId?: string;
     }, ctx: any) => service.transitionWorkflow(
-      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx, args.reasonCodeId, args.estimation
+      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx, args.reasonCodeId, args.estimation, args.estimationVersionId
     ),
 
     createOpportunity: async (
