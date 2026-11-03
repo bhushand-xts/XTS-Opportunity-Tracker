@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { afterEach, beforeEach, mock, test } from 'node:test';
 import * as service from './opportunity.service';
 import type { Opportunity, OpportunityInput, RfpIntakeOpportunityInput } from '../repositories/opportunity.repository';
 import type { AccessGrant, AccessMenu } from '../lib/opportunityAccess';
@@ -9,6 +9,12 @@ import type { AccessGrant, AccessMenu } from '../lib/opportunityAccess';
 const repository = require('../repositories/opportunity.repository');
 const users = require('../integrations/userService');
 const admin = require('../integrations/adminService');
+// Workflow tests isolate notification recipient lookup as well as persistence.
+// No database lookups or emails should run after a mocked workflow save.
+beforeEach(() => {
+  mock.method(repository, 'findRoleIdByName', async () => null);
+});
+afterEach(() => mock.restoreAll());
 const menus: AccessMenu[] = [
   { menuId: 1, menuKey: 'opportunities', menuName: 'Opportunities', routePath: null, parentId: null, isActive: true },
   { menuId: 2, menuKey: 'my_approvals', menuName: 'My Approvals', routePath: '/opportunities/approvals', parentId: 1, isActive: true },
@@ -935,6 +941,15 @@ test('negotiation requires an active master reason and permits an optional descr
   await service.transitionWorkflow(10, 'START_NEGOTIATION', '', null, ctx(), 8, false);
   // Only the checkbox flag controls routing, never the description text.
   assert.deepEqual(transition.mock.calls.at(-1)!.arguments.slice(0, 3), [10, 6, 12]);
+  for (const comment of [null, '', '  ']) {
+    for (const requiresRevisedEstimation of [false, true]) {
+      await service.transitionWorkflow(10, 'START_NEGOTIATION', comment, null, ctx(), 8, requiresRevisedEstimation);
+      const args = transition.mock.calls.at(-1)!.arguments as unknown[];
+      assert.deepEqual(args.slice(0, 3), [10, requiresRevisedEstimation ? 4 : 6, requiresRevisedEstimation ? 5 : 12]);
+      assert.equal(args[5], null);
+      assert.equal((args[7] as any).reasonCodeId, 8);
+    }
+  }
 });
 
 

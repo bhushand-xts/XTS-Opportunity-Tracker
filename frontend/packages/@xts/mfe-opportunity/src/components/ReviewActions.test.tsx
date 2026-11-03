@@ -98,7 +98,8 @@ describe('persisted opportunity review actions', () => {
     const decide = vi.fn<OpportunityService['decide']>(async () => saved);
     const { onSaved } = mount(current, decide);
     const dialog = openDecision('Under Negotiation');
-    const dropdown = dialog.getByRole('combobox', { name: 'Negotiation reason (required)' });
+    const dropdown = dialog.getByRole('combobox', { name: 'Negotiation reason' });
+    expect(dropdown).toBeRequired();
     await dialog.findByRole('option', { name: 'Pricing / Budget Negotiation' });
     expect(within(dropdown).getAllByRole('option')).toHaveLength(4);
     fireEvent.change(dropdown, { target: { value: '8' } });
@@ -130,20 +131,29 @@ describe('persisted opportunity review actions', () => {
     await waitFor(() => expect(decide).toHaveBeenCalledWith(expect.objectContaining({ reason: 'Client discussion', reasonCodeId: 21, requiresRevisedEstimation: false })));
   });
 
-  it('requires a negotiation reason and allows an optional description before sending a revision request', async () => {
+  it.each([false, true])('requires a negotiation reason and permits a blank description (revision: %s)', async requiresRevisedEstimation => {
     const current = salesReview({ stageId: 5, subStageId: 11, allowedActions: ['START_NEGOTIATION'] });
     const decide = vi.fn(async () => ({ ...current, stageId: 6, subStageId: 12, allowedActions: [] }));
     mount(current, decide);
     const dialog = openDecision('Under Negotiation');
     const checkbox = dialog.getByRole('checkbox', { name: 'Requires revised estimation' });
     expect(checkbox).not.toBeChecked();
-    fireEvent.click(checkbox);
+    if (requiresRevisedEstimation) fireEvent.click(checkbox);
+    await dialog.findByRole('option', { name: 'Other' });
+    const description = dialog.getByRole('textbox', { name: 'Negotiation description (optional)' });
+    expect(description).not.toBeRequired();
     confirmReview(dialog);
     expect(decide).not.toHaveBeenCalled();
-    await dialog.findByRole('option', { name: 'Other' });
+    expect(dialog.queryByRole('alert')).not.toBeInTheDocument();
+    expect(dialog.getByRole('combobox')).toHaveAccessibleDescription('Please choose the reason for this negotiation to continue.');
+    expect(dialog.getByRole('combobox')).toHaveFocus();
+    expect(dialog.getByRole('combobox')).toHaveAttribute('aria-invalid', 'true');
+    expect(description).not.toHaveAttribute('aria-invalid', 'true');
     fireEvent.change(dialog.getByRole('combobox'), { target: { value: '21' } });
+    expect(dialog.queryByText('Please choose the reason for this negotiation to continue.')).not.toBeInTheDocument();
+    expect(dialog.getByRole('combobox')).toHaveAttribute('aria-invalid', 'false');
     confirmReview(dialog);
-    await waitFor(() => expect(decide).toHaveBeenCalledWith(expect.objectContaining({ reason: '', reasonCodeId: 21, requiresRevisedEstimation: true })));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith(expect.objectContaining({ reason: '', reasonCodeId: 21, requiresRevisedEstimation })));
   });
 
   it('clears a cancelled negotiation selection and keeps it out of other decisions', async () => {

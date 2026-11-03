@@ -41,6 +41,12 @@
 .opp-panel-icon-emerald { background: #def6e6; color: #1f7a42; }
 .opp-panel-icon-neutral { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 :is(.opportunity-root, .opp-drawer, .opp-dialog) [aria-invalid="true"] { border-color: #dc2626; }
+.opp-dialog .opp-negotiation-input[aria-invalid="true"] {
+  --ring: 0 72% 51%;
+  border-color: #dc2626;
+  outline-color: #dc2626;
+  --tw-ring-color: #dc2626;
+}
 .opp-details { border: 1px solid #d2d8ec; border-radius: 8px; background: white; overflow: hidden; }
 .opp-details > summary { cursor: pointer; padding: 8px 10px; background: #f0f3fc; color: #40568a; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .opp-details > summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
@@ -160,12 +166,10 @@
 .opp-estimation-workspace { min-width: 0; container: opp-estimate / inline-size; }
 .opp-estimation-workspace .opp-panel > :first-child { padding: 9px 12px; }
 .opp-estimation-workspace .opp-panel > :nth-child(2) { padding: 12px; }
-.opp-estimation-workspace .opp-estimation-scroll :is(th, td) { padding: 6px 8px; }
-.opp-estimation-workspace .opp-estimation-scroll th { height: 32px; }
 .opp-estimation-workspace .opp-estimation-scroll table { border-collapse: collapse; border: 1px solid hsl(var(--border)); font-variant-numeric: tabular-nums; }
-.opp-estimation-workspace .opp-estimation-scroll :is(th, td) { border: 1px solid hsl(var(--border)); text-align: center; vertical-align: middle; }
+.opp-estimation-workspace .opp-estimation-scroll :is(th, td) { padding: 6px 8px; border: 1px solid hsl(var(--border)); text-align: center; vertical-align: middle; }
 .opp-estimation-workspace .opp-estimation-scroll :is(th, td):first-child { text-align: left; }
-.opp-estimation-workspace .opp-estimation-scroll th { background: hsl(var(--muted) / .65); text-transform: none; letter-spacing: normal; }
+.opp-estimation-workspace .opp-estimation-scroll th { height: 32px; background: hsl(var(--muted) / .65); text-transform: none; letter-spacing: normal; }
 .opp-estimation-workspace .opp-estimation-scroll tbody tr.font-semibold { background: hsl(var(--muted) / .45); }
 .opp-estimation-workspace .opp-estimation-scroll input { display: block; width: 64px; max-width: 100%; height: 28px; margin-inline: auto; padding-inline: 4px; text-align: center; }
 @container opp-estimate (min-width: 720px) {
@@ -352,9 +356,8 @@
 .opp-progress-detail-label { color: #24816a; }
 .opp-stage-completion { margin-top: 4px; }
 .opp-revision-journey { margin-bottom: 14px; padding: 10px; border: 1px solid hsl(var(--primary) / .2); border-radius: 8px; background: hsl(var(--primary) / .04); }
-.opp-revision-heading { display: flex; align-items: center; gap: 7px; color: hsl(var(--primary)); font-size: 12px; line-height: 18px; }
+.opp-revision-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: hsl(var(--primary)); font-size: 12px; line-height: 18px; }
 .opp-revision-heading svg { flex-shrink: 0; }
-.opp-revision-heading { margin-bottom: 6px; }
 .opp-revision-journey summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none; color: hsl(var(--primary)); font-size: 11px; font-weight: 600; }
 .opp-revision-journey summary::-webkit-details-marker { display: none; }
 .opp-revision-journey summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; border-radius: 2px; }

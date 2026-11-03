@@ -1,6 +1,7 @@
 import { MockedProvider } from '@apollo/client/testing';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import type { Estimation } from '@xts/api-contracts';
 import { EstimationModule } from './PreparationModules';
 import { EstimationRoleDialog } from './EstimationRoleDialog';
 import { fixtureOpportunity } from '../testing/fixtures';
@@ -64,8 +65,9 @@ it('shows the phase action with an explanation when master Add permission is mis
 
 it('creates and selects a shared technical role while retaining unsaved estimate values', async () => {
   const mutation = vi.fn(() => ({ data: { createRateMaster: createdRole } }));
+  const registerDraft = vi.fn<(reader: (() => Estimation) | null) => void>();
   render(<MockedProvider mocks={[queryMock(), { request: { query: CREATE_ESTIMATION_ROLE, variables: { input: { roleName: 'QA Engineer', roleCode: 'QA', currencyId: 1, rateType: 'Monthly', defaultRate: 3200, createdBy: 101 } } }, result: mutation }]}>
-    <EstimationModule opportunity={opportunity()} onSaved={vi.fn()} readOnly={false} showActions={false} />
+    <EstimationModule opportunity={opportunity()} onSaved={vi.fn()} readOnly={false} showActions={false} registerDraft={registerDraft} />
   </MockedProvider>);
   const duration = await screen.findByRole('spinbutton', { name: 'Discovery duration in weeks' });
   fireEvent.change(duration, { target: { value: '2' } });
@@ -83,7 +85,8 @@ it('creates and selects a shared technical role while retaining unsaved estimate
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(duration).toHaveValue(2);
   expect(allocation).toHaveValue(0.5);
-  expect(screen.getByLabelText('Estimation assumptions')).toHaveValue('Draft assumptions');
+  const readDraft = registerDraft.mock.calls.at(-1)?.[0];
+  expect(readDraft?.().assumptions).toBe('Draft assumptions');
 }, 180000);
 
 it('filters roles without clearing selection and opens rate references beside setup', async () => {

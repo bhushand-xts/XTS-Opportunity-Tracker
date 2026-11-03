@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Button, Card, Checkbox, cn, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label } from '@xts/design-system';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { Button, Card, Checkbox, cn, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label, Textarea } from '@xts/design-system';
 import { toast } from 'sonner';
 import { estimationSubmissionError } from '../lib/estimationValidation';
 import type { DecisionCommand, EstimationVersion, OpportunityDetail } from '@xts/api-contracts';
@@ -7,7 +7,6 @@ import { applicableDecisions, decisionError } from '../lib/workflow';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useSave, type ConfirmationTone } from '../hooks/useSave';
 import { Field, Notice, Panel } from './ui';
-import { useCallback, useId } from 'react';
 import { useResource } from '../hooks/useResource';
 import { ArrowRight, Check, Pause, Send, X } from 'lucide-react';
 
@@ -110,19 +109,24 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
   const [decision, setDecision] = useState<DecisionCommand['decision']>(), [reason, setReason] = useState(''), [confirmed, setConfirmed] = useState(false), [validation, setValidation] = useState<string>();
   const [holdReasonId, setHoldReasonId] = useState('');
   const [negotiationReasonId, setNegotiationReasonId] = useState('');
+  const [negotiationAttempted, setNegotiationAttempted] = useState(false);
+  const negotiationReasonRef = useRef<HTMLSelectElement>(null);
   const [requiresRevisedEstimation, setRequiresRevisedEstimation] = useState(false);
   const [completed, setCompleted] = useState<{ id: string; sourceStageId: OpportunityDetail['stageId']; sourceState: OpportunityDetail['state']; stageId: OpportunityDetail['stageId']; subStageId: OpportunityDetail['subStageId']; decision: DecisionCommand['decision'] }>();
   useEffect(() => {
+    setNegotiationAttempted(false);
     setDecision(undefined); setReason(''); setHoldReasonId(''); setNegotiationReasonId(''); setRequiresRevisedEstimation(false); setConfirmed(false); setValidation(undefined);
   }, [o.id, o.stageId, o.subStageId]);
   const holdReasonInputId = useId();
   const negotiationReasonInputId = useId(), negotiationDescriptionId = useId();
+  const negotiationNoteId = useId();
   const revisedEstimationInputId = useId();
   const negotiating = decision === 'START_NEGOTIATION';
   const revisionApprovalPending = o.stageId === 4 && o.subStageId === 5;
   const loadNegotiationReasons = useCallback(() => service.negotiationReasons ? service.negotiationReasons() : Promise.reject(new Error('Negotiation reasons are not available. Please retry.')), [service]);
   const negotiationReasons = useResource(loadNegotiationReasons, negotiating || revisionApprovalPending);
   const negotiationReason = negotiationReasons.data?.find(option => String(option.id) === negotiationReasonId);
+  const missingNegotiationReason = negotiationAttempted && !negotiationReason;
   const revisionRequestReason = negotiationReasons.data?.find(option => option.id === o.holdReasonCodeId);
   const revisionRequest = [...(o.stageHistory ?? [])].reverse().find(event => event.stageId === 4 && event.subStageId === 5);
   const staged = o.stageId != null;
@@ -149,12 +153,16 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
 
   async function decide() {
     if (!decision) return;
-    const error = negotiating && !negotiationReason ? 'Select a negotiation reason.' : decision === 'SUBMIT_ESTIMATE' && !selectedVersion ? 'Select a saved estimation before submitting to CEO.' : decisionError(o, decision, reason, staged || confirmed, selectedReason?.id);
+    const error = decision === 'SUBMIT_ESTIMATE' && !selectedVersion ? 'Select a saved estimation before submitting to CEO.' : decisionError(o, decision, reason, staged || confirmed, selectedReason?.id);
     setValidation(error ?? undefined);
     if (error) return;
     if (decision === 'ESTIMATE_APPROVE') {
       try { getEstimation?.(); }
       catch (error) { setValidation(error instanceof Error ? error.message : 'Save the opportunity rates before approving.'); return; }
+    }
+    if (negotiating) {
+      setNegotiationAttempted(true);
+      if (!negotiationReason) { negotiationReasonRef.current?.focus(); return; }
     }
     const note = reason.trim();
     const command = {
@@ -198,6 +206,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
           }
           toast.dismiss(`estimate-validation-${o.id}`);
         }
+        setNegotiationAttempted(false);
         setDecision(action); setReason(''); setHoldReasonId(''); setNegotiationReasonId(''); setRequiresRevisedEstimation(false); setConfirmed(false); setValidation(undefined);
       }}><Icon className="opp-review-button-icon" aria-hidden="true" /><span className="opp-review-button-label">{compact ? COMPACT_LABELS[action] ?? LABELS[action] : LABELS[action]}</span></Button>;
   };
@@ -230,14 +239,16 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
           {revisionRequest?.comment && <p className="whitespace-pre-wrap break-words text-muted-foreground">{revisionRequest.comment}</p>}
         </div>}
         {negotiating && <div className="space-y-2">
-          <Label htmlFor={negotiationReasonInputId}>Negotiation reason (required)</Label>
-          <select id={negotiationReasonInputId} value={negotiationReasonId} required disabled={mutation.saving || negotiationReasons.loading || Boolean(negotiationReasons.error)}
-            aria-describedby={negotiationReason?.description ? negotiationDescriptionId : undefined}
+          <Label htmlFor={negotiationReasonInputId}>Negotiation reason <span className="text-destructive" aria-hidden="true">*</span></Label>
+          <select ref={negotiationReasonRef} id={negotiationReasonInputId} value={negotiationReasonId} required disabled={mutation.saving || negotiationReasons.loading || Boolean(negotiationReasons.error)}
+            aria-invalid={missingNegotiationReason}
+            aria-describedby={missingNegotiationReason ? `${negotiationReasonInputId}-hint` : negotiationReason?.description ? negotiationDescriptionId : undefined}
             onChange={event => setNegotiationReasonId(event.target.value)}
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+            className="opp-negotiation-input h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
             <option value="">{negotiationReasons.loading ? 'Loading negotiation reasons…' : 'Select a negotiation reason'}</option>
             {negotiationReasons.data?.map(option => <option key={option.id} value={String(option.id)}>{option.name}</option>)}
           </select>
+          {missingNegotiationReason && <p id={`${negotiationReasonInputId}-hint`} role="status" className="text-xs text-muted-foreground">Please choose the reason for this negotiation to continue.</p>}
           {negotiationReason?.description && <p id={negotiationDescriptionId} className="rounded-md bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">{negotiationReason.description}</p>}
           {negotiationReasons.error && <Notice error={negotiationReasons.error} retry={negotiationReasons.reload} />}
           {!negotiationReasons.loading && !negotiationReasons.error && negotiationReasons.data?.length === 0 && <p className="text-sm text-muted-foreground">No active negotiation reasons are available.</p>}
@@ -249,7 +260,11 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
         </div>}
         {decision === 'SUBMIT_ESTIMATE' && selectedVersion && <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm"><strong>{selectedVersion.name}</strong> ? V{selectedVersion.version}</p>}
         {requiresCode && <div className="space-y-1"><Label htmlFor={holdReasonInputId}>{reasonLabel} reason (required)</Label><select id={holdReasonInputId} value={holdReasonId} required disabled={mutation.saving || holdReasons.loading || Boolean(holdReasons.error)} onChange={event => setHoldReasonId(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"><option value="">{holdReasons.loading ? 'Loading hold reasons…' : 'Select a reason'}</option>{holdReasons.data?.map(option => <option key={option.id} value={String(option.id)}>{option.name}</option>)}</select>{selectedReason?.description && <p className="text-xs text-muted-foreground">{selectedReason.description}</p>}{holdReasons.error && <Notice error={holdReasons.error} retry={holdReasons.reload} />}{!holdReasons.loading && !holdReasons.error && holdReasons.data?.length === 0 && <p className="text-sm text-muted-foreground">No active reasons are available.</p>}</div>}
-        {decision !== 'RESUBMIT' && <Field label={negotiating ? 'Negotiation description' : requiresCode ? `${reasonLabel} description (required)` : decision?.endsWith('REQUEST_CHANGES') ? 'Changes requested (required)' : requiresReason ? 'Reason (required)' : 'Decision note (optional)'} value={reason} onChange={setReason} multiline disabled={mutation.saving} required={Boolean(requiresReason)} />}
+        {negotiating ? <div className="space-y-1">
+          <Label htmlFor={negotiationNoteId}>Negotiation description (optional)</Label>
+          <Textarea id={negotiationNoteId} value={reason} onChange={event => setReason(event.target.value)} disabled={mutation.saving}
+            placeholder="Briefly describe what is being negotiated." />
+        </div> : decision !== 'RESUBMIT' && <Field label={requiresCode ? `${reasonLabel} description (required)` : decision?.endsWith('REQUEST_CHANGES') ? 'Changes requested (required)' : requiresReason ? 'Reason (required)' : 'Decision note'} value={reason} onChange={setReason} multiline disabled={mutation.saving} required={Boolean(requiresReason)} />}
         {!staged && <Label className="flex items-start gap-3 leading-relaxed">
           <Checkbox checked={confirmed} onCheckedChange={v => setConfirmed(v === true)} disabled={mutation.saving} />
           I have reviewed this opportunity.
