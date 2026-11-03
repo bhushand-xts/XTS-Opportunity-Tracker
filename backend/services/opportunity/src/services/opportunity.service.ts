@@ -464,7 +464,7 @@ async function transitionWorkflow(
   estimation?: repository.OpportunityEstimation
 ) {
   const before = await repository.findById(opportunityId);
-  const result = await transitionWorkflowCore(opportunityId, action, comment, opportunityDescription, ctx, reasonCodeId);
+  const result = await transitionWorkflowCore(opportunityId, action, comment, opportunityDescription, ctx, reasonCodeId, estimation);
   if (result && before) {
     const userId = (await accessFor(ctx)).userId;
     void notifyWorkflowTransition(opportunityId, userId, before.stageId, comment);
@@ -478,7 +478,8 @@ async function transitionWorkflowCore(
   comment: string | null,
   opportunityDescription: string | null,
   ctx: any,
-  reasonCodeId?: number | null
+  reasonCodeId?: number | null,
+  estimation?: repository.OpportunityEstimation
 ) {
   const access = await accessFor(ctx), userId = access.userId;
   const opportunity = await repository.findById(opportunityId);
