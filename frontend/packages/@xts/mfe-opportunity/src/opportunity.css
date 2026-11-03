@@ -155,13 +155,20 @@
   .opp-assessment-counts { gap: 8px; }
   .opp-assessment-counts strong { font-size: 24px; }
 }
-/* The Estimate tab's own grid used a plain Tailwind `lg:grid-cols-[2fr_1fr]` (a *viewport*
-   breakpoint) while living inside a *container*-width-constrained workspace: at a wide-enough
-   viewport the two columns would appear even though the actual column had far less than 1024px
-   to work with, so the wide effort-matrix table forced the grid wider than its track and it
-   visually overlapped the page's own right-hand sidebar. A container query reacts to the
-   workspace's real width instead, matching how .opp-assessment-layout handles the same case. */
-@container (min-width: 1000px) { .opp-estimation-layout { grid-template-columns: minmax(0,2fr) minmax(260px,320px); } }
+.opp-estimation-workspace { min-width: 0; container: opp-estimate / inline-size; }
+.opp-estimation-workspace .opp-panel > :first-child { padding: 9px 12px; }
+.opp-estimation-workspace .opp-panel > :nth-child(2) { padding: 12px; }
+.opp-estimation-workspace .opp-estimation-scroll :is(th, td) { padding: 6px 8px; }
+.opp-estimation-workspace .opp-estimation-scroll th { height: 32px; }
+.opp-estimation-workspace .opp-estimation-scroll table { border-collapse: collapse; border: 1px solid hsl(var(--border)); font-variant-numeric: tabular-nums; }
+.opp-estimation-workspace .opp-estimation-scroll :is(th, td) { border: 1px solid hsl(var(--border)); text-align: center; vertical-align: middle; }
+.opp-estimation-workspace .opp-estimation-scroll :is(th, td):first-child { text-align: left; }
+.opp-estimation-workspace .opp-estimation-scroll th { background: hsl(var(--muted) / .65); text-transform: none; letter-spacing: normal; }
+.opp-estimation-workspace .opp-estimation-scroll tbody tr.font-semibold { background: hsl(var(--muted) / .45); }
+.opp-estimation-workspace .opp-estimation-scroll input { display: block; width: 64px; max-width: 100%; height: 28px; margin-inline: auto; padding-inline: 4px; text-align: center; }
+@container opp-estimate (min-width: 720px) {
+  .opp-estimation-controls { grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; }
+}
 @container (max-width: 760px) { .opp-assessment-layout .opp-assessment-items { grid-template-columns: minmax(0,1fr); } }
 /* The "Assessment summary" aside becomes the full-width column once .opp-assessment-layout drops
    to one column on a narrower screen — at that point it has plenty of width to put the donut

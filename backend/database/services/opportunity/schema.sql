@@ -143,6 +143,8 @@ CREATE TABLE tbl_opportunity_estimation_matrix (
   rows JSONB NOT NULL CHECK (jsonb_typeof(rows) = 'array'),
   assumptions TEXT NOT NULL DEFAULT '',
   total NUMERIC(18,2) NOT NULL CHECK (total >= 0),
+  status VARCHAR(16) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'SUBMITTED')),
+  draft_grid JSONB CHECK (draft_grid IS NULL OR jsonb_typeof(draft_grid) = 'object'),
   updated_by INTEGER NOT NULL,
   updated_dt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -227,3 +229,20 @@ CREATE TABLE tbl_opportunity_alignment_tracker (
   is_active BOOLEAN NOT NULL
 );
 CREATE INDEX idx_opportunity_alignment_tracker_history ON tbl_opportunity_alignment_tracker (opportunity_id, tracker_id DESC);
+
+-- Immutable named estimates and exact snapshots submitted for review.
+CREATE TABLE IF NOT EXISTS tbl_opportunity_estimation_versions (
+  estimation_version_id BIGSERIAL PRIMARY KEY,
+  opportunity_id INTEGER NOT NULL REFERENCES tbl_opportunity(opportunity_id),
+  version INTEGER NOT NULL CHECK (version > 0),
+  name VARCHAR(150) NOT NULL,
+  status VARCHAR(16) NOT NULL CHECK (status IN ('SAVED', 'SUBMITTED')),
+  snapshot JSONB NOT NULL CHECK (jsonb_typeof(snapshot) = 'object'),
+  currency_code VARCHAR(20) NOT NULL,
+  person_weeks NUMERIC(20,4) NOT NULL,
+  created_by INTEGER NOT NULL,
+  created_dt TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  request_key VARCHAR(100) NOT NULL,
+  UNIQUE (opportunity_id, version),
+  UNIQUE (opportunity_id, request_key)
+);

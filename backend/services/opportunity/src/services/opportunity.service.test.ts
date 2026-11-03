@@ -248,7 +248,8 @@ test('workflow authorization follows roles with assigned menu View and retains t
   await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx()), /role/);
   actorRole = 'estimation_team';
   grants = [...navigationGrants, { menuId: 4, permissionKey: 'edit' }];
-  t.mock.method(repository, 'findEstimation', async () => ({ revision: 1, rows: [{ id: '1' }] }));
+  t.mock.method(users, 'findActiveUsersByRole', async () => [{ id: 8, roleId: 20, isActive: true }]);
+  t.mock.method(repository, 'findEstimation', async () => ({ revision: 1, rows: [{ id: 'grid-1-PM', workItem: 'Engineering', hours: '40', people: 1, hourlyRate: '25' }], assumptions: '', total: '1000', grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '1' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] } }));
   await service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx());
   assert.deepEqual(transition.mock.calls.at(-1)?.arguments.slice(0, 3), [10, 4, 8]);
   current = { ...record, stageId: 4, subStageId: 8 };
@@ -612,6 +613,65 @@ test('parent View does not grant Pipeline access or inherit sibling CRUD and rol
   await assert.rejects(service.list(ctx(), 'UNKNOWN'), /permission/);
 });
 
+test('submission validates and saves pending edits while retaining role-based CEO review', async t => {
+  const current = { ...record, stageId: 3, subStageId: 7 };
+  t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: navigationGrants, role: role(999, 'estimation_team') }));
+  t.mock.method(repository, 'findById', async () => current);
+  const approverLookup = t.mock.method(users, 'findActiveUsersByRole', async () => [{ id: 8, roleId: 20, isActive: true }, { id: 9, roleId: 21, isActive: true }]);
+  t.mock.method(repository, 'findEstimation', async () => null);
+  const save = t.mock.method(repository, 'saveEstimation', async () => {});
+  const transition = t.mock.method(repository, 'transitionWorkflow', async () => current);
+  const estimate = { revision: 0, rows: [{ id: 'grid-1-PM', workItem: 'Engineering', hours: '80', people: 1, hourlyRate: '25' }], assumptions: 'Pending edits', total: '0', grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] } };
+  await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx()), /complete the estimate/);
+  await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx(), null, { ...estimate, grid: { ...estimate.grid, allocations: [{ phaseId: 1, roleCode: 'PM', effort: '' }] } }), /non-negative effort/);
+  await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx(), null, { ...estimate, grid: { ...estimate.grid, durations: [{ phaseId: 1, weeks: '0' }] } }), /positive duration/);
+  await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx(), null, { ...estimate, rows: [{ ...estimate.rows[0], hourlyRate: '0' }] }), /positive rate/);
+  assert.equal(save.mock.callCount(), 0);
+  assert.equal(transition.mock.callCount(), 0);
+  await service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', 'Ready', null, ctx(), null, estimate);
+  assert.equal(save.mock.calls[0].arguments[1].total, '2000.00');
+  assert.equal(approverLookup.mock.callCount(), 0); // Reviewer count must not block role-based submission.
+  assert.deepEqual(transition.mock.calls[0].arguments.slice(0, 6), [10, 4, 8, null, 7, 'Ready']);
+  assert.deepEqual(transition.mock.calls[0].arguments[8], { stageId: 3, subStageId: 7, estimationRevision: 1 });
+  save.mock.mockImplementation(async () => { throw new Error('The estimation changed. Refresh before saving.'); });
+  await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx(), null, estimate), /changed/);
+  assert.equal(transition.mock.callCount(), 1);
+});
+
+test('named versions validate completion and permissions and compute totals without moving the workflow', async t => {
+  let current = { ...record, stageId: 3, subStageId: 7 };
+  t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: navigationGrants, role: role(999, 'estimation_team') }));
+  t.mock.method(repository, 'findById', async () => current);
+  const save = t.mock.method(repository, 'saveEstimationVersion', async () => ({ id: '1', version: 1 }));
+  const transition = t.mock.method(repository, 'transitionWorkflow', async () => current);
+  const estimate = { revision: 0, rows: [{ id: 'grid-1-PM', workItem: 'Engineering', hours: '40', people: 1, hourlyRate: '25' }], assumptions: '', total: '1', grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '1' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] } };
+  await assert.rejects(service.saveEstimationVersion(10, estimate, ' ', 'request-1', ctx()), /name/);
+  await assert.rejects(service.saveEstimationVersion(10, { ...estimate, rows: [] }, 'Baseline', 'request-1', ctx()), /complete the estimate/);
+  await service.saveEstimationVersion(10, estimate, ' Baseline ', 'request-1', ctx());
+  assert.equal(save.mock.calls[0].arguments[1].total, '1000.00');
+  assert.equal(save.mock.calls[0].arguments[2], 'Baseline');
+  assert.equal(transition.mock.callCount(), 0);
+  current = { ...current, stageId: 4, subStageId: 8 };
+  await assert.rejects(service.saveEstimationVersion(10, estimate, 'Baseline', 'request-1', ctx()), /in-progress/);
+});
+
+test('incomplete estimation drafts preserve blank grid inputs without a workflow transition', async t => {
+  const current = { ...record, stageId: 3, subStageId: 7 };
+  t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
+  t.mock.method(admin, 'roleAccess', async () => ({ menus, roleAccess: navigationGrants, role: role(999, 'estimation_team') }));
+  t.mock.method(repository, 'findById', async () => current);
+  const save = t.mock.method(repository, 'saveEstimation', async () => {});
+  const transition = t.mock.method(repository, 'transitionWorkflow', async () => current);
+  const grid = { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '' }] };
+  await service.saveEstimation(10, { revision: 0, rows: [], assumptions: 'Later', total: '999', grid, status: 'SUBMITTED' }, ctx());
+  assert.deepEqual(save.mock.calls[0].arguments, [10, { revision: 0, rows: [], assumptions: 'Later', total: '0.00', grid, status: 'DRAFT' }, 7]);
+  assert.equal(transition.mock.callCount(), 0);
+  await assert.rejects(service.saveEstimation(10, { revision: 0, rows: [], assumptions: '', total: '0', grid: { ...grid, allocations: [{ phaseId: 1, roleCode: 'PM', effort: '-1' }] } }, ctx()), /non-negative duration/);
+  assert.equal(save.mock.callCount(), 1);
+});
+
 test('complete role-based flow saves estimation, reviews it, submits a bid, negotiates and closes won or lost', async t => {
   let current = { ...record };
   let actorRole = 'SH';
@@ -629,7 +689,7 @@ test('complete role-based flow saves estimation, reviews it, submits a bid, nego
     const previous = { stageId: current.stageId, subStageId: current.subStageId };
     await service.transitionWorkflow(10, action, reason ? 'Awaiting details' : null, null, ctx(), reason ? 3 : null);
     assert.deepEqual([current.stageId, current.subStageId], [stageId, subStageId]);
-    assert.deepEqual(transition.mock.calls.at(-1)?.arguments[8], previous);
+    assert.deepEqual(transition.mock.calls.at(-1)?.arguments[8], action === 'SUBMIT_ESTIMATE' ? { ...previous, estimationRevision: 1 } : previous);
   };
   await step('HOLD', 1, 3, true);
   await step('APPROVE', 2, 4);
@@ -640,6 +700,8 @@ test('complete role-based flow saves estimation, reviews it, submits a bid, nego
   assert.deepEqual(await service.allowedActions(current, ctx()), ['EDIT_ESTIMATION', 'SUBMIT_ESTIMATE', 'EDIT_SCOPE']);
   await service.saveEstimation(10, { revision: 0, rows: [{ id: 'row', workItem: 'Engineering', hours: '1.25', people: 2, hourlyRate: '100.10' }], assumptions: 'One phase', total: '0.01' }, ctx());
   assert.equal((estimation as any).total, '250.25'); // Server calculates; caller's total is ignored.
+  t.mock.method(users, 'findActiveUsersByRole', async () => [{ id: 8, roleId: 20, isActive: true }]);
+  estimation = { revision: 1, rows: [{ id: 'grid-1-PM', workItem: 'Engineering', hours: '40', people: 1, hourlyRate: '100' }], assumptions: '', total: '4000', grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '1' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] } };
   await step('SUBMIT_ESTIMATE', 4, 8);
   await assert.rejects(service.saveEstimation(10, { revision: 1, rows: [], assumptions: '', total: '' }, ctx()), /Only the Estimation Team/);
   actorRole = 'approver_gate2';
@@ -695,7 +757,7 @@ test('Sales Head can negotiate or record Won/Lost after bid submission and resum
   assert.deepEqual(transition.mock.calls.at(-1)?.arguments.slice(0, 3), [10, 5, 11]);
 });
 
-test('estimation can be submitted manually without a matrix and preserves the decision note', async t => {
+test('estimation submission requires a completed matrix as well as the estimation role and stage', async t => {
   let current = { ...record, stageId: 3, subStageId: 7 };
   let actorRole = 'estimation_team';
   t.mock.method(users, 'findUser', async () => ({ id: 7, roleId: 999, isActive: true }));
@@ -703,15 +765,15 @@ test('estimation can be submitted manually without a matrix and preserves the de
   t.mock.method(repository, 'findById', async () => current);
   const matrix = t.mock.method(repository, 'findEstimation', async () => null);
   const transition = t.mock.method(repository, 'transitionWorkflow', async (...args: unknown[]) => args);
-  await service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', '  Please review the prepared estimate.  ', null, ctx());
-  assert.deepEqual(transition.mock.calls[0].arguments.slice(0, 7), [10, 4, 8, null, 7, 'Please review the prepared estimate.', null]);
-  assert.equal(matrix.mock.calls.length, 0);
+  await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', 'Please review', null, ctx()), /complete the estimate/);
+  assert.equal(transition.mock.calls.length, 0);
+  assert.equal(matrix.mock.calls.length, 1);
   actorRole = 'SH';
   await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx()), /Estimation Team role/);
   actorRole = 'estimation_team';
   current = { ...current, stageId: 4, subStageId: 8 };
   await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx()), /in-progress estimate/);
-  assert.equal(transition.mock.calls.length, 1);
+  assert.equal(transition.mock.calls.length, 0);
 });
 
 test('post-bid Hold is rejected without writes and only Sales Head can resume existing held negotiation', async t => {

@@ -6,6 +6,8 @@ import {
   ChevronDown,
   ClipboardList,
   Info,
+  Plus,
+  Search,
   X,
 } from 'lucide-react';
 import {
@@ -29,6 +31,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
   Label,
   Select,
   SelectContent,
@@ -48,6 +54,8 @@ import type {
   AssessmentSection,
   Currency,
   Estimation,
+  EstimationGrid,
+  EstimationVersion,
   EstimateRow,
   EstimationPhase,
   OpportunityDetail,
@@ -56,6 +64,11 @@ import type {
   Scope,
 } from '@xts/api-contracts';
 import { ReviewActions } from './ReviewActions';
+import { toast } from 'sonner';
+import { estimationSubmissionError } from '../lib/estimationValidation';
+import { SavedEstimationVersions } from './SavedEstimationVersions';
+import { EstimationRateMaster } from './EstimationRateMaster';
+import { EstimationRoleDialog } from './EstimationRoleDialog';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useSave } from '../hooks/useSave';
 import { randomUUID } from '../lib/uuid';
@@ -76,6 +89,14 @@ const ESTIMATE_PHASE_MENU_KEY = 'estimate_phase_master';
 const HOURS_PER_WEEK = 40;
 function gridRowId(phaseId: number, roleCode: string) { return `grid-${phaseId}-${roleCode}`; }
 function cellKey(phaseId: number, roleCode: string) { return `${phaseId}:${roleCode}`; }
+function estimationGrid(phaseIds: Set<number>, roleCodes: Set<string>, duration: Record<number, string>, allocation: Record<string, string>): EstimationGrid {
+  const phases = [...phaseIds].sort((a, b) => a - b), roles = [...roleCodes].sort();
+  return {
+    phaseIds: phases, roleCodes: roles,
+    durations: phases.map(phaseId => ({ phaseId, weeks: duration[phaseId] ?? '' })),
+    allocations: phases.flatMap(phaseId => roles.map(roleCode => ({ phaseId, roleCode, effort: allocation[cellKey(phaseId, roleCode)] ?? '' }))),
+  };
+}
 function trimDecimal(value: number) { return String(Math.round(value * 100) / 100); }
 /** Rates already stored as "Monthly" are used as-is; any other rateType is treated as a weekly
  * figure, consistent with the formula's own 20-working-days-a-month / 5-day-week convention
@@ -84,28 +105,39 @@ function monthlyRate(role: RateMaster): number {
   return role.rateType.trim().toLowerCase() === 'monthly' ? role.defaultRate : role.defaultRate * 4;
 }
 
-/** A checkbox-based multi-select dropdown with Select all / Clear selection, and an optional
- * inline "add new" control (used for Phases, which can be created on the fly). Keeps the
- * dropdown open across checks via onSelect's preventDefault — Radix closes a menu item's parent
- * on select by default, which would make multi-selecting one item at a time unusable. */
+/** Searchable multi-select that keeps the existing menu and checkbox behavior. */
 function MultiSelectField({ label, options, selected, onToggle, onSelectAll, onClear, disabled, addControl }: {
-  label: string; options: { id: string; label: string }[]; selected: Set<string>;
+  label: string; options: { id: string; label: string; description?: string }[]; selected: Set<string>;
   onToggle: (id: string) => void; onSelectAll: () => void; onClear: () => void; disabled?: boolean; addControl?: ReactNode;
 }) {
+  const triggerId = useId();
+  const searchId = useId();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  function changeOpen(next: boolean) { setOpen(next); if (!next) setSearch(''); }
+  const visible = options.filter(option => `${option.label} ${option.description ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()));
   const summary = !selected.size ? `Select ${label.toLowerCase()}…` : selected.size === options.length && options.length > 0 ? `All ${label.toLowerCase()} (${selected.size})` : `${selected.size} selected`;
   return <div className="opp-field min-w-0 space-y-1">
-    <Label>{label}</Label>
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild><Button type="button" variant="outline" className="w-full justify-between font-normal" disabled={disabled}><span className="truncate">{summary}</span><ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden="true" /></Button></DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-72">
-        <div className="flex items-center justify-between gap-2 px-2 py-1">
-          <button type="button" className="text-xs font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50" disabled={!options.length} onClick={onSelectAll}>Select all</button>
-          <button type="button" className="text-xs font-medium text-muted-foreground hover:underline disabled:pointer-events-none disabled:opacity-50" disabled={!selected.size} onClick={onClear}>Clear selection</button>
+    <Label htmlFor={triggerId}>{label}</Label>
+    <DropdownMenu open={open} onOpenChange={changeOpen}>
+      <DropdownMenuTrigger asChild><Button id={triggerId} type="button" variant="outline" aria-label={summary} className="w-full justify-between bg-background font-normal" disabled={disabled}><span className="truncate">{summary}</span><ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden="true" /></Button></DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-72 max-w-[calc(100vw-32px)] p-1">
+        <div className="space-y-2 p-2">
+          <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold">{label}</span><div className="flex items-center gap-2"><Badge variant="muted" size="sm">{selected.size} selected</Badge><Button type="button" variant="ghost" size="icon" className="size-6 text-muted-foreground" aria-label={`Close ${label.toLowerCase()} dropdown`} onClick={() => changeOpen(false)}><X className="size-3.5" aria-hidden="true" /></Button></div></div>
+          <InputGroup className="rounded-lg border-transparent bg-muted/60 shadow-none focus-within:border-primary/40 focus-within:bg-background">
+            <InputGroupAddon><Search className="size-4 text-primary" aria-hidden="true" /></InputGroupAddon>
+            <InputGroupInput id={searchId} aria-label={`Search ${label.toLowerCase()}`} placeholder={`Find ${label.toLowerCase()}…`} value={search} onChange={event => setSearch(event.target.value)} onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }} className="h-9 text-sm" />
+            {search && <InputGroupAddon align="inline-end"><InputGroupButton size="icon-xs" aria-label={`Clear ${label.toLowerCase()} search`} onClick={() => { setSearch(''); document.getElementById(searchId)?.focus(); }}><X className="size-3" aria-hidden="true" /></InputGroupButton></InputGroupAddon>}
+          </InputGroup>
+          <div className="flex items-center justify-between gap-2">
+            <button type="button" className="text-xs font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50" disabled={!options.length} onClick={onSelectAll}>Select all</button>
+            <button type="button" className="text-xs font-medium text-muted-foreground hover:underline disabled:pointer-events-none disabled:opacity-50" disabled={!selected.size} onClick={onClear}>Clear selection</button>
+          </div>
         </div>
         <DropdownMenuSeparator />
         <div className="max-h-60 overflow-y-auto">
-          {options.map(option => <DropdownMenuCheckboxItem key={option.id} checked={selected.has(option.id)} onSelect={e => e.preventDefault()} onCheckedChange={() => onToggle(option.id)}>{option.label}</DropdownMenuCheckboxItem>)}
-          {!options.length && <p className="px-2 py-1.5 text-xs text-muted-foreground">Nothing configured yet.</p>}
+          {visible.map(option => <DropdownMenuCheckboxItem key={option.id} indicatorVariant="boxed" textValue={option.label} checked={selected.has(option.id)} className="min-h-9 py-2 data-[state=checked]:bg-primary/5" onSelect={event => event.preventDefault()} onCheckedChange={() => onToggle(option.id)}><span className="min-w-0"><span className="block break-words">{option.label}</span>{option.description && <span className="block text-xs text-muted-foreground">{option.description}</span>}</span></DropdownMenuCheckboxItem>)}
+          {!visible.length && <p className="px-3 py-4 text-center text-xs text-muted-foreground">{options.length ? 'No matching options.' : 'Nothing configured yet.'}</p>}
         </div>
         {addControl && <><DropdownMenuSeparator />{addControl}</>}
       </DropdownMenuContent>
@@ -118,11 +150,13 @@ export function EstimationModule({
   onSaved,
   readOnly,
   showActions = true,
+  registerDraft,
 }: {
   opportunity: OpportunityDetail;
   onSaved: (value: OpportunityDetail) => void;
   readOnly: boolean;
   showActions?: boolean;
+  registerDraft?: (reader: (() => Estimation) | null) => void;
 }) {
   const service = useOpportunityService();
   const mutation = useSave();
@@ -154,6 +188,8 @@ export function EstimationModule({
 
   const canViewRates = auth.hasPermission(RATE_MASTER_MENU_KEY, 'view');
   const canAddPhase = auth.hasPermission(ESTIMATE_PHASE_MENU_KEY, 'add');
+  const canAddRole = auth.hasPermission(RATE_MASTER_MENU_KEY, 'add');
+  const [addingRole, setAddingRole] = useState(false);
 
   const [createPhase, { loading: addingPhase }] = useMutation<{ createEstimationPhase: EstimationPhase }>(CREATE_ESTIMATION_PHASE, {
     refetchQueries: [{ query: GET_ESTIMATION_MASTERS }],
@@ -163,7 +199,7 @@ export function EstimationModule({
 
   const initialEstimation = o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' };
   const [draft, setDraft] = useState<Estimation>(initialEstimation);
-  const [baseline, setBaseline] = useState(() => JSON.stringify({ rows: initialEstimation.rows, assumptions: initialEstimation.assumptions }));
+  const [baseline, setBaseline] = useState<string | null>(null);
   const [validation, setValidation] = useState<string>();
   const estimationStep = o.stageId == null ? isPreparing(o) :
     o.stageId === 3 && o.subStageId === 7;
@@ -174,17 +210,24 @@ export function EstimationModule({
   const [duration, setDuration] = useState<Record<number, string>>({});
   const [allocation, setAllocation] = useState<Record<string, string>>({});
   const seededRef = useRef(false);
+  const [submissionAttempted, setSubmissionAttempted] = useState(false);
+  const validationId = useId();
 
-  // Seeds the grid's selection/duration/allocation from whatever was last saved, the first time
-  // the phase and role masters are both loaded (there's nothing to match saved rows against
-  // before then). Runs once per mount by design — not meant to re-seed on every draft edit.
+  // Seed once after the masters query completes, including an empty master list.
+  // Creating a first role later must not reset phase selections or unsaved matrix values.
   useEffect(() => {
-    if (seededRef.current || !phases.length || !roles.length) return;
+    if (seededRef.current || !masters) return;
     seededRef.current = true;
     const savedRows = o.estimation?.rows ?? [];
     const nextPhaseIds = new Set<number>(), nextRoleCodes = new Set<string>();
     const nextDuration: Record<number, string> = {}, nextAllocation: Record<string, string> = {};
-    for (const phase of phases) {
+    if (o.estimation?.grid) {
+      const grid = o.estimation.grid;
+      grid.phaseIds.forEach(id => nextPhaseIds.add(id));
+      grid.roleCodes.forEach(code => nextRoleCodes.add(code));
+      grid.durations.forEach(item => { nextDuration[item.phaseId] = item.weeks; });
+      grid.allocations.forEach(item => { nextAllocation[cellKey(item.phaseId, item.roleCode)] = item.effort; });
+    } else for (const phase of phases) {
       let used = false;
       for (const role of roles) {
         const row = savedRows.find(r => r.id === gridRowId(phase.id, role.roleCode));
@@ -194,11 +237,22 @@ export function EstimationModule({
       if (used) { nextPhaseIds.add(phase.id); nextDuration[phase.id] = '1'; }
     }
     setSelectedPhaseIds(nextPhaseIds); setSelectedRoleCodes(nextRoleCodes); setDuration(nextDuration); setAllocation(nextAllocation);
+    setBaseline(JSON.stringify({ assumptions: initialEstimation.assumptions, grid: estimationGrid(nextPhaseIds, nextRoleCodes, nextDuration, nextAllocation) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally seeds once from the loaded masters, not on every draft/row change
-  }, [phases.length, roles.length]);
+  }, [masters, phases.length, roles.length]);
 
   const activePhases = phases.filter(p => selectedPhaseIds.has(p.id));
   const activeRoles = roles.filter(r => selectedRoleCodes.has(r.roleCode));
+  const durationError = (phaseId: number) => {
+    const value = duration[phaseId] ?? '';
+    return submissionAttempted && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) <= 0) ? 'Enter weeks greater than 0.' : undefined;
+  };
+  const effortError = (phaseId: number, roleCode: string) => {
+    const value = allocation[cellKey(phaseId, roleCode)] ?? '';
+    return submissionAttempted && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0) ? 'Enter effort (0 if unused).' : undefined;
+  };
+  const rateError = (role: RateMaster) => submissionAttempted && activePhases.some(phase => Number(allocation[cellKey(phase.id, role.roleCode)]) > 0) && (!Number.isFinite(monthlyRate(role)) || monthlyRate(role) <= 0);
+
 
   // Person-week = Duration (weeks) × Resource allocation.
   function personWeek(phaseId: number, roleCode: string): number {
@@ -232,7 +286,19 @@ export function EstimationModule({
   const rows = [...gridRows, ...legacyRows];
   let total = '0.00', calculationError: string | undefined;
   try { total = estimateTotal(rows); } catch (error) { calculationError = error instanceof Error ? error.message : 'Check numeric fields.'; }
-  const dirty = JSON.stringify({ rows, assumptions: draft.assumptions }) !== baseline;
+  const grid = estimationGrid(selectedPhaseIds, selectedRoleCodes, duration, allocation);
+  // Loading/recalculating saved rows (rates, decimal formatting and row order)
+  // is not a user edit. Compare only the editable inputs after seeding finishes.
+  const dirty = editable && baseline !== null && JSON.stringify({ assumptions: draft.assumptions, grid }) !== baseline;
+  useEffect(() => {
+    registerDraft?.(() => {
+      setSubmissionAttempted(true);
+      if (!masters || mutation.saving) throw new Error('Wait for the estimate to finish loading or saving before submitting.');
+      if (calculationError) throw new Error(calculationError);
+      return { revision: draft.revision, rows, assumptions: draft.assumptions, total, grid };
+    });
+    return () => registerDraft?.(null);
+  }, [registerDraft, masters, mutation.saving, calculationError, draft.revision, draft.assumptions, total, JSON.stringify(rows), JSON.stringify(grid)]);
   useUnsaved(dirty);
 
   function togglePhase(id: number) {
@@ -266,16 +332,51 @@ export function EstimationModule({
     if (!editable) return;
     if (calculationError) { setValidation(calculationError); return; }
     setValidation(undefined);
-    const next: Estimation = { revision: draft.revision, rows, assumptions: draft.assumptions, total };
+    const next: Estimation = { revision: draft.revision, rows, assumptions: draft.assumptions, total, grid };
     await mutation.run(JSON.stringify({ estimation: next, revision: o.revision }), key => service.saveEstimation({ opportunityId: o.id, expectedRevision: o.revision, idempotencyKey: key, estimation: next }), saved => {
-      if (saved.estimation) { setDraft(saved.estimation); setBaseline(JSON.stringify({ rows: saved.estimation.rows, assumptions: saved.estimation.assumptions })); }
+      if (saved.estimation) { setDraft(saved.estimation); setBaseline(JSON.stringify({ assumptions: saved.estimation.assumptions, grid: saved.estimation.grid ?? grid })); }
       onSaved(saved);
-    }, 'Estimation saved. Overview now shows the saved revision.');
+    }, 'Estimate saved as draft.');
   }
 
-  return <>
-    <Panel title="Select phases & technical roles" description="Rows appear in the grid below as you select phases and roles." tone="indigo" icon={ClipboardList} accentIcon>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+  async function saveNamedVersion(name: string) {
+    if (!editable || mutation.saving) return false;
+    setSubmissionAttempted(true);
+    const next: Estimation = { revision: draft.revision, rows, assumptions: draft.assumptions, total, grid };
+    const error = calculationError ?? estimationSubmissionError(next);
+    if (error) { toast.error(error); return false; }
+    let succeeded = false;
+    await mutation.run(JSON.stringify({ name, estimation: next }), key => {
+      if (!service.saveEstimationVersion) throw new Error('Saved versions are not available.');
+      return service.saveEstimationVersion({ opportunityId: o.id, expectedRevision: o.revision, idempotencyKey: key, name, estimation: next });
+    }, saved => {
+      if (saved.opportunity.estimation) {
+        setDraft(saved.opportunity.estimation);
+        setBaseline(JSON.stringify({ assumptions: saved.opportunity.estimation.assumptions, grid: saved.opportunity.estimation.grid ?? grid }));
+      }
+      onSaved(saved.opportunity);
+      succeeded = true;
+    }, 'Estimation version saved.');
+    return succeeded;
+  }
+  function loadVersion(version: EstimationVersion) {
+    if (!editable || mutation.saving) return;
+    const restored = version.estimation.grid;
+    if (!restored || restored.phaseIds.some(id => !phases.some(phase => phase.id === id)) || restored.roleCodes.some(code => !roles.some(role => role.roleCode === code))) {
+      toast.error('This version contains phases or roles that are no longer active. You can still view its historical snapshot.'); return;
+    }
+    if (version.currencyCode !== o.currencyCode) { toast.error('This version uses a different currency. View its snapshot instead of loading it.'); return; }
+    setSelectedPhaseIds(new Set(restored.phaseIds)); setSelectedRoleCodes(new Set(restored.roleCodes));
+    setDuration(Object.fromEntries(restored.durations.map(item => [item.phaseId, item.weeks])));
+    setAllocation(Object.fromEntries(restored.allocations.map(item => [cellKey(item.phaseId, item.roleCode), item.effort])));
+    setDraft(previous => ({ ...previous, rows: version.estimation.rows, assumptions: version.estimation.assumptions }));
+    setSubmissionAttempted(false);
+    toast.info('Version loaded into the editor using current master rates. Save Draft to keep these inputs.');
+  }
+
+  return <div className="opp-estimation-workspace space-y-3">
+    <Panel title="Select phases & technical roles" tone="indigo" icon={ClipboardList} accentIcon headerRight={estimationStep && draft.status === 'DRAFT' ? <Badge variant="muted">Draft</Badge> : undefined}>
+      <div className="opp-estimation-controls grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
         <MultiSelectField label="Phases" options={phases.map(p => ({ id: String(p.id), label: p.phaseName }))} selected={new Set([...selectedPhaseIds].map(String))} onToggle={id => togglePhase(Number(id))} onSelectAll={selectAllPhases} onClear={clearPhases} disabled={!editable}
           addControl={editable && canAddPhase ? <div className="space-y-1.5 px-2 py-1.5" onKeyDown={e => e.stopPropagation()}>
             <p className="text-xs font-medium text-muted-foreground">Add a new phase</p>
@@ -285,21 +386,27 @@ export function EstimationModule({
             </div>
             {addPhaseError && <p role="alert" className="text-xs text-destructive">{addPhaseError}</p>}
           </div> : undefined} />
-        <MultiSelectField label="Technical roles" options={roles.map(r => ({ id: r.roleCode, label: r.roleName }))} selected={selectedRoleCodes} onToggle={toggleRole} onSelectAll={selectAllRoles} onClear={clearRoles} disabled={!editable} />
+        <MultiSelectField label="Technical roles" options={roles.map(role => ({ id: role.roleCode, label: role.roleName, description: canViewRates ? `${money(trimDecimal(role.defaultRate), currencies.find(currency => currency.currencyId === role.currencyId)?.currencyCode ?? o.currencyCode)} / ${role.rateType}` : role.roleCode }))} selected={selectedRoleCodes} onToggle={toggleRole} onSelectAll={selectAllRoles} onClear={clearRoles} disabled={!editable}
+          addControl={editable && canAddRole ? <DropdownMenuItem className="gap-2 font-medium text-primary" onSelect={() => setAddingRole(true)}><Plus className="size-4" aria-hidden="true" />Add technical role</DropdownMenuItem> : undefined} />
+        {canViewRates && <EstimationRateMaster roles={roles} currencies={currencies} currencyCode={o.currencyCode} />}
+
+      </div>
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-2 border-t pt-3 text-xs text-muted-foreground">
+        <span>Total effort <strong className="ml-2 text-sm font-semibold text-foreground">{trimDecimal(effortTotal)} person-weeks</strong></span>
+        {canViewRates && <span>Estimated cost <strong className="ml-2 text-sm font-semibold text-foreground">{calculationError ? 'Check matrix values' : money(total, o.currencyCode)}</strong></span>}
       </div>
     </Panel>
-    <div className="opp-estimation-layout mt-3 grid grid-cols-1 items-start gap-3">
       <div className="space-y-3">
-        <Panel title="Resource allocation" description="Duration in weeks per phase; each role's allocation against it" tone="indigo">
-          {!activePhases.length || !activeRoles.length ? <p className="text-sm text-muted-foreground">Select at least one phase and one technical role above to build the grid.</p> : <div className="opp-estimation-scroll"><Table><TableHeader><TableRow><TableHead>Phase</TableHead><TableHead>Duration in weeks</TableHead>{activeRoles.map(role => <TableHead key={role.roleCode}>{role.roleName}</TableHead>)}</TableRow></TableHeader>
+        <Panel title="Resource allocation" tone="indigo">
+          {!activePhases.length || !activeRoles.length ? <p className="text-sm text-muted-foreground">Select at least one phase and one technical role above to build the grid.</p> : <div className="opp-estimation-scroll"><Table><TableHeader><TableRow><TableHead>Phase</TableHead><TableHead>Duration in weeks</TableHead>{activeRoles.map(role => <TableHead key={role.roleCode}>{role.roleName}{rateError(role) && <p role="alert" className="mt-1 text-xs font-normal normal-case text-destructive">Configure a positive rate.</p>}</TableHead>)}</TableRow></TableHeader>
             <TableBody>{activePhases.map(phase => <TableRow key={phase.id}>
               <TableCell className="font-medium">{phase.phaseName}</TableCell>
-              <TableCell>{editable ? <Input aria-label={`${phase.phaseName} duration in weeks`} type="number" min="0" step="0.5" className="w-20" value={duration[phase.id] ?? ''} onChange={e => setDuration(d => ({ ...d, [phase.id]: e.target.value }))} disabled={mutation.saving} /> : duration[phase.id] ?? '0'}</TableCell>
-              {activeRoles.map(role => <TableCell key={role.roleCode}>{editable ? <Input aria-label={`${phase.phaseName} — ${role.roleName} resource allocation`} type="number" min="0" step="0.05" className="w-20" value={allocation[cellKey(phase.id, role.roleCode)] ?? ''} onChange={e => setAllocation(a => ({ ...a, [cellKey(phase.id, role.roleCode)]: e.target.value }))} disabled={mutation.saving} /> : allocation[cellKey(phase.id, role.roleCode)] ?? '0'}</TableCell>)}
+              <TableCell>{editable ? <Input aria-invalid={Boolean(durationError(phase.id))} aria-describedby={durationError(phase.id) ? `${validationId}-duration-${phase.id}` : undefined} aria-label={`${phase.phaseName} duration in weeks`} type="number" min="0" step="0.5" className="w-20" value={duration[phase.id] ?? ''} onChange={e => setDuration(d => ({ ...d, [phase.id]: e.target.value }))} disabled={mutation.saving} /> : duration[phase.id] ?? '0'}{editable && durationError(phase.id) && <p id={`${validationId}-duration-${phase.id}`} role="alert" className="mt-1 text-xs text-destructive">{durationError(phase.id)}</p>}</TableCell>
+              {activeRoles.map(role => <TableCell key={role.roleCode}>{editable ? <Input aria-invalid={Boolean(effortError(phase.id, role.roleCode))} aria-describedby={effortError(phase.id, role.roleCode) ? `${validationId}-effort-${phase.id}-${role.roleCode}` : undefined} aria-label={`${phase.phaseName} — ${role.roleName} resource allocation`} type="number" min="0" step="0.05" className="w-20" value={allocation[cellKey(phase.id, role.roleCode)] ?? ''} onChange={e => setAllocation(a => ({ ...a, [cellKey(phase.id, role.roleCode)]: e.target.value }))} disabled={mutation.saving} /> : allocation[cellKey(phase.id, role.roleCode)] ?? '0'}{editable && effortError(phase.id, role.roleCode) && <p id={`${validationId}-effort-${phase.id}-${role.roleCode}`} role="alert" className="mt-1 text-xs text-destructive">{effortError(phase.id, role.roleCode)}</p>}</TableCell>)}
             </TableRow>)}</TableBody>
           </Table></div>}
         </Panel>
-        <Panel title="Person-weeks" description="Duration × Resource allocation — read-only" tone="teal">
+        <Panel title="Person-weeks" tone="teal">
           {!activePhases.length || !activeRoles.length ? <p className="text-sm text-muted-foreground">Nothing to show yet.</p> : <div className="opp-estimation-scroll"><Table><TableHeader><TableRow><TableHead>Phase</TableHead>{activeRoles.map(role => <TableHead key={role.roleCode}>{role.roleName}</TableHead>)}<TableHead>Total</TableHead></TableRow></TableHeader>
             <TableBody>
               {activePhases.map(phase => <TableRow key={phase.id}><TableCell className="font-medium">{phase.phaseName}</TableCell>{activeRoles.map(role => <TableCell key={role.roleCode}>{trimDecimal(personWeek(phase.id, role.roleCode))}</TableCell>)}<TableCell className="font-semibold">{trimDecimal(activeRoles.reduce((s, r) => s + personWeek(phase.id, r.roleCode), 0))}</TableCell></TableRow>)}
@@ -307,7 +414,7 @@ export function EstimationModule({
             </TableBody>
           </Table></div>}
         </Panel>
-        <Panel title="Person-weeks to cost" description="(Monthly rate ÷ 20) × (Person-week × 5)" tone="amber">
+        <Panel title="Person-weeks to cost" tone="amber">
           {!activePhases.length || !activeRoles.length ? <p className="text-sm text-muted-foreground">Nothing to show yet.</p> : <div className="opp-estimation-scroll"><Table><TableHeader><TableRow><TableHead>Phase</TableHead>{activeRoles.map(role => <TableHead key={role.roleCode}>{role.roleName}</TableHead>)}<TableHead>Total</TableHead></TableRow></TableHeader>
             <TableBody>
               {activePhases.map(phase => <TableRow key={phase.id}><TableCell className="font-medium">{phase.phaseName}</TableCell>{activeRoles.map(role => <TableCell key={role.roleCode}>{money(trimDecimal(cellCost(phase.id, role.roleCode, role)), o.currencyCode)}</TableCell>)}<TableCell className="font-semibold">{money(trimDecimal(activeRoles.reduce((s, r) => s + cellCost(phase.id, r.roleCode, r), 0)), o.currencyCode)}</TableCell></TableRow>)}
@@ -316,21 +423,18 @@ export function EstimationModule({
           </Table></div>}
         </Panel>
         {legacyRows.length > 0 && <p className="text-xs text-muted-foreground">{legacyRows.length} previously saved item{legacyRows.length === 1 ? '' : 's'} not tied to a phase/role {legacyRows.length === 1 ? 'is' : 'are'} preserved and included in the total, though no longer editable here.</p>}
-        <div><Field label="Estimation assumptions" value={draft.assumptions} onChange={v => setDraft(d => ({ ...d, assumptions: v }))} multiline disabled={!editable || mutation.saving} /></div>
-        {editable && <div className="flex justify-end"><Button type="button" disabled={mutation.saving} onClick={() => void save()}>Save estimation</Button></div>}
         {(validation || calculationError) && <Notice error={validation ?? calculationError!} />}{mutation.error && <Notice error={mutation.error} />}
       </div>
-      <aside className="space-y-3">
-        {canViewRates && <Panel title="Rate master" description="Reference rates — managed in Administration, read-only here" tone="amber">
-          <Table><TableHeader><TableRow><TableHead>Role</TableHead><TableHead>Rate</TableHead></TableRow></TableHeader><TableBody>{roles.map(role => <TableRow key={role.roleCode}><TableCell>{role.roleName}</TableCell><TableCell>{money(trimDecimal(role.defaultRate), currencies.find(c => c.currencyId === role.currencyId)?.currencyCode ?? o.currencyCode)} / {role.rateType}</TableCell></TableRow>)}{!roles.length && <TableRow><TableCell colSpan={2}>No active rates configured.</TableCell></TableRow>}</TableBody></Table>
-        </Panel>}
-        <Panel title="Estimate summary" tone="violet">
-          <Values values={[['Total effort', `${trimDecimal(effortTotal)} person-weeks`], ...(canViewRates ? ([['Estimated cost', calculationError ? 'Check matrix values' : money(total, o.currencyCode)]] as [string, string][]) : [])]} />
-        </Panel>
-      </aside>
-    </div>
-    {showActions && o.allowedActions.includes('SUBMIT_ESTIMATE') && !dirty && <ReviewActions opportunity={o} onSaved={onSaved} />}
-  </>;
+    <SavedEstimationVersions opportunityId={o.id} revision={draft.revision} editable={editable} saving={mutation.saving} dirty={dirty} onSave={saveNamedVersion} onLoad={loadVersion}
+      draftAction={<Button type="button" variant="outline" disabled={mutation.saving} onClick={() => void save()}>Save Draft</Button>}
+      submitAction={showActions && o.allowedActions.includes('SUBMIT_ESTIMATE') ? <div className="shrink-0 [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-auto [&_button]:!whitespace-nowrap"><ReviewActions opportunity={o} onSaved={onSaved} variant="toolbar" getEstimation={() => {
+        setSubmissionAttempted(true);
+        if (!masters || mutation.saving) throw new Error('Wait for the estimate to finish loading or saving before submitting.');
+        if (calculationError) throw new Error(calculationError);
+        return { revision: draft.revision, rows, assumptions: draft.assumptions, total, grid };
+      }} /></div> : undefined} />
+  {addingRole && editable && canAddRole && <EstimationRoleDialog open onOpenChange={setAddingRole} currencies={currencies.filter(currency => currency.isActive)} roles={masters?.rateMasters ?? []} defaultCurrencyId={currencies.find(currency => currency.currencyCode === o.currencyCode && currency.isActive)?.currencyId} onCreated={role => setSelectedRoleCodes(previous => new Set(previous).add(role.roleCode))} />}
+  </div>;
 }
 const SEVERITY_BADGE: Record<RiskSeverity, 'success' | 'warning' | 'critical'> = { LOW: 'success', MEDIUM: 'warning', HIGH: 'critical' };
 const SEVERITY_COLOR: Record<RiskSeverity, string> = { LOW: '#089b6a', MEDIUM: '#f59e0b', HIGH: '#ef4444' };

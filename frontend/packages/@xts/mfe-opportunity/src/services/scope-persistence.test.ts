@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { productionOpportunityService } from './OpportunityService';
 import { createLocalWorkflowService } from './localWorkflowService';
-import { GET_OPPORTUNITY, SAVE_OPPORTUNITY_SCOPE } from './opportunity.queries';
+import { GET_OPPORTUNITY, SAVE_OPPORTUNITY_SCOPE, SAVE_OPPORTUNITY_ESTIMATION, TRANSITION_OPPORTUNITY, GET_ESTIMATION_VERSIONS, SAVE_ESTIMATION_VERSION } from './opportunity.queries';
 import { fixtureOpportunity } from '../testing/fixtures';
 
 const api = vi.hoisted(() => ({ query: vi.fn(), mutate: vi.fn() }));
@@ -18,6 +18,29 @@ it('validates scope reading and saving against the real backend schema', () => {
   const schema = buildSchema(`${adminTypes} ${source.match(/`([\s\S]*)`/)![1]}`);
   expect(validate(schema, SAVE_OPPORTUNITY_SCOPE)).toEqual([]);
   expect(validate(schema, GET_OPPORTUNITY)).toEqual([]);
+  expect(validate(schema, SAVE_OPPORTUNITY_ESTIMATION)).toEqual([]);
+  expect(validate(schema, TRANSITION_OPPORTUNITY)).toEqual([]);
+  expect(validate(schema, GET_ESTIMATION_VERSIONS)).toEqual([]);
+  expect(validate(schema, SAVE_ESTIMATION_VERSION)).toEqual([]);
+});
+
+it('persists an incomplete draft grid through GraphQL and reloads its database status', async () => {
+  const grid = { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '' }] };
+  const estimation = { revision: 0, rows: [], assumptions: 'Continue later', total: '0.00', grid };
+  const persisted = { ...estimation, revision: 1, status: 'DRAFT' };
+  api.mutate.mockResolvedValue({ data: { saveOpportunityEstimation: { opportunityId: 10 } } });
+  api.query.mockResolvedValueOnce({ data: { opportunity: { opportunityId: 10, stageId: 3, subStageId: 7, estimation: persisted, proposalQuestions: [], proposalQuestionIds: [], contacts: [] } } }).mockResolvedValueOnce({ data: { userList: [], rolesList: [] } });
+  const saved = await productionOpportunityService.saveEstimation({ opportunityId: '10', expectedRevision: 1, idempotencyKey: 'draft', estimation });
+  expect(api.mutate).toHaveBeenCalledWith({ mutation: SAVE_OPPORTUNITY_ESTIMATION, variables: { opportunityId: 10, estimation: { revision: 0, rows: [], assumptions: 'Continue later', grid } }, errorPolicy: 'none' });
+  expect(saved.estimation).toEqual(persisted);
+  expect([saved.stageId, saved.subStageId]).toEqual([3, 7]);
+  expect(localStorage.length).toBe(0);
+});
+
+it('does not confirm a draft when the server fails to save it', async () => {
+  api.mutate.mockRejectedValue(new Error('Database unavailable'));
+  await expect(productionOpportunityService.saveEstimation({ opportunityId: '10', expectedRevision: 1, idempotencyKey: 'draft', estimation: { revision: 0, rows: [], assumptions: '', total: '0' } })).rejects.toThrow('Database unavailable');
+  expect(api.query).not.toHaveBeenCalled();
 });
 
 it('saves the selected section through GraphQL and reloads its actual persisted IDs and counts', async () => {

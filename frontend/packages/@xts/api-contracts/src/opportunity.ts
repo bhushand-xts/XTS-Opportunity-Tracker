@@ -47,7 +47,18 @@ export interface OpportunitySummary {
   revision: number; packageRevision: number | null; allowedActions: Action[];
 }
 export interface EstimateRow { id: string; workItem: string; hours: Decimal; people: number; hourlyRate: Decimal; }
-export interface Estimation { revision: number; rows: EstimateRow[]; assumptions: string; total: Decimal; }
+export interface EstimationGrid {
+  phaseIds: number[];
+  roleCodes: string[];
+  durations: { phaseId: number; weeks: string }[];
+  allocations: { phaseId: number; roleCode: string; effort: string }[];
+}
+export interface Estimation { revision: number; rows: EstimateRow[]; assumptions: string; total: Decimal; status?: 'DRAFT' | 'SUBMITTED'; grid?: EstimationGrid | null; }
+export interface EstimationVersion {
+  id: string; version: number; name: string; status: 'SAVED' | 'SUBMITTED';
+  currencyCode: string; personWeeks: string; createdBy: number; createdAt: string;
+  estimation: Estimation;
+}
 export type RiskSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
 export interface AlignmentItem { id: string; text: string; }
 export interface RiskItem { id: string; description: string; severity: RiskSeverity; }
@@ -78,6 +89,7 @@ export interface VersionCommand { opportunityId: string; expectedRevision: numbe
 export interface ResponseCommand extends VersionCommand { responseId: string; responseRevision: number; }
 export interface DecisionCommand extends VersionCommand {
   packageRevision: number | null;
+  estimation?: Estimation;
   expectedStageId?: number | null; expectedSubStageId?: number | null;
   reasonCodeId?: number | null;
   decision: 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT';

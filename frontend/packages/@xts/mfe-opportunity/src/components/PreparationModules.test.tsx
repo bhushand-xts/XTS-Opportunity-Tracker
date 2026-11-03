@@ -9,6 +9,9 @@ import { fixtureOpportunity } from '../testing/fixtures';
 import { OpportunityServiceContext, productionOpportunityService } from '../services/OpportunityService';
 import { GET_ESTIMATION_MASTERS } from '../services/estimationMasters.queries';
 import { EstimationModule, ScopeModule } from './PreparationModules';
+import { toast } from 'sonner';
+import { MemoryRouter } from 'react-router-dom';
+import { UnsavedProvider, useUnsaved } from '../hooks/useUnsaved';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -20,6 +23,86 @@ const mastersData = {
 const mastersMock = { request: { query: GET_ESTIMATION_MASTERS }, result: { data: mastersData }, maxUsageCount: 100 };
 function withProviders(children: React.ReactNode) { return <MockedProvider mocks={[mastersMock]}>{children}</MockedProvider>; }
 const initial = () => fixtureOpportunity({ stageId: 3, subStageId: 7, state: 'IN_PROGRESS', estimation: null, allowedActions: ['EDIT_ESTIMATION', 'SUBMIT_ESTIMATE'] });
+
+it('groups draft, named save and submission together while retaining first-click validation of edits', async () => {
+  const notify = vi.spyOn(toast, 'error').mockImplementation(() => 'validation');
+  const grid = { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] };
+  const start = { ...initial(), estimation: { revision: 1, rows: [], assumptions: '', total: '0.00', grid } };
+  render(withProviders(<OpportunityServiceContext.Provider value={{ ...productionOpportunityService, estimationVersions: vi.fn(async () => []) }}><EstimationModule opportunity={start} onSaved={vi.fn()} readOnly={false} /></OpportunityServiceContext.Provider>));
+  const duration = await screen.findByRole('spinbutton', { name: 'Discovery & Design duration in weeks' });
+  const actions = within(screen.getByRole('region', { name: 'Estimation actions' }));
+  expect(actions.getByRole('button', { name: 'Save Draft' })).toBeEnabled();
+  expect(actions.getByRole('button', { name: 'Save Estimation' })).toBeDisabled();
+  expect(actions.getByRole('button', { name: 'Submit Estimation to CEO' })).toBeEnabled();
+  fireEvent.change(duration, { target: { value: '0' } });
+  fireEvent.click(actions.getByRole('button', { name: 'Submit Estimation to CEO' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(duration).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getAllByRole('button', { name: 'Submit Estimation to CEO' })).toHaveLength(1);
+  notify.mockRestore();
+});
+
+it.each(['legacy', 'saved grid'])('does not warn on opening a %s estimate, but protects actual edits and recognizes reverting them', async kind => {
+  const grid = { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '0.5' }] };
+  const start = { ...initial(), estimation: { revision: 1, rows: [{ id: 'grid-1-PM', workItem: 'Old master label', hours: '40.0000', people: 1, hourlyRate: '20.0000' }], assumptions: '', total: '800.00', ...(kind === 'saved grid' ? { grid } : {}) } };
+  const navigate = vi.fn();
+  function SwitchTab() {
+    const confirm = useUnsaved(false);
+    return <button onClick={async () => { if (await confirm()) navigate(); }}>Switch tab</button>;
+  }
+  render(<MemoryRouter><UnsavedProvider>{withProviders(<OpportunityServiceContext.Provider value={productionOpportunityService}><SwitchTab /><EstimationModule opportunity={start} onSaved={vi.fn()} readOnly={false} showActions={false} /></OpportunityServiceContext.Provider>)}</UnsavedProvider></MemoryRouter>);
+  const duration = await screen.findByRole('spinbutton', { name: 'Discovery & Design duration in weeks' });
+  const original = (duration as HTMLInputElement).value;
+  fireEvent.click(screen.getByRole('button', { name: 'Switch tab' }));
+  await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  fireEvent.change(duration, { target: { value: '3' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Switch tab' }));
+  expect(await screen.findByRole('dialog', { name: 'Leave without saving?' })).toBeInTheDocument();
+  expect(navigate).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+  fireEvent.change(duration, { target: { value: original } });
+  fireEvent.click(screen.getByRole('button', { name: 'Switch tab' }));
+  await waitFor(() => expect(navigate).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('shows inline matrix errors on submission and clears them as fields are corrected', async () => {
+  let readDraft: (() => Estimation) | null = null;
+  const registerDraft = (reader: (() => Estimation) | null) => { readDraft = reader; };
+  const grid = { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '0' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '' }] };
+  const start = { ...initial(), estimation: { revision: 1, rows: [], assumptions: '', total: '0.00', grid } };
+  render(withProviders(<OpportunityServiceContext.Provider value={productionOpportunityService}><button onClick={() => readDraft?.()}>Check submission</button><EstimationModule opportunity={start} onSaved={vi.fn()} readOnly={false} showActions={false} registerDraft={registerDraft} /></OpportunityServiceContext.Provider>));
+  const duration = await screen.findByRole('spinbutton', { name: 'Discovery & Design duration in weeks' });
+  const effort = screen.getByRole('spinbutton', { name: /Project Manager resource allocation/ });
+  expect(screen.queryByText('Enter weeks greater than 0.')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Check submission' }));
+  expect(duration).toHaveAttribute('aria-invalid', 'true');
+  expect(duration).toHaveAccessibleDescription('Enter weeks greater than 0.');
+  expect(effort).toHaveAccessibleDescription('Enter effort (0 if unused).');
+  fireEvent.change(duration, { target: { value: '2' } });
+  fireEvent.change(effort, { target: { value: '0' } });
+  expect(duration).toHaveAttribute('aria-invalid', 'false');
+  expect(effort).toHaveAttribute('aria-invalid', 'false');
+  expect(screen.queryByText('Enter weeks greater than 0.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Enter effort (0 if unused).')).not.toBeInTheDocument();
+});
+
+it('restores an incomplete draft and confirms Save Draft without submitting it', async () => {
+  const success = vi.spyOn(toast, 'success').mockImplementation(() => 'draft');
+  const grid = { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '' }] };
+  const start = { ...initial(), estimation: { revision: 1, status: 'DRAFT' as const, rows: [], assumptions: 'Continue later', total: '0.00', grid } };
+  const saveEstimation = vi.fn(async ({ estimation }: { estimation: Estimation }) => ({ ...start, estimation: { ...estimation, revision: 2, status: 'DRAFT' as const } }));
+  const decide = vi.fn();
+  render(withProviders(<OpportunityServiceContext.Provider value={{ ...productionOpportunityService, saveEstimation, decide }}><EstimationModule opportunity={start} onSaved={vi.fn()} readOnly={false} showActions={false} /></OpportunityServiceContext.Provider>));
+  expect(await screen.findByRole('spinbutton', { name: 'Discovery & Design duration in weeks' })).toHaveValue(2);
+  expect(screen.getByText('Draft')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
+  await waitFor(() => expect(success).toHaveBeenCalledWith('Estimate saved as draft.'));
+  expect(saveEstimation).toHaveBeenCalledWith(expect.objectContaining({ estimation: expect.objectContaining({ rows: [], grid }) }));
+  expect(decide).not.toHaveBeenCalled();
+  success.mockRestore();
+});
 
 it('lets Estimation Team select a phase/role, enter duration & allocation, and save the computed estimate, then submit the saved revision to CEO', async () => {
   const start = initial();
@@ -56,22 +139,22 @@ it('lets Estimation Team select a phase/role, enter duration & allocation, and s
   // than the singular getByText/findByText, which throw on more than one match.
   await waitFor(() => expect(screen.getAllByText('0.5').length).toBeGreaterThan(0));
 
-  expect(screen.queryByRole('button', { name: 'Submit Estimation to CEO' })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Save estimation' }));
+  expect(screen.getByRole('button', { name: 'Submit Estimation to CEO' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
   await waitFor(() => expect(saveEstimation).toHaveBeenCalledWith(expect.objectContaining({ estimation: expect.objectContaining({ total: '500.00' }) })));
   fireEvent.click(await screen.findByRole('button', { name: 'Submit Estimation to CEO' }));
   const dialog = within(screen.getByRole('dialog'));
   expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
   fireEvent.click(dialog.getByRole('button', { name: 'Confirm decision' }));
   await waitFor(() => expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'SUBMIT_ESTIMATE', expectedStageId: 3, expectedSubStageId: 7 })));
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Save estimation' })).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Save Draft' })).not.toBeInTheDocument());
 }, 180000);
 
 it('keeps estimation read-only once the opportunity has moved past preparation, even if an old edit action is present', async () => {
   render(withProviders(<OpportunityServiceContext.Provider value={productionOpportunityService}><EstimationModule opportunity={{ ...initial(), stageId: 4, subStageId: 8, state: 'GATE1_PENDING' }} onSaved={vi.fn()} readOnly={false} /></OpportunityServiceContext.Provider>));
   expect(await screen.findByRole('button', { name: /select phases/i })).toBeDisabled();
   expect(screen.getByRole('button', { name: /select technical roles/i })).toBeDisabled();
-  expect(screen.queryByRole('button', { name: 'Save estimation' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save Draft' })).not.toBeInTheDocument();
 });
 
 const scopeOpportunity = (summary: string) => fixtureOpportunity({ stageId: 3, subStageId: 7, allowedActions: ['EDIT_SCOPE'], scope: { revision: 1, summary, alignment: [{ id: '1', text: 'Tech stack' }], risks: [{ id: '2', description: 'Tight deadline', severity: 'HIGH' }] } });

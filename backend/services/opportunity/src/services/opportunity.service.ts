@@ -460,7 +460,8 @@ async function transitionWorkflow(
   comment: string | null,
   opportunityDescription: string | null,
   ctx: any,
-  reasonCodeId?: number | null
+  reasonCodeId?: number | null,
+  estimation?: repository.OpportunityEstimation
 ) {
   const before = await repository.findById(opportunityId);
   const result = await transitionWorkflowCore(opportunityId, action, comment, opportunityDescription, ctx, reasonCodeId);
@@ -522,7 +523,11 @@ async function transitionWorkflowCore(
     if (!access.estimate || opportunity.stageId !== 3 || opportunity.subStageId !== 7) {
       throw conflict('The Estimation Team role and an in-progress estimate are required.');
     }
-    return persistTransition(opportunity, opportunityId, 4, 8, null, userId, comment?.trim() || null, null, audit);
+    const estimate = estimation ?? await repository.findEstimation(opportunityId);
+    validateCompletedEstimate(estimate);
+    if (estimation) await saveEstimation(opportunityId, estimation, ctx);
+    return repository.transitionWorkflow(opportunityId, 4, 8, null, userId, comment?.trim() || null, null, audit,
+      { stageId: opportunity.stageId, subStageId: opportunity.subStageId, estimationRevision: estimate!.revision + (estimation ? 1 : 0) });
   }
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) {
     if (!access.gateReview) throw conflict('The CEO role is required to review estimates.');
@@ -777,11 +782,25 @@ export async function getStageHistory(opportunityId: number, ctx: any) {
   return repository.findStageHistory(opportunityId);
 }
 
-export async function saveEstimation(opportunityId: number, input: repository.OpportunityEstimation, ctx: any) {
-  const access = await accessFor(ctx);
-  const current = await repository.findById(opportunityId);
-  if (!access.estimate || current?.stageId !== 3 || current.subStageId !== 7) throw conflict('Only the Estimation Team can save an in-progress estimation.');
-  if (!Number.isSafeInteger(input.revision) || input.revision < 0 || !Array.isArray(input.rows) || !input.rows.length || input.rows.length > 500) throw validationFailed('Provide an estimation revision and at least one work item (maximum 500).');
+function validateEstimationDraft(input: repository.OpportunityEstimation) {
+  if (!Number.isSafeInteger(input.revision) || input.revision < 0 || !Array.isArray(input.rows) || input.rows.length > 500) throw validationFailed('Provide an estimation revision and at most 500 work items.');
+  // Drafts may be incomplete. Preserve blanks and zero-effort selections, but
+  // reject malformed or negative values rather than silently losing them.
+  if (input.grid) {
+    const grid = input.grid;
+    const validQuantity = (value: unknown) => typeof value === 'string' && (value === '' || /^\d{1,12}(\.\d{1,4})?$/.test(value));
+    const validPhase = (value: number) => Number.isSafeInteger(value) && value > 0;
+    if (!Array.isArray(grid.phaseIds) || !Array.isArray(grid.roleCodes) || !Array.isArray(grid.durations) || !Array.isArray(grid.allocations) ||
+      [grid.phaseIds, grid.roleCodes, grid.durations, grid.allocations].some(values => values.length > 500) ||
+      grid.phaseIds.some(id => !validPhase(id)) || new Set(grid.phaseIds).size !== grid.phaseIds.length ||
+      grid.roleCodes.some(code => typeof code !== 'string' || !code.trim() || code.length > 100) || new Set(grid.roleCodes).size !== grid.roleCodes.length ||
+      grid.durations.some(item => !item || !grid.phaseIds.includes(item.phaseId) || !validQuantity(item.weeks)) ||
+      new Set(grid.durations.map(item => item.phaseId)).size !== grid.durations.length ||
+      grid.allocations.some(item => !item || !grid.phaseIds.includes(item.phaseId) || !grid.roleCodes.includes(item.roleCode) || !validQuantity(item.effort)) ||
+      new Set(grid.allocations.map(item => JSON.stringify([item.phaseId, item.roleCode]))).size !== grid.allocations.length) {
+      throw validationFailed('Use unique selected phases and roles, with non-negative duration and allocation values of at most four decimal places (maximum 500 entries).');
+    }
+  }
   const ids = new Set<string>();
   const decimal = (value: string) => {
     if (typeof value !== 'string' || !/^\d{1,12}(\.\d{1,4})?$/.test(value)) throw validationFailed('Use non-negative hours and rates with at most four decimal places.');
@@ -795,7 +814,47 @@ export async function saveEstimation(opportunityId: number, input: repository.Op
     cents += (decimal(row.hours) * decimal(row.hourlyRate) * BigInt(row.people) + 500000n) / 1000000n;
   }
   if (cents > 999999999999999999n) throw validationFailed('The estimation total is too large.');
-  await repository.saveEstimation(opportunityId, { ...input, assumptions: input.assumptions ?? '', total: `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}` }, access.userId);
+  return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
+}
+
+function validateCompletedEstimate(estimate: repository.OpportunityEstimation | null | undefined) {
+  if (estimate) validateEstimationDraft(estimate);
+  const grid = estimate?.grid;
+  if (!estimate || !grid || !grid.phaseIds?.length || !grid.roleCodes?.length || !estimate.rows?.length) throw validationFailed('Select at least one phase and technical role and complete the estimate before submitting.');
+  for (const phaseId of grid.phaseIds) {
+    const duration = grid.durations.find(item => item.phaseId === phaseId)?.weeks;
+    if (!duration || !Number.isFinite(Number(duration)) || Number(duration) <= 0) throw validationFailed('Enter a positive duration for every selected phase.');
+    for (const roleCode of grid.roleCodes) {
+      const effort = grid.allocations.find(item => item.phaseId === phaseId && item.roleCode === roleCode)?.effort;
+      if (effort === undefined || !effort.trim() || !Number.isFinite(Number(effort)) || Number(effort) < 0) throw validationFailed('Enter non-negative effort for every selected phase and technical role. Use zero where no effort is needed.');
+      const row = estimate.rows.find(item => item.id === `grid-${phaseId}-${roleCode}`);
+      if (Number(effort) > 0 && (!row || !Number.isFinite(Number(row.hours)) || Math.abs(Number(row.hours) - Number(duration) * Number(effort) * 40) > 0.0001 || Number(row.hourlyRate) <= 0 || !Number.isFinite(Number(row.hourlyRate)))) throw validationFailed('Complete the matrix with a positive rate for each role with effort before submitting.');
+    }
+  }
+  if (!estimate.rows.some(row => Number(row.hours) > 0 && Number(row.hourlyRate) > 0)) throw validationFailed('The estimate must contain positive effort and cost before submitting.');
+}
+
+export async function listEstimationVersions(opportunityId: number, ctx: any) {
+  await getEstimation(opportunityId, ctx);
+  return repository.listEstimationVersions(opportunityId);
+}
+export async function saveEstimationVersion(opportunityId: number, input: repository.OpportunityEstimation, name: string, requestKey: string, ctx: any) {
+  const access = await accessFor(ctx);
+  const current = await repository.findById(opportunityId);
+  if (!access.estimate || current?.stageId !== 3 || current.subStageId !== 7) throw conflict('Only the Estimation Team can save a version of an in-progress estimate.');
+  if (!name?.trim() || name.trim().length > 150) throw validationFailed('Enter an estimation name of up to 150 characters.');
+  if (!requestKey || requestKey.length > 100) throw validationFailed('A save request key is required.');
+  validateCompletedEstimate(input);
+  const total = validateEstimationDraft(input);
+  return repository.saveEstimationVersion(opportunityId, { ...input, total, status: 'DRAFT' }, name.trim(), access.userId, requestKey);
+}
+
+export async function saveEstimation(opportunityId: number, input: repository.OpportunityEstimation, ctx: any) {
+  const access = await accessFor(ctx);
+  const current = await repository.findById(opportunityId);
+  if (!access.estimate || current?.stageId !== 3 || current.subStageId !== 7) throw conflict('Only the Estimation Team can save an in-progress estimation.');
+  const total = validateEstimationDraft(input);
+  await repository.saveEstimation(opportunityId, { ...input, status: 'DRAFT', assumptions: input.assumptions ?? '', total }, access.userId);
   return get(opportunityId, ctx);
 }
 

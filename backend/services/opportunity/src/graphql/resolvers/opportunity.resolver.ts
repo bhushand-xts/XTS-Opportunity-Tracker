@@ -22,7 +22,9 @@ export const opportunityResolvers = {
   OpportunityStageHistory: {
     reachedAt: (event: { reachedAt: Date | string }) => event.reachedAt instanceof Date ? event.reachedAt.toISOString() : event.reachedAt,
   },
+  OpportunityEstimationVersion: { createdAt: (version: { createdAt: Date | string }) => version.createdAt instanceof Date ? version.createdAt.toISOString() : version.createdAt },
   Query: {
+    estimationVersions: (_: unknown, args: { opportunityId: number }, ctx: any) => service.listEstimationVersions(args.opportunityId, ctx),
     opportunityClientCreateAllowed: async (_: unknown, __: unknown, ctx: any) => service.canCreateClient(ctx),
     opportunityClientUpdateAllowed: async (_: unknown, __: unknown, ctx: any) => service.canUpdateClient(ctx),
     opportunityClients: async (_: unknown, __: unknown, ctx: any) => service.listClients(ctx),
@@ -36,6 +38,7 @@ export const opportunityResolvers = {
   },
 
   Mutation: {
+    saveEstimationVersion: (_: unknown, args: { opportunityId: number; estimation: Parameters<typeof service.saveEstimationVersion>[1]; name: string; requestKey: string }, ctx: any) => service.saveEstimationVersion(args.opportunityId, args.estimation, args.name, args.requestKey, ctx),
     saveOpportunityScope: async (_: unknown, args: { opportunityId: number; scope: Parameters<typeof service.saveScope>[1]; section?: Parameters<typeof service.saveScope>[2] }, ctx: any) =>
       service.saveScope(args.opportunityId, args.scope, args.section ?? 'ALL', ctx),
     saveOpportunityAnswer: async (_: unknown, args: { opportunityId: number; responseId: number; revision: number; answer: string }, ctx: any) =>
@@ -57,8 +60,9 @@ export const opportunityResolvers = {
       comment?: string | null;
       opportunityDescription?: string | null;
       reasonCodeId?: number | null;
+      estimation?: import("../../repositories/opportunity.repository").OpportunityEstimation;
     }, ctx: any) => service.transitionWorkflow(
-      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx, args.reasonCodeId
+      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx, args.reasonCodeId, args.estimation
     ),
 
     createOpportunity: async (

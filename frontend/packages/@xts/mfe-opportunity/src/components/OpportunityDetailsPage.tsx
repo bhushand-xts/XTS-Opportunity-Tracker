@@ -1,9 +1,9 @@
 import { QuestionViewer } from './QuestionViewer';
 import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Lock, Pencil } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Badge, type BadgeProps, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
-import type { OpportunityDetail, OpportunityState } from '@xts/api-contracts';
+import type { Estimation, OpportunityDetail, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource } from '../hooks/useResource';
 import { useUnsaved } from '../hooks/useUnsaved';
@@ -178,6 +178,8 @@ function Overview({
 }
 type TabKey = 'overview' | 'qa' | 'scope' | 'estimation' | 'documents' | 'activity';
 export function OpportunityDetailsPage({ review = false }: { review?: boolean }) {
+  const estimationDraft = useRef<(() => Estimation) | null>(null);
+  const registerDraft = useCallback((reader: (() => Estimation) | null) => { estimationDraft.current = reader; }, []);
   const { id } = useParams(), service = useOpportunityService(), access = useOpportunityAccess(), [params, setParams] = useSearchParams();
   const approvalView = review || access.approvals;
   const load = useCallback((signal: AbortSignal) => service.detail(id!, signal, approvalView ? 'REVIEW' : 'DETAILS'), [service, id, approvalView]);
@@ -213,7 +215,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
     <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}>
       <div className="opp-detail-toolbar">
         <TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>)}</TabsList>
-        <ReviewActions opportunity={o} onSaved={resource.setData} variant="toolbar" />
+        <ReviewActions opportunity={active === 'estimation' ? { ...o, allowedActions: o.allowedActions.filter(action => action !== 'SUBMIT_ESTIMATE') } : o} onSaved={resource.setData} variant="toolbar" getEstimation={() => estimationDraft.current?.()} />
       </div>
       <div className="opp-detail-layout mt-3">
       <div className="opp-detail-workspace">
@@ -222,8 +224,8 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
           <span className="flex size-10 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300"><Lock className="size-5" aria-hidden="true" /></span>
           <h3 className="mt-3 text-sm font-semibold">Available after CEO approval</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">This opportunity is currently in {o.stageId === 1 ? 'Identified' : 'Qualifying (Go/No-Go)'}. {tab.label} will be available once the CEO approves this opportunity and it moves to the Solution/Scoping Estimation (Engineering) stage.</p>
-        </div> : tab.key === 'overview' ? <Overview opportunity={o} review={review} />
-          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} showActions={false} />
+        </div> : tab.key === 'overview' ? <Overview opportunity={o} />
+          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} registerDraft={registerDraft} />
           : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} />
           : tab.key === 'documents' ? <Documents opportunity={o} />
           : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Checkbox, cn, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label } from '@xts/design-system';
+import { toast } from 'sonner';
+import { estimationSubmissionError } from '../lib/estimationValidation';
 import type { DecisionCommand, OpportunityDetail } from '@xts/api-contracts';
 import { applicableDecisions, decisionError } from '../lib/workflow';
 import { useOpportunityService } from '../services/OpportunityService';
@@ -81,7 +83,7 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
     SALES_REJECT: 'This closes the opportunity as No-Bid / Declined · Rejected by Sales Head.',
     GATE1_NO_GO: 'This closes the opportunity as No-Bid / Declined · No-Go by CEO.',
     ESTIMATE_REJECT: 'This closes the opportunity as No-Bid / Declined · Estimate Rejected by CEO.',
-    SUBMIT_ESTIMATE: 'This sends the estimation to CEO review and records your decision note. An estimation matrix is optional.',
+    SUBMIT_ESTIMATE: 'This validates and saves the completed estimate and sends it for CEO/Gate-2 review.',
     ESTIMATE_APPROVE: 'Approval moves this opportunity to Proposal / Bid Submission · Proposal In Preparation.',
     BID_SUBMITTED: 'This records the proposal / bid as submitted to the client.',
     START_NEGOTIATION: 'This moves the opportunity to Negotiation · Under Negotiation.',
@@ -99,7 +101,7 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
     : `The opportunity stays in ${stage} and moves to On Hold.`;
 }
 
-export function ReviewActions({ opportunity: o, onSaved, variant = 'panel' }: { opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void; variant?: 'panel' | 'bare' | 'card' | 'toolbar' }) {
+export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getEstimation }: { getEstimation?: () => OpportunityDetail['estimation'] | undefined; opportunity: OpportunityDetail; onSaved: (value: OpportunityDetail) => void; variant?: 'panel' | 'bare' | 'card' | 'toolbar' }) {
   const service = useOpportunityService(), mutation = useSave();
   const [decision, setDecision] = useState<DecisionCommand['decision']>(), [reason, setReason] = useState(''), [confirmed, setConfirmed] = useState(false), [validation, setValidation] = useState<string>();
   const [holdReasonId, setHoldReasonId] = useState('');
@@ -141,7 +143,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel' }: { 
       ...(requiresCode ? { reasonCodeId: selectedReason!.id } : {}),
       decision, reason: reason.trim(), confirmed: staged || confirmed,
     };
-    await mutation.run(JSON.stringify(command), key => service.decide({ ...command, idempotencyKey: key }), value => {
+    await mutation.run(JSON.stringify(command), key => service.decide({ ...command, ...(decision === 'SUBMIT_ESTIMATE' && getEstimation ? { estimation: getEstimation() ?? undefined } : {}), idempotencyKey: key }), value => {
       setDecision(undefined);
       setCompleted({ id: value.id, sourceStageId: o.stageId, sourceState: o.state, stageId: value.stageId, subStageId: value.subStageId, decision: command.decision });
       onSaved(value);
@@ -165,6 +167,16 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel' }: { 
       aria-pressed={selected} title={selected ? 'Action completed' : undefined}
       className={`${buttonTone(action)}${action === primary ? ' opp-review-primary' : ''}${selected ? ` ${CONFIRMATION_STYLES[confirmationTone(action)]} border shadow-inner ring-2 ring-inset ring-current disabled:opacity-100` : ''}`}
       disabled={mutation.saving || selected || !decisions.includes(action)} onClick={() => {
+        if (action === 'SUBMIT_ESTIMATE') {
+          try {
+            const error = estimationSubmissionError(getEstimation?.() ?? o.estimation);
+            if (error) { toast.error(error, { id: `estimate-validation-${o.id}`, duration: 6000 }); return; }
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Check the estimate before submitting.', { id: `estimate-validation-${o.id}`, duration: 6000 });
+            return;
+          }
+          toast.dismiss(`estimate-validation-${o.id}`);
+        }
         setDecision(action); setReason(''); setHoldReasonId(''); setConfirmed(false); setValidation(undefined);
       }}><Icon className="opp-review-button-icon" aria-hidden="true" /><span className="opp-review-button-label">{compact ? COMPACT_LABELS[action] ?? LABELS[action] : LABELS[action]}</span></Button>;
   };

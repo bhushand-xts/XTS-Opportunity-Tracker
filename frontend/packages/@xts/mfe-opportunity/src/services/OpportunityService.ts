@@ -1,9 +1,9 @@
 import { createContext, useContext } from 'react';
-import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE } from './opportunity.queries';
+import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE, GET_ESTIMATION_VERSIONS, SAVE_ESTIMATION_VERSION } from './opportunity.queries';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY, type OwnerDirectoryData } from './userDirectory.queries';
 import { mapOwnerDirectory } from './useOwnerDirectory';
 import { getApolloClient } from '@xts/api-client';
-import type { Action, AssessmentSection, ClientDraft, DecisionCommand, DirectoryUser, Estimation, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
+import type { Action, AssessmentSection, ClientDraft, DecisionCommand, DirectoryUser, Estimation, EstimationVersion, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
 import { CREATE_OPPORTUNITY_CLIENT, UPDATE_OPPORTUNITY_CLIENT, GET_CLIENT_CREATE_ACCESS, CREATE_OPPORTUNITY, GET_OPPORTUNITY, GET_OPPORTUNITY_LOOKUPS, LIST_OPPORTUNITIES, LIST_OPPORTUNITY_CLIENTS, UPDATE_OPPORTUNITY, TRANSITION_OPPORTUNITY, GET_HOLD_REASON_CODES } from './opportunity.queries';
 
 // The opportunity service's own base URL (its direct REST endpoints, not the
@@ -31,6 +31,8 @@ export interface OpportunityService {
   download(opportunityId: string | null, document: SourceDocument): Promise<Blob>;
   extract(command: VersionCommand & { documentId: string }): Promise<OpportunityDetail>;
   extractionStatus(opportunityId: string, jobId: string, signal?: AbortSignal): Promise<OpportunityDetail>;
+  estimationVersions?(opportunityId: string): Promise<EstimationVersion[]>;
+  saveEstimationVersion?(command: VersionCommand & { estimation: Estimation; name: string }): Promise<{ version: EstimationVersion; opportunity: OpportunityDetail }>;
   saveEstimation(command: VersionCommand & { estimation: Estimation }): Promise<OpportunityDetail>;
   saveScope(command: VersionCommand & { scope: Scope; section?: AssessmentSection }): Promise<OpportunityDetail>;
   assign(command: ResponseCommand & { ownerId: string; reviewerId: string; dueDate: string }): Promise<OpportunityDetail>;
@@ -322,8 +324,19 @@ export const productionOpportunityService: OpportunityService = {
   },
   extract: () => unavailable('Question extraction'),
   extractionStatus: () => unavailable('Extraction status'),
+  async estimationVersions(opportunityId) {
+    const { data } = await getApolloClient().query<{ estimationVersions: EstimationVersion[] }>({ query: GET_ESTIMATION_VERSIONS, variables: { opportunityId: Number(opportunityId) }, fetchPolicy: 'network-only', errorPolicy: 'none' });
+    return data.estimationVersions;
+  },
+  async saveEstimationVersion(command) {
+    const { revision, rows, assumptions, grid } = command.estimation;
+    const { data } = await getApolloClient().mutate<{ saveEstimationVersion: EstimationVersion }>({ mutation: SAVE_ESTIMATION_VERSION, variables: { opportunityId: Number(command.opportunityId), estimation: { revision, rows: rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })), assumptions, grid }, name: command.name, requestKey: command.idempotencyKey }, errorPolicy: 'none' });
+    if (!data?.saveEstimationVersion) throw new Error('The estimation version was not saved. Please retry.');
+    return { version: data.saveEstimationVersion, opportunity: await productionOpportunityService.detail(command.opportunityId) };
+  },
   async saveEstimation(command) {
     const estimation = { revision: command.estimation.revision, assumptions: command.estimation.assumptions,
+      ...(command.estimation.grid ? { grid: command.estimation.grid } : {}),
       rows: command.estimation.rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })) };
     const { data } = await getApolloClient().mutate<{ saveOpportunityEstimation: { opportunityId: number } | null }>({
       mutation: SAVE_OPPORTUNITY_ESTIMATION, variables: { opportunityId: Number(command.opportunityId), estimation }, errorPolicy: 'none',
@@ -387,6 +400,7 @@ export const productionOpportunityService: OpportunityService = {
     const { data } = await client.mutate<{ transitionOpportunity: { opportunityId: number } | null }>({
       mutation: TRANSITION_OPPORTUNITY,
       variables: { opportunityId: Number(command.opportunityId), action, comment: command.reason.trim() || null,
+        ...(action === 'SUBMIT_ESTIMATE' && command.estimation ? { estimation: { revision: command.estimation.revision, rows: command.estimation.rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })), assumptions: command.estimation.assumptions, grid: command.estimation.grid } } : {}),
         ...(['HOLD', 'REJECT', 'OPPORTUNITY_HOLD'].includes(action) ? { reasonCodeId: command.reasonCodeId ?? null } : {}),
       },
       errorPolicy: 'none',

@@ -107,9 +107,17 @@ export const opportunityTypeDefs = `#graphql
   input OpportunityRiskInput { id: ID!, description: String!, severity: String! }
   input OpportunityAlignmentInput { id: ID!, text: String! }
   input OpportunityScopeInput { revision: Int!, summary: String!, risks: [OpportunityRiskInput!]!, alignment: [OpportunityAlignmentInput!]! }
-  type OpportunityEstimation { revision: Int!, rows: [OpportunityEstimationRow!]!, assumptions: String!, total: String! }
+  type OpportunityEstimationVersion { id: ID!, version: Int!, name: String!, status: String!, currencyCode: String!, personWeeks: String!, createdBy: Int!, createdAt: String!, estimation: OpportunityEstimation! }
+  enum OpportunityEstimationStatus { DRAFT SUBMITTED }
+  type OpportunityEstimationDuration { phaseId: Int!, weeks: String! }
+  type OpportunityEstimationAllocation { phaseId: Int!, roleCode: String!, effort: String! }
+  type OpportunityEstimationGrid { phaseIds: [Int!]!, roleCodes: [String!]!, durations: [OpportunityEstimationDuration!]!, allocations: [OpportunityEstimationAllocation!]! }
+  input OpportunityEstimationDurationInput { phaseId: Int!, weeks: String! }
+  input OpportunityEstimationAllocationInput { phaseId: Int!, roleCode: String!, effort: String! }
+  input OpportunityEstimationGridInput { phaseIds: [Int!]!, roleCodes: [String!]!, durations: [OpportunityEstimationDurationInput!]!, allocations: [OpportunityEstimationAllocationInput!]! }
+  type OpportunityEstimation { revision: Int!, status: OpportunityEstimationStatus!, rows: [OpportunityEstimationRow!]!, assumptions: String!, total: String!, grid: OpportunityEstimationGrid }
   input OpportunityEstimationRowInput { id: String!, workItem: String!, hours: String!, people: Int!, hourlyRate: String! }
-  input OpportunityEstimationInput { revision: Int!, rows: [OpportunityEstimationRowInput!]!, assumptions: String!, total: String }
+  input OpportunityEstimationInput { revision: Int!, rows: [OpportunityEstimationRowInput!]!, assumptions: String!, total: String, grid: OpportunityEstimationGridInput }
 
   type RfpIntakeOpportunity {
     opportunityId: Int!
@@ -341,6 +349,7 @@ export const opportunityTypeDefs = `#graphql
   }
 
   extend type Query {
+    estimationVersions(opportunityId: Int!): [OpportunityEstimationVersion!]!
     opportunityClientCreateAllowed: Boolean!
     opportunityClientUpdateAllowed: Boolean!
     opportunities(queue: String = "PIPELINE"): [Opportunity!]!
@@ -353,6 +362,7 @@ export const opportunityTypeDefs = `#graphql
   }
 
   extend type Mutation {
+    saveEstimationVersion(opportunityId: Int!, estimation: OpportunityEstimationInput!, name: String!, requestKey: String!): OpportunityEstimationVersion!
     saveOpportunityScope(opportunityId: Int!, scope: OpportunityScopeInput!, section: OpportunityAssessmentSection = ALL): Opportunity!
     saveOpportunityAnswer(opportunityId: Int!, responseId: Int!, revision: Int!, answer: String!): Opportunity!
     saveOpportunityEstimation(opportunityId: Int!, estimation: OpportunityEstimationInput!): Opportunity!
@@ -372,6 +382,7 @@ export const opportunityTypeDefs = `#graphql
     transitionOpportunity(
       opportunityId: Int!
       action: OpportunityWorkflowAction!
+      estimation: OpportunityEstimationInput
       comment: String
       opportunityDescription: String
       reasonCodeId: Int
