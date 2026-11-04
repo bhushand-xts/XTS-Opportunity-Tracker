@@ -46,7 +46,7 @@ it('confirms before replacing unsaved inputs and keeps the stored version unchan
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
   expect(onLoad).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Edit version' }));
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Load estimate' }));
   expect(onLoad).toHaveBeenCalledWith(version);
   expect(JSON.stringify(version)).toBe(before);
 });
@@ -112,6 +112,8 @@ it('keeps Save/Update under the editor while sidebar cards retain selection, edi
   render(<Workspace />);
   const sidebar = within(target), editor = within(screen.getByRole('main'));
   const radio = await sidebar.findByRole('radio', { name: 'Select Baseline version 1 for CEO review' });
+  expect(sidebar.queryByText('V1')).not.toBeInTheDocument();
+  expect(sidebar.getByText(new Date(version.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }))).toBeInTheDocument();
   expect(editor.getByRole('textbox', { name: 'Estimation name' })).toBeInTheDocument();
   expect(sidebar.queryByRole('textbox', { name: 'Estimation name' })).not.toBeInTheDocument();
   expect(editor.queryByRole('list')).not.toBeInTheDocument();

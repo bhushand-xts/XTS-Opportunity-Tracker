@@ -19,6 +19,10 @@ function database(t: TestContext, options: { duplicate?: boolean; failSnapshot?:
       if (options.failSnapshot) throw new Error('Snapshot unavailable');
       return { rows: [{ id: '11', version: 2 }] };
     }
+    if (sql.startsWith('UPDATE tbl_opportunity_estimation_versions\n')) {
+      if (options.failSnapshot) throw new Error('Update unavailable');
+      return { rows: [{ id: String(params[1]), version: 1, name: params[2] }] };
+    }
     if (sql.startsWith('UPDATE tbl_opportunity\n')) return { rows: [{ opportunityId: 10 }] };
     return { rows: [] };
   }, release() {} }));
@@ -74,12 +78,21 @@ test('selected-version submission restores the saved matrix and snapshots it ato
   assert.equal(calls.at(-1)?.sql, 'COMMIT');
 });
 
-test('Update creates a linked snapshot without overwriting the original', async t => {
+test('Update changes the same saved estimate without inserting a new version', async t => {
   const calls = database(t);
-  await saveEstimationVersion(10, estimate, 'Revised', 7, 'update-request', '9');
-  assert.ok(calls.some(call => call.sql.includes('SET supersedes_id') && JSON.stringify(call.params) === JSON.stringify(['11', '9'])));
-  assert.equal(calls.some(call => call.sql.includes('SET snapshot')), false);
+  const updated = await saveEstimationVersion(10, estimate, 'Revised', 7, 'update-request', '9');
+  assert.equal(updated.id, '9');
+  assert.equal(updated.version, 1);
+  const update = calls.find(call => call.sql.startsWith('UPDATE tbl_opportunity_estimation_versions\n'))!;
+  assert.deepEqual(update.params, [10, '9', 'Revised', 7, 'update-request']);
+  assert.match(update.sql, /snapshot, currency_code, person_weeks/);
+  assert.equal(calls.some(call => call.sql.startsWith('INSERT INTO tbl_opportunity_estimation_versions')), false);
   assert.equal(calls.at(-1)?.sql, 'COMMIT');
+});
+test('a failed update rolls back the working matrix and saved estimate together', async t => {
+  const calls = database(t, { failSnapshot: true });
+  await assert.rejects(saveEstimationVersion(10, estimate, 'Revised', 7, 'update-request', '9'));
+  assert.equal(calls.at(-1)?.sql, 'ROLLBACK');
 });
 test('submitted versions cannot be edited or deleted', async t => {
   const calls = database(t, { submitted: true });

@@ -46,6 +46,14 @@ async function selectHoldReason(dialog: ReturnType<typeof within>) {
 }
 
 describe('persisted opportunity review actions', () => {
+  it('shows the selected estimate and its exact saved total without a stray version separator', () => {
+    const estimate = validEstimate();
+    mount(salesReview({ stageId: 3, subStageId: 7, allowedActions: ['SUBMIT_ESTIMATE'], estimation: estimate }));
+    const dialog = openDecision('Submit Estimation to CEO');
+    expect(dialog.getByText('Baseline')).toBeInTheDocument();
+    expect(dialog.getByRole('region', { name: 'Selected estimation' })).toHaveTextContent('2,000.00');
+    expect(dialog.queryByText(/\? V/)).not.toBeInTheDocument();
+  });
   it('disables CEO submission until a saved estimation is selected', () => {
     const decide = vi.fn();
     mount(salesReview({ stageId: 3, subStageId: 7, allowedActions: ['SUBMIT_ESTIMATE'] }), decide, vi.fn(), 'toolbar', null);

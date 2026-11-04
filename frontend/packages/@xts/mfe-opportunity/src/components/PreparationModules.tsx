@@ -209,13 +209,16 @@ export function EstimationModule({
   const [newPhaseName, setNewPhaseName] = useState('');
   const [addPhaseError, setAddPhaseError] = useState<string>();
 
-  const initialEstimation = o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' };
-  const [draft, setDraft] = useState<Estimation>(initialEstimation);
-  const [baseline, setBaseline] = useState<string | null>(null);
-  const [validation, setValidation] = useState<string>();
   const estimationStep = o.stageId == null ? isPreparing(o) :
     o.stageId === 3 && o.subStageId === 7;
   const editable = !readOnly && estimationStep && o.allowedActions.includes('EDIT_ESTIMATION');
+  const initialEstimation: Estimation = editable
+    ? { revision: o.estimation?.revision ?? 0, rows: [], assumptions: '', total: '0.00' }
+    : o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' };
+  const [draft, setDraft] = useState<Estimation>(initialEstimation);
+  const [baseline, setBaseline] = useState<string | null>(null);
+  const [loadedVersion, setLoadedVersion] = useState<EstimationVersion | null>(null);
+  const [validation, setValidation] = useState<string>();
 
   const [selectedPhaseIds, setSelectedPhaseIds] = useState<Set<number>>(new Set());
   const [selectedRoleCodes, setSelectedRoleCodes] = useState<Set<string>>(new Set());
@@ -230,11 +233,12 @@ export function EstimationModule({
   useEffect(() => {
     if (seededRef.current || !masters) return;
     seededRef.current = true;
-    const savedRows = o.estimation?.rows ?? [];
+    if (editable) selectVersion(null);
+    const savedRows = initialEstimation.rows;
     const nextPhaseIds = new Set<number>(), nextRoleCodes = new Set<string>();
     const nextDuration: Record<number, string> = {}, nextAllocation: Record<string, string> = {};
-    if (o.estimation?.grid) {
-      const grid = o.estimation.grid;
+    if (initialEstimation.grid) {
+      const grid = initialEstimation.grid;
       grid.phaseIds.forEach(id => nextPhaseIds.add(id));
       grid.roleCodes.forEach(code => nextRoleCodes.add(code));
       grid.durations.forEach(item => { nextDuration[item.phaseId] = item.weeks; });
@@ -253,6 +257,9 @@ export function EstimationModule({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally seeds once from the loaded masters, not on every draft/row change
   }, [masters, phases.length, roles.length]);
 
+  const grid = estimationGrid(selectedPhaseIds, selectedRoleCodes, duration, allocation);
+  const inputsUnchanged = baseline !== null && JSON.stringify({ assumptions: draft.assumptions, grid }) === baseline;
+  const useSavedSnapshot = Boolean(loadedVersion && inputsUnchanged);
   const activePhases = phases.filter(p => selectedPhaseIds.has(p.id));
   const activeRoles = roles.filter(r => selectedRoleCodes.has(r.roleCode));
   const durationError = (phaseId: number) => {
@@ -273,7 +280,7 @@ export function EstimationModule({
   }
   // Cost = (Monthly rate ÷ 20) × (Person-week × 5).
   function cellCost(phaseId: number, roleCode: string, role: RateMaster): number {
-    if (!editable) { const row = draft.rows.find(item => item.id === gridRowId(phaseId, roleCode)); return row ? Number(row.hours) * row.people * Number(row.hourlyRate) : 0; }
+    if (!editable || useSavedSnapshot) { const row = draft.rows.find(item => item.id === gridRowId(phaseId, roleCode)); return row ? Number(row.hours) * row.people * Number(row.hourlyRate) : 0; }
     return (monthlyRate(role) / 20) * (personWeek(phaseId, roleCode) * 5);
   }
   const effortTotal = activePhases.reduce((sum, p) => sum + activeRoles.reduce((s, r) => s + personWeek(p.id, r.roleCode), 0), 0);
@@ -296,13 +303,12 @@ export function EstimationModule({
       hourlyRate: (monthlyRate(role) / (HOURS_PER_WEEK * 4)).toFixed(4),
     });
   }
-  const rows = editable ? [...gridRows, ...legacyRows] : draft.rows;
+  const rows = editable && !useSavedSnapshot ? [...gridRows, ...legacyRows] : draft.rows;
   let total = '0.00', calculationError: string | undefined;
   try { total = estimateTotal(rows); } catch (error) { calculationError = error instanceof Error ? error.message : 'Check numeric fields.'; }
-  const grid = estimationGrid(selectedPhaseIds, selectedRoleCodes, duration, allocation);
   // Loading/recalculating saved rows (rates, decimal formatting and row order)
   // is not a user edit. Compare only the editable inputs after seeding finishes.
-  const dirty = editable && baseline !== null && JSON.stringify({ assumptions: draft.assumptions, grid }) !== baseline;
+  const dirty = editable && baseline !== null && !inputsUnchanged;
   useEffect(() => {
     registerDraft?.(() => {
       setSubmissionAttempted(true);
@@ -364,11 +370,11 @@ export function EstimationModule({
         setDraft({ ...saved.opportunity.estimation, rows: [], total: '0', grid: clearedGrid });
         setBaseline(JSON.stringify({ assumptions: saved.opportunity.estimation.assumptions, grid: clearedGrid }));
         setSubmissionAttempted(false);
-        if (source && selectedVersion?.id === source.id) selectVersion(saved.version);
+        setLoadedVersion(null); selectVersion(null);
       }
       onSaved(saved.opportunity);
       succeeded = true;
-    }, source ? 'Estimation updated as a new revision.' : 'Estimation version saved.');
+    }, source ? 'Estimation updated.' : 'Estimation version saved.');
     return succeeded;
   }
   async function deleteVersion(version: EstimationVersion) {
@@ -378,13 +384,18 @@ export function EstimationModule({
       if (!service.deleteEstimationVersion) throw new Error('Deleting saved estimates is not available.');
       await service.deleteEstimationVersion(o.id, version.id);
     }, () => {
-      if (selectedVersion?.id === version.id) selectVersion(null);
+      if (selectedVersion?.id === version.id) {
+        selectVersion(null); setLoadedVersion(null);
+        setSelectedPhaseIds(new Set()); setSelectedRoleCodes(new Set()); setDuration({}); setAllocation({});
+        setDraft(previous => ({ ...previous, rows: [], assumptions: '', total: '0.00' }));
+        setBaseline(JSON.stringify({ assumptions: '', grid: estimationGrid(new Set(), new Set(), {}, {}) }));
+      }
       succeeded = true;
     }, 'Saved estimate deleted.');
     return succeeded;
   }
   function loadVersion(version: EstimationVersion) {
-    if (!editable || mutation.saving) return false;
+    if (!editable || mutation.saving || !masters) return false;
     const restored = version.estimation.grid;
     if (!restored || restored.phaseIds.some(id => !phases.some(phase => phase.id === id)) || restored.roleCodes.some(code => !roles.some(role => role.roleCode === code))) {
       toast.error('This version contains phases or roles that are no longer active. You can still view its historical snapshot.'); return false;
@@ -394,8 +405,10 @@ export function EstimationModule({
     setDuration(Object.fromEntries(restored.durations.map(item => [item.phaseId, item.weeks])));
     setAllocation(Object.fromEntries(restored.allocations.map(item => [cellKey(item.phaseId, item.roleCode), item.effort])));
     setDraft(previous => ({ ...previous, rows: version.estimation.rows, assumptions: version.estimation.assumptions }));
+    setBaseline(JSON.stringify({ assumptions: version.estimation.assumptions, grid: estimationGrid(new Set(restored.phaseIds), new Set(restored.roleCodes), Object.fromEntries(restored.durations.map(item => [item.phaseId, item.weeks])), Object.fromEntries(restored.allocations.map(item => [cellKey(item.phaseId, item.roleCode), item.effort]))) }));
+    setLoadedVersion(version);
     setSubmissionAttempted(false);
-    toast.info('Estimate opened for editing using current master rates. Choose Update to save a new revision.');
+    toast.info('Saved estimate loaded. Choose Update to save any changes.');
     return true;
   }
 
@@ -425,8 +438,11 @@ export function EstimationModule({
 
       </div>
     </Panel>
-      <div className="space-y-3">
-        <Panel title="Estimation matrix" tone="indigo">
+      <div className="opp-estimation-matrix-panel-group space-y-3">
+        <Panel title="Estimation matrix" tone="indigo" className="[&>div:first-child>div]:flex-wrap" headerRight={<div role="group" aria-label="Estimation totals" className="flex max-w-full flex-wrap items-center justify-end gap-2">
+          <Badge variant="muted" className="gap-1.5 rounded-md border-primary bg-primary px-2.5 py-1 text-primary-foreground shadow-sm">Total estimated value <strong className="font-semibold tabular-nums">{calculationError ? 'Check matrix values' : money(total, o.currencyCode)}</strong></Badge>
+          <Badge variant="muted" className="gap-1.5 rounded-md border-primary/30 bg-accent px-2.5 py-1 text-accent-foreground shadow-sm">Total effort <strong className="font-semibold tabular-nums">{trimDecimal(effortTotal)} person-weeks</strong></Badge>
+        </div>}>
           <EstimationMatrix phases={activePhases} roles={activeRoles} editable={editable} saving={mutation.saving} validationId={validationId} currencyCode={o.currencyCode}
             duration={id => duration[id] ?? (editable ? '' : '0')} allocation={(id, code) => allocation[cellKey(id, code)] ?? (editable ? '' : '0')}
             onDuration={(id, value) => setDuration(previous => ({ ...previous, [id]: value }))}

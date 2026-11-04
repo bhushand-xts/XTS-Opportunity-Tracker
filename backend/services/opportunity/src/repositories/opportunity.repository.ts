@@ -897,9 +897,20 @@ export async function saveEstimationVersion(opportunityId: number, estimation: O
       if (source.rows[0]?.status !== 'SAVED') throw conflict('This saved estimate is unavailable or submitted and cannot be edited.');
     }
     await saveEstimationWithClient(client, opportunityId, estimation, userId);
-    const saved = await snapshotEstimation(client, opportunityId, name, 'SAVED', userId, requestKey);
-    if (sourceVersionId) await client.query('UPDATE tbl_opportunity_estimation_versions SET supersedes_id = $2 WHERE estimation_version_id = $1', [saved.id, sourceVersionId]);
-    return saved;
+    if (!sourceVersionId) return snapshotEstimation(client, opportunityId, name, 'SAVED', userId, requestKey);
+    // Edit the same saved estimate. Submitted snapshots are separate protected rows.
+    const updated = await client.query<EstimationVersion>(`UPDATE tbl_opportunity_estimation_versions
+      SET (name, snapshot, currency_code, person_weeks, request_key) = (
+        SELECT $3,
+          jsonb_build_object('revision', e.revision, 'rows', e.rows, 'assumptions', e.assumptions, 'total', e.total::TEXT, 'status', e.status, 'grid', e.draft_grid),
+          COALESCE(c.currency_code, ''), COALESCE((SELECT SUM((r->>'hours')::NUMERIC * (r->>'people')::NUMERIC) / 40 FROM jsonb_array_elements(e.rows) r), 0), $5
+        FROM tbl_opportunity_estimation_matrix e JOIN tbl_opportunity o ON o.opportunity_id = e.opportunity_id LEFT JOIN mst_currency c ON c.currency_id = o.currency_id
+        WHERE e.opportunity_id = $1
+      ), created_by = $4, created_dt = CURRENT_TIMESTAMP
+      WHERE opportunity_id = $1 AND estimation_version_id = $2 AND status = 'SAVED' AND deleted_dt IS NULL
+      RETURNING ${VERSION_COLUMNS}`, [opportunityId, sourceVersionId, name, userId, requestKey]);
+    if (!updated.rows[0]) throw conflict('This saved estimate is unavailable or submitted and cannot be edited.');
+    return updated.rows[0];
   });
 }
 

@@ -373,6 +373,14 @@
 .opp-estimation-workspace .opp-estimation-matrix thead .matrix-allocation { background: color-mix(in srgb,hsl(var(--card)) 84%,#6366f1); }
 .opp-estimation-workspace .opp-estimation-matrix thead .matrix-effort { background: color-mix(in srgb,hsl(var(--card)) 82%,#14b8a6); }
 .opp-estimation-workspace .opp-estimation-matrix thead .matrix-cost { background: color-mix(in srgb,hsl(var(--card)) 80%,#f59e0b); }
+/* Emphasize summary columns and grand totals without changing matrix sizing. */
+.opp-estimation-workspace .opp-estimation-matrix .matrix-effort.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 82%,#14b8a6); font-weight: 700; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-cost.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 76%,#f59e0b); font-weight: 700; }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-effort.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 68%,#14b8a6); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-cost.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 60%,#f59e0b); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-totals td { background: hsl(var(--muted)); box-shadow: inset 0 2px hsl(var(--border)); font-weight: 700; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-totals .matrix-effort.matrix-total { background: #0f766e; color: #fff; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-totals .matrix-cost.matrix-total { background: #b45309; color: #fff; }
 @media (max-width: 650px) {
   .opp-estimation-workspace .opp-estimation-matrix .matrix-phase { width: 120px; min-width: 120px; max-width: 120px; }
   .opp-estimation-workspace .opp-estimation-matrix .matrix-duration { left: 152px; width: 72px; min-width: 72px; max-width: 72px; }
@@ -437,3 +445,27 @@
   .opp-save-actions button, .opp-card-actions a { min-height: 40px; }
 }
 @media (prefers-reduced-motion: reduce) { .opp-highlight { animation: none; } }
+
+/* Laptop estimation workspace: retain actions while the matrix/history scroll internally.
+   The available height is measured below the existing heading and tabs. */
+@media (min-width: 961px) and (max-width: 1536px) and (min-height: 640px) {
+  .opp-estimation-fit > .opp-detail-workspace,
+  .opp-estimation-fit > .opp-detail-sidebar { height: var(--opp-estimation-height, calc(100dvh - 184px)); min-height: 0; }
+  .opp-estimation-fit > .opp-detail-workspace > [role="tabpanel"] { height: 100%; }
+  .opp-estimation-fit .opp-estimation-workspace { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-workspace > * { margin-top: 0; flex-shrink: 0; }
+  .opp-estimation-fit .opp-estimation-workspace > .opp-estimation-matrix-panel-group { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-matrix-panel-group > .opp-panel { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-matrix-panel-group > .opp-panel > :first-child { flex-shrink: 0; }
+  .opp-estimation-fit .opp-estimation-matrix-panel-group > .opp-panel > :nth-child(2) { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-matrix { flex: 1 1 0; min-height: 0; max-height: none; }
+  .opp-estimation-fit > .opp-detail-sidebar { grid-template-rows: minmax(0,1.1fr) minmax(0,1fr); position: static; }
+  .opp-estimation-fit .opp-progress-panel,
+  .opp-estimation-fit .opp-saved-estimations-panel { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+  .opp-estimation-fit .opp-detail-sidebar .opp-panel > :first-child { flex-shrink: 0; }
+  .opp-estimation-fit .opp-progress-panel > :nth-child(2) { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .opp-estimation-fit .opp-detail-sidebar > div { min-height: 0; }
+  .opp-estimation-fit .opp-saved-estimations-panel > :nth-child(2) { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-saved-estimations-panel ul { flex: 1 1 auto; min-height: 0; max-height: none; }
+  .opp-estimation-fit .opp-saved-estimations-panel ul + div { flex-shrink: 0; }
+}
