@@ -13,7 +13,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const validEstimate = () => ({ revision: 2, rows: [{ id: 'grid-1-PM', workItem: 'Engineering', hours: '80', people: 1, hourlyRate: '25' }], assumptions: 'Unsaved assumptions', total: '2000', grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] } });
 
-const versionOf = (estimation: Estimation): EstimationVersion => ({ id: '1', version: 1, name: 'Baseline', status: 'SAVED', currencyCode: 'USD', personWeeks: '2', createdBy: 1, createdAt: '2026-11-03T00:00:00Z', estimation });
+const versionOf = (estimation: Estimation): EstimationVersion => ({ id: '1', revision: 1, version: 1, name: 'Baseline', status: 'SAVED', currencyCode: 'USD', personWeeks: '2', createdBy: 1, createdAt: '2026-11-03T00:00:00Z', estimation });
 
 function salesReview(overrides: Partial<OpportunityDetail> = {}) {
   return fixtureOpportunity({
@@ -23,7 +23,11 @@ function salesReview(overrides: Partial<OpportunityDetail> = {}) {
 }
 
 function mount(opportunity: OpportunityDetail, decide: OpportunityService['decide'] = vi.fn(), onSaved = vi.fn(), variant: 'panel' | 'bare' | 'card' | 'toolbar' = 'panel', selectedVersion: EstimationVersion | null = versionOf(opportunity.estimation ?? validEstimate())) {
-  const service = { ...productionOpportunityService, decide, holdReasons: vi.fn(async () => [{ id: 3, name: 'Missing information', description: 'Supporting details are missing.' }]) };
+  const service = { ...productionOpportunityService, decide, negotiationReasons: vi.fn(async () => [
+    { id: 8, name: 'Pricing / Budget Negotiation', description: 'Client is negotiating the proposed price or total project cost.' },
+    { id: 9, name: 'Scope changes', description: 'Client has requested changes to the project scope or deliverables.' },
+    { id: 21, name: 'Other', description: null },
+  ]), holdReasons: vi.fn(async () => [{ id: 3, name: 'Missing information', description: 'Supporting details are missing.' }]) };
   const view = (record: OpportunityDetail) => <OpportunityServiceContext.Provider value={service}><ReviewActions opportunity={record} onSaved={onSaved} variant={variant} selectedVersion={selectedVersion} /></OpportunityServiceContext.Provider>;
   const rendered = render(view(opportunity));
   return { onSaved, rerender: (record: OpportunityDetail) => rendered.rerender(view(record)) };
@@ -35,7 +39,7 @@ function openDecision(label: string) {
 }
 
 function confirmReview(dialog: ReturnType<typeof within>) {
-  const checkbox = dialog.queryByRole('checkbox');
+  const checkbox = dialog.queryByRole('checkbox', { name: 'I have reviewed this opportunity.' });
   if (checkbox) fireEvent.click(checkbox);
   fireEvent.click(dialog.getByRole('button', { name: 'Confirm decision' }));
 }
@@ -86,6 +90,81 @@ describe('persisted opportunity review actions', () => {
     mount(salesReview({ stageId: 3, subStageId: 7, allowedActions: ['SUBMIT_ESTIMATE'], estimation }));
     fireEvent.click(screen.getByRole('button', { name: 'Submit Estimation to CEO' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('loads master negotiation reasons and sends the selected ID, description and revision choice', async () => {
+    const current = salesReview({ stageId: 5, subStageId: 11, allowedActions: ['START_NEGOTIATION'] });
+    const saved = { ...current, stageId: 4, subStageId: 5, allowedActions: [] };
+    const decide = vi.fn<OpportunityService['decide']>(async () => saved);
+    const { onSaved } = mount(current, decide);
+    const dialog = openDecision('Under Negotiation');
+    const dropdown = dialog.getByRole('combobox', { name: 'Negotiation reason (required)' });
+    await dialog.findByRole('option', { name: 'Pricing / Budget Negotiation' });
+    expect(within(dropdown).getAllByRole('option')).toHaveLength(4);
+    fireEvent.change(dropdown, { target: { value: '8' } });
+    expect(dropdown).toHaveAccessibleDescription('Client is negotiating the proposed price or total project cost.');
+    fireEvent.click(dialog.getByRole('checkbox', { name: 'Requires revised estimation' }));
+    fireEvent.change(dialog.getByRole('textbox', { name: /Negotiation description/ }), { target: { value: '  Discuss the revised budget on Friday.  ' } });
+    confirmReview(dialog);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved));
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'START_NEGOTIATION', expectedStageId: 5, expectedSubStageId: 11,
+      reason: 'Discuss the revised budget on Friday.', reasonCodeId: 8, requiresRevisedEstimation: true,
+    }));
+    expect(decide.mock.calls[0][0].reasonCodeId).toBe(8);
+  });
+
+  it('supports Other without leaving another reason description visible', async () => {
+    const current = salesReview({ stageId: 5, subStageId: 11, allowedActions: ['START_NEGOTIATION'] });
+    const decide = vi.fn(async () => ({ ...current, stageId: 6, subStageId: 12, allowedActions: [] }));
+    mount(current, decide);
+    const dialog = openDecision('Under Negotiation');
+    await dialog.findByRole('option', { name: 'Other' });
+    const dropdown = dialog.getByRole('combobox');
+    fireEvent.change(dropdown, { target: { value: '9' } });
+    expect(dropdown).toHaveAccessibleDescription('Client has requested changes to the project scope or deliverables.');
+    fireEvent.change(dropdown, { target: { value: '21' } });
+    expect(dropdown).not.toHaveAttribute('aria-describedby');
+    expect(dialog.queryByText('Client has requested changes to the project scope or deliverables.')).not.toBeInTheDocument();
+    fireEvent.change(dialog.getByRole('textbox'), { target: { value: 'Client discussion' } });
+    confirmReview(dialog);
+    await waitFor(() => expect(decide).toHaveBeenCalledWith(expect.objectContaining({ reason: 'Client discussion', reasonCodeId: 21, requiresRevisedEstimation: false })));
+  });
+
+  it('requires a negotiation reason and allows an optional description before sending a revision request', async () => {
+    const current = salesReview({ stageId: 5, subStageId: 11, allowedActions: ['START_NEGOTIATION'] });
+    const decide = vi.fn(async () => ({ ...current, stageId: 6, subStageId: 12, allowedActions: [] }));
+    mount(current, decide);
+    const dialog = openDecision('Under Negotiation');
+    const checkbox = dialog.getByRole('checkbox', { name: 'Requires revised estimation' });
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(checkbox);
+    confirmReview(dialog);
+    expect(decide).not.toHaveBeenCalled();
+    await dialog.findByRole('option', { name: 'Other' });
+    fireEvent.change(dialog.getByRole('combobox'), { target: { value: '21' } });
+    confirmReview(dialog);
+    await waitFor(() => expect(decide).toHaveBeenCalledWith(expect.objectContaining({ reason: '', reasonCodeId: 21, requiresRevisedEstimation: true })));
+  });
+
+  it('clears a cancelled negotiation selection and keeps it out of other decisions', async () => {
+    const current = salesReview({ stageId: 5, subStageId: 11, allowedActions: ['START_NEGOTIATION', 'MARK_WON'] });
+    const decide = vi.fn(async () => ({ ...current, stageId: 7, subStageId: 13, allowedActions: [] }));
+    mount(current, decide);
+    let dialog = openDecision('Under Negotiation');
+    await dialog.findByRole('option', { name: 'Other' });
+    fireEvent.change(dialog.getByRole('combobox'), { target: { value: '9' } });
+    fireEvent.click(dialog.getByRole('checkbox', { name: 'Requires revised estimation' }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
+    dialog = openDecision('Under Negotiation');
+    expect(dialog.getByRole('combobox')).toHaveValue('');
+    expect(dialog.getByRole('checkbox', { name: 'Requires revised estimation' })).not.toBeChecked();
+    fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
+    dialog = openDecision('Won');
+    expect(dialog.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(dialog.queryByRole('checkbox', { name: 'Requires revised estimation' })).not.toBeInTheDocument();
+    fireEvent.change(dialog.getByRole('textbox'), { target: { value: 'Agreement signed.' } });
+    confirmReview(dialog);
+    await waitFor(() => expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'MARK_WON', reason: 'Agreement signed.' })));
   });
 
   it('keeps the saved CEO estimation hold selected after reopening, alongside approve and reject', () => {
@@ -206,7 +285,12 @@ describe('persisted opportunity review actions', () => {
     const decide = vi.fn(async () => saved);
     const { onSaved, rerender } = mount(current, decide);
     const dialog = openDecision(label);
-    expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(dialog.queryByRole('checkbox', { name: 'I have reviewed this opportunity.' })).not.toBeInTheDocument();
+    if (decision === 'START_NEGOTIATION') {
+      await dialog.findByRole('option', { name: 'Other' });
+      fireEvent.change(dialog.getByRole('combobox'), { target: { value: '21' } });
+      fireEvent.change(dialog.getByRole('textbox'), { target: { value: 'Client discussion' } });
+    }
     confirmReview(dialog);
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved));
     expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision, expectedStageId: stageId, expectedSubStageId: subStageId }));
@@ -573,12 +657,32 @@ describe('persisted opportunity review actions', () => {
     mount(legacy, decide);
     const dialog = openDecision('Reject Opportunity');
     fireEvent.click(dialog.getByRole('button', { name: 'Confirm decision' }));
-    expect(await dialog.findByRole('alert')).toHaveTextContent('Confirm that you reviewed this package revision.');
+    expect(await dialog.findByRole('alert')).toHaveTextContent('Confirm that you reviewed this opportunity.');
     confirmReview(dialog);
     expect(await dialog.findByRole('alert')).toHaveTextContent('Enter a reason for this decision.');
     fireEvent.change(dialog.getByRole('textbox', { name: /Reason/ }), { target: { value: 'Capacity unavailable' } });
     fireEvent.click(dialog.getByRole('button', { name: 'Confirm decision' }));
     await waitFor(() => expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'SALES_REJECT', reason: 'Capacity unavailable', packageRevision: 3, confirmed: true })));
     expect(decide.mock.calls[0][0]).not.toHaveProperty('expectedStageId');
+  });
+});
+
+describe('CEO estimation revision review', () => {
+  it.each([
+    ['ESTIMATE_REVISION_APPROVE', 'Approve estimation revision', 3, 7],
+    ['ESTIMATE_REVISION_DECLINE', 'Decline revision request', 6, 12],
+  ] as const)('records %s only for the pending revision request', async (decision, label, stageId, subStageId) => {
+    const current = salesReview({ stageId: 4, subStageId: 5, holdReasonCodeId: 8,
+      allowedActions: ['ESTIMATE_REVISION_APPROVE', 'ESTIMATE_REVISION_DECLINE', 'ESTIMATE_APPROVE'] });
+    const saved = { ...current, stageId, subStageId, allowedActions: [] };
+    const decide = vi.fn(async () => saved);
+    const { onSaved } = mount(current, decide);
+    expect(screen.queryByRole('button', { name: 'Approve Estimation' })).not.toBeInTheDocument();
+    const dialog = openDecision(label);
+    expect(await dialog.findByText('Pricing / Budget Negotiation')).toBeInTheDocument();
+    expect(dialog.queryByRole('combobox')).not.toBeInTheDocument();
+    confirmReview(dialog);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved));
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decision, expectedStageId: 4, expectedSubStageId: 5 }));
   });
 });

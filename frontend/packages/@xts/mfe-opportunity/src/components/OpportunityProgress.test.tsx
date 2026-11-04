@@ -1,10 +1,39 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import type { DirectoryUser, OpportunityStageHistory } from '@xts/api-contracts';
 import { fixtureOpportunity } from '../testing/fixtures';
 import { OpportunityProgress } from './OpportunityProgress';
 
 afterEach(cleanup);
+
+it('shows one compact row per revision request instead of repeating every visited stage', () => {
+  const history = [...approvedHistory, event(6, 5, 11, bidAt, sales),
+    event(7, 4, 5, negotiationAt, sales), event(8, 3, 7, outcomeAt, ceo)];
+  render(<OpportunityProgress opportunity={fixtureOpportunity({ stageId: 3, subStageId: 7, stageHistory: [...history].reverse() })} />);
+  expect(screen.getByText('Returned for estimation')).toBeVisible();
+  expect(stage('Solution/Scoping Estimation (Engineering)').querySelector('.opp-timeline-marker .lucide-undo-2')).not.toBeNull();
+  fireEvent.click(screen.getByText('Revision history (1)'));
+  const journey = screen.getByRole('list', { name: 'Estimation revision requests' });
+  const steps = within(journey).getAllByRole('listitem');
+  expect(steps).toHaveLength(1);
+  expect(steps[0]).toHaveTextContent('Approved → Estimation');
+  expect(steps[0].querySelector('time')).toHaveAttribute('datetime', outcomeAt);
+
+});
+
+it('distinguishes pending and declined revision requests without claiming estimation was reopened', () => {
+  const history = [...approvedHistory, event(6, 5, 11, bidAt, sales), event(7, 4, 5, negotiationAt, sales)];
+  const record = fixtureOpportunity({ stageId: 4, subStageId: 5, stageHistory: history });
+  const { rerender } = render(<OpportunityProgress opportunity={record} />);
+  expect(screen.getByText('Revision approval pending')).toBeVisible();
+  expect(screen.queryByText('Returned for estimation')).not.toBeInTheDocument();
+  rerender(<OpportunityProgress opportunity={{ ...record, stageId: 6, subStageId: 12,
+    stageHistory: [...history, event(8, 6, 12, outcomeAt, ceo)] }} />);
+  expect(screen.getByText('Revision request declined')).toBeVisible();
+  fireEvent.click(screen.getByText('Revision history (1)'));
+  expect(screen.getByText('Declined → Negotiation')).toBeVisible();
+  expect(screen.queryByText('Approved → Estimation')).not.toBeInTheDocument();
+});
 
 const creator: DirectoryUser = { id: '1', name: 'Original Creator', email: 'creator@example.test', roles: [], active: true };
 const sales = { ...creator, id: '2', name: 'Sales Head' };
@@ -27,7 +56,7 @@ function stage(name: string) {
 function expectResult(name: string, label: string, at: string, actor: DirectoryUser) {
   const result = within(stage(name)).getByText(label).parentElement!;
   expect(result.querySelector('time')).toHaveAttribute('datetime', at);
-  expect(result).toHaveTextContent('By ' + actor.name);
+  expect(result).toHaveTextContent((label === 'Opportunity created' ? 'Created by ' : 'By ') + actor.name);
 }
 const approvedHistory = [
   event(1, 1, 1, createdAt, creator),
@@ -201,5 +230,43 @@ it('retains creation details for opportunities without persisted stage IDs', () 
   render(<OpportunityProgress opportunity={fixtureOpportunity({ createdDt: createdAt, createdBy: creator, stageId: null })} />);
   const created = screen.getByText('Opportunity created').parentElement!;
   expect(created.querySelector('time')).toHaveAttribute('datetime', createdAt);
-  expect(created).toHaveTextContent('By Original Creator');
+  expect(created).toHaveTextContent('Created by Original Creator');
+});
+
+it('restarts estimation progress after CEO revision approval and uses the new cycle completion dates', () => {
+  const revisionAt = '2026-10-21T04:30:00.000Z';
+  const history = [...approvedHistory, event(6, 5, 11, bidAt, sales), event(7, 4, 5, negotiationAt, sales), event(8, 3, 7, revisionAt, ceo)];
+  const record = fixtureOpportunity({ createdDt: createdAt, createdBy: creator, stageId: 3, subStageId: 7, stageHistory: history });
+  const { rerender } = render(<OpportunityProgress opportunity={record} />);
+  expect(stage('Proposal / Bid Submission')).toHaveClass('upcoming');
+  expect(stage('Estimate Review & Approval')).toHaveClass('upcoming');
+  expect(screen.queryByText('Estimation approved')).not.toBeInTheDocument();
+  expect(screen.queryByText('Estimation submitted')).not.toBeInTheDocument();
+  expectResult('Qualifying (Go/No-Go)', 'Go approved', goAt, ceo);
+  const newSubmittedAt = '2026-10-21T05:00:00.000Z';
+  const newApprovedAt = '2026-10-21T05:30:00.000Z';
+  rerender(<OpportunityProgress opportunity={{ ...record, stageId: 5, subStageId: 10, stageHistory: [...history,
+    event(9, 4, 8, newSubmittedAt, estimator), event(10, 5, 10, newApprovedAt, ceo)] }} />);
+  expectResult('Solution/Scoping Estimation (Engineering)', 'Estimation submitted', newSubmittedAt, estimator);
+  expectResult('Estimate Review & Approval', 'Estimation approved', newApprovedAt, ceo);
+});
+
+
+it('limits repeated revisions to the latest three and lets users reveal earlier requests', () => {
+  const history = [...approvedHistory];
+  for (let index = 0; index < 5; index++) {
+    const at = (minute: number) => new Date(Date.UTC(2026, 9, 21 + index, 4, minute)).toISOString();
+    history.push(event(20 + index * 3, 4, 5, at(0), sales));
+    if (index < 4) history.push(event(21 + index * 3, index === 1 ? 6 : 3, index === 1 ? 12 : 7, at(5), ceo));
+  }
+  render(<OpportunityProgress opportunity={fixtureOpportunity({ stageId: 4, subStageId: 5, stageHistory: history })} />);
+  fireEvent.click(screen.getByText('Revision history (5)'));
+  const list = screen.getByRole('list', { name: 'Estimation revision requests' });
+  expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+  expect(within(list).getAllByRole('listitem')[0]).toHaveTextContent('Pending CEO approval');
+  fireEvent.click(screen.getByRole('button', { name: 'Show 2 earlier requests' }));
+  expect(within(list).getAllByRole('listitem')).toHaveLength(5);
+  expect(within(list).getByText('Declined → Negotiation')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Show latest 3' }));
+  expect(within(list).getAllByRole('listitem')).toHaveLength(3);
 });

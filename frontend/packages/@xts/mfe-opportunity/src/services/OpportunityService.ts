@@ -1,16 +1,26 @@
 import { createContext, useContext } from 'react';
-import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE, GET_ESTIMATION_VERSIONS, SAVE_ESTIMATION_VERSION, DELETE_ESTIMATION_VERSION } from './opportunity.queries';
+import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE, GET_ESTIMATION_VERSIONS, GET_ESTIMATION_VERSION, SAVE_ESTIMATION_VERSION, DELETE_ESTIMATION_VERSION, UPDATE_ESTIMATION_RATES } from './opportunity.queries';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY, type OwnerDirectoryData } from './userDirectory.queries';
 import { mapOwnerDirectory } from './useOwnerDirectory';
 import { getApolloClient } from '@xts/api-client';
 import type { Action, AssessmentSection, ClientDraft, DecisionCommand, DirectoryUser, Estimation, EstimationVersion, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
-import { CREATE_OPPORTUNITY_CLIENT, UPDATE_OPPORTUNITY_CLIENT, GET_CLIENT_CREATE_ACCESS, CREATE_OPPORTUNITY, GET_OPPORTUNITY, GET_OPPORTUNITY_LOOKUPS, LIST_OPPORTUNITIES, LIST_OPPORTUNITY_CLIENTS, UPDATE_OPPORTUNITY, TRANSITION_OPPORTUNITY, GET_HOLD_REASON_CODES } from './opportunity.queries';
+import { CREATE_OPPORTUNITY_CLIENT, UPDATE_OPPORTUNITY_CLIENT, GET_CLIENT_CREATE_ACCESS, CREATE_OPPORTUNITY, GET_OPPORTUNITY, GET_OPPORTUNITY_LOOKUPS, LIST_OPPORTUNITIES, LIST_OPPORTUNITY_CLIENTS, UPDATE_OPPORTUNITY, TRANSITION_OPPORTUNITY, GET_HOLD_REASON_CODES, GET_NEGOTIATION_REASON_CODES } from './opportunity.queries';
 
 // The opportunity service's own base URL (its direct REST endpoints, not the
 // gateway) — used below for document upload/download. Overridable via
 // frontend/.env's OPPORTUNITY_SERVICE_URL (see frontend/.env.example),
 // injected at build time by webpack the same way GRAPHQL_API_URL is.
 const OPPORTUNITY_SERVICE_URL = process.env.OPPORTUNITY_SERVICE_URL || 'http://localhost:4003';
+
+async function loadWorkflowReasons(negotiation: boolean): Promise<HoldReasonOption[]> {
+  const { data } = await getApolloClient().query<{ reasonCodesList: ({ id: number; reasonName: string; description: string | null; displayOrder: number | null; isActive: boolean; isNegotiationReason?: boolean } | null)[] | null }>({
+    query: negotiation ? GET_NEGOTIATION_REASON_CODES : GET_HOLD_REASON_CODES, fetchPolicy: 'network-only', errorPolicy: 'none',
+  });
+  if (!Array.isArray(data.reasonCodesList)) throw new Error((negotiation ? 'Negotiation' : 'Hold') + ' reasons could not be loaded. Please retry.');
+  return data.reasonCodesList.filter((reason): reason is NonNullable<typeof reason> => reason != null && reason.isActive === true && Number.isSafeInteger(reason.id) && reason.id > 0 && Boolean(reason.reasonName.trim()) && (negotiation ? reason.isNegotiationReason === true : reason.isNegotiationReason !== true))
+    .sort((a, b) => (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) || a.reasonName.localeCompare(b.reasonName) || a.id - b.id)
+    .map(reason => ({ id: reason.id, name: reason.reasonName, description: reason.description }));
+}
 
 export class IntegrationUnavailable extends Error {
   readonly code = 'INTEGRATION_UNAVAILABLE';
@@ -31,9 +41,11 @@ export interface OpportunityService {
   download(opportunityId: string | null, document: SourceDocument): Promise<Blob>;
   extract(command: VersionCommand & { documentId: string }): Promise<OpportunityDetail>;
   extractionStatus(opportunityId: string, jobId: string, signal?: AbortSignal): Promise<OpportunityDetail>;
+  estimationVersion?(opportunityId: string, estimationId: string): Promise<EstimationVersion>;
   estimationVersions?(opportunityId: string): Promise<EstimationVersion[]>;
   deleteEstimationVersion?(opportunityId: string, versionId: string): Promise<void>;
-  saveEstimationVersion?(command: VersionCommand & { estimation: Estimation; name: string; sourceVersionId?: string }): Promise<{ version: EstimationVersion; opportunity: OpportunityDetail }>;
+  saveEstimationVersion?(command: VersionCommand & { estimation: Estimation; name: string; sourceVersionId?: string; sourceRevision?: number }): Promise<{ version: EstimationVersion; opportunity: OpportunityDetail }>;
+  updateEstimationRates?(command: { opportunityId: string; estimationId: string; revision: number; rates: { roleCode: string; rate: string }[] }): Promise<{ version: EstimationVersion; opportunity: OpportunityDetail }>;
   saveEstimation(command: VersionCommand & { estimation: Estimation }): Promise<OpportunityDetail>;
   saveScope(command: VersionCommand & { scope: Scope; section?: AssessmentSection }): Promise<OpportunityDetail>;
   assign(command: ResponseCommand & { ownerId: string; reviewerId: string; dueDate: string }): Promise<OpportunityDetail>;
@@ -41,6 +53,7 @@ export interface OpportunityService {
   reviewAnswer(command: ResponseCommand & { approved: boolean; reason: string; submittedRevision: number }): Promise<OpportunityDetail>;
   decide(command: DecisionCommand): Promise<OpportunityDetail>;
   holdReasons?(): Promise<HoldReasonOption[]>;
+  negotiationReasons?(): Promise<HoldReasonOption[]>;
 }
 
 async function unavailable(capability: string): Promise<never> { throw new IntegrationUnavailable(capability); }
@@ -325,6 +338,11 @@ export const productionOpportunityService: OpportunityService = {
   },
   extract: () => unavailable('Question extraction'),
   extractionStatus: () => unavailable('Extraction status'),
+  async estimationVersion(opportunityId, estimationId) {
+    const { data } = await getApolloClient().query<{ estimationVersion: EstimationVersion }>({ query: GET_ESTIMATION_VERSION, variables: { opportunityId: Number(opportunityId), estimationId }, fetchPolicy: 'network-only', errorPolicy: 'none' });
+    if (!data.estimationVersion) throw new Error('The saved estimation is unavailable. Refresh and retry.');
+    return data.estimationVersion;
+  },
   async estimationVersions(opportunityId) {
     const { data } = await getApolloClient().query<{ estimationVersions: EstimationVersion[] }>({ query: GET_ESTIMATION_VERSIONS, variables: { opportunityId: Number(opportunityId) }, fetchPolicy: 'network-only', errorPolicy: 'none' });
     return data.estimationVersions;
@@ -334,13 +352,18 @@ export const productionOpportunityService: OpportunityService = {
     if (!data?.deleteEstimationVersion) throw new Error('The estimate was not deleted. Please retry.');
   },
   async saveEstimationVersion(command) {
-    const { revision, rows, assumptions, grid } = command.estimation;
-    const { data } = await getApolloClient().mutate<{ saveEstimationVersion: EstimationVersion }>({ mutation: SAVE_ESTIMATION_VERSION, variables: { opportunityId: Number(command.opportunityId), estimation: { revision, rows: rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })), assumptions, grid }, name: command.name, requestKey: command.idempotencyKey, sourceVersionId: command.sourceVersionId }, errorPolicy: 'none' });
+    const { revision, rows, assumptions, grid, rates } = command.estimation;
+    const { data } = await getApolloClient().mutate<{ saveEstimationVersion: EstimationVersion }>({ mutation: SAVE_ESTIMATION_VERSION, variables: { opportunityId: Number(command.opportunityId), estimation: { revision, rows: rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })), assumptions, grid, rates }, name: command.name, requestKey: command.idempotencyKey, sourceVersionId: command.sourceVersionId, sourceRevision: command.sourceRevision }, errorPolicy: 'none' });
     if (!data?.saveEstimationVersion) throw new Error('The estimation version was not saved. Please retry.');
     return { version: data.saveEstimationVersion, opportunity: await productionOpportunityService.detail(command.opportunityId) };
   },
+  async updateEstimationRates(command) {
+    const { data } = await getApolloClient().mutate<{ updateEstimationRates: EstimationVersion }>({ mutation: UPDATE_ESTIMATION_RATES, variables: { ...command, opportunityId: Number(command.opportunityId) }, errorPolicy: 'none' });
+    if (!data?.updateEstimationRates) throw new Error('The opportunity rates were not updated. Please retry.');
+    return { version: data.updateEstimationRates, opportunity: await productionOpportunityService.detail(command.opportunityId) };
+  },
   async saveEstimation(command) {
-    const estimation = { revision: command.estimation.revision, assumptions: command.estimation.assumptions,
+    const estimation = { revision: command.estimation.revision, assumptions: command.estimation.assumptions, rates: command.estimation.rates,
       ...(command.estimation.grid ? { grid: command.estimation.grid } : {}),
       rows: command.estimation.rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })) };
     const { data } = await getApolloClient().mutate<{ saveOpportunityEstimation: { opportunityId: number } | null }>({
@@ -370,21 +393,15 @@ export const productionOpportunityService: OpportunityService = {
     return productionOpportunityService.detail(String(data.saveOpportunityAnswer.opportunityId));
   },
   reviewAnswer: () => unavailable('Answer review'),
-  async holdReasons() {
-    const { data } = await getApolloClient().query<{ reasonCodesList: ({ id: number; reasonName: string; description: string | null; displayOrder: number | null; isActive: boolean } | null)[] | null }>({
-      query: GET_HOLD_REASON_CODES, fetchPolicy: 'network-only', errorPolicy: 'none',
-    });
-    if (!Array.isArray(data.reasonCodesList)) throw new Error('Hold reasons could not be loaded. Please retry.');
-    return data.reasonCodesList.filter((reason): reason is NonNullable<typeof reason> => reason != null && reason.isActive === true && Number.isSafeInteger(reason.id) && reason.id > 0 && Boolean(reason.reasonName.trim()))
-      .sort((a, b) => (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) || a.reasonName.localeCompare(b.reasonName) || a.id - b.id)
-      .map(reason => ({ id: reason.id, name: reason.reasonName, description: reason.description }));
-  },
+  holdReasons: () => loadWorkflowReasons(false),
+  negotiationReasons: () => loadWorkflowReasons(true),
   async decide(command) {
     if (command.decision === 'RESUBMIT') throw new Error('Use Update Opportunity to save corrections and send the opportunity for review.');
     const workflowActions = {
       SALES_APPROVE: 'APPROVE', SALES_REQUEST_CHANGES: 'REQUEST_CHANGES', SALES_HOLD: 'HOLD',
       SALES_REJECT: 'REJECT', GATE1_NO_GO: 'REJECT', ESTIMATE_REJECT: 'REJECT',
       ESTIMATE_APPROVE: 'APPROVE', ESTIMATE_HOLD: 'HOLD', SUBMIT_ESTIMATE: 'SUBMIT_ESTIMATE',
+      ESTIMATE_REVISION_APPROVE: 'APPROVE_ESTIMATE_REVISION', ESTIMATE_REVISION_DECLINE: 'DECLINE_ESTIMATE_REVISION',
       BID_SUBMITTED: 'BID_SUBMITTED', START_NEGOTIATION: 'START_NEGOTIATION', MARK_WON: 'MARK_WON', MARK_LOST: 'MARK_LOST',
       OPPORTUNITY_HOLD: 'OPPORTUNITY_HOLD', RESUME_NEGOTIATION: 'RESUME_NEGOTIATION', RESUME_PROPOSAL: 'RESUME_PROPOSAL', CLOSE_OPPORTUNITY: 'CLOSE_OPPORTUNITY',
       GATE1_GO: 'APPROVE', GATE1_REQUEST_CHANGES: 'REQUEST_CHANGES', GATE1_HOLD: 'HOLD',
@@ -406,8 +423,9 @@ export const productionOpportunityService: OpportunityService = {
       mutation: TRANSITION_OPPORTUNITY,
       variables: { opportunityId: Number(command.opportunityId), action, comment: command.reason.trim() || null,
         ...(action === 'SUBMIT_ESTIMATE' ? { estimationVersionId: command.estimationVersionId } : {}),
-        ...(action === 'SUBMIT_ESTIMATE' && command.estimation ? { estimation: { revision: command.estimation.revision, rows: command.estimation.rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })), assumptions: command.estimation.assumptions, grid: command.estimation.grid } } : {}),
-        ...(['HOLD', 'REJECT', 'OPPORTUNITY_HOLD'].includes(action) ? { reasonCodeId: command.reasonCodeId ?? null } : {}),
+        ...(action === 'SUBMIT_ESTIMATE' && command.estimation ? { estimation: { revision: command.estimation.revision, rows: command.estimation.rows.map(({ id, workItem, hours, people, hourlyRate }) => ({ id, workItem, hours, people, hourlyRate })), assumptions: command.estimation.assumptions, rates: command.estimation.rates, grid: command.estimation.grid } } : {}),
+        ...(['HOLD', 'REJECT', 'OPPORTUNITY_HOLD', 'START_NEGOTIATION'].includes(action) ? { reasonCodeId: command.reasonCodeId ?? null } : {}),
+        ...(action === 'START_NEGOTIATION' ? { requiresRevisedEstimation: command.requiresRevisedEstimation ?? false } : {}),
       },
       errorPolicy: 'none',
     });

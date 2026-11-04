@@ -11,7 +11,7 @@ import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
 import { CONTEXT_FIELDS, money, rowAmount, STATE_LABELS, userLabel } from '../lib/workflow';
 import { LEAD_SOURCES } from '../lib/opportunityOptions';
 import { opportunityStatus } from '../lib/opportunityStatus';
-import { DetailDrawer, formatLocalDate, initials, Loading, Notice, Panel, Values } from './ui';
+import { DetailDrawer, formatLocalDate, initials, Loading, Notice, OpportunityNumber, Panel, Values } from './ui';
 import { ClientValues } from './ClientPicker';
 import { EstimationModule, ScopeModule, ScopeReadOnly } from './PreparationModules';
 import { ResponseWorkspace } from './ResponseWorkspace';
@@ -23,7 +23,7 @@ const STATUS_BADGE_VARIANT: Record<OpportunityState, BadgeProps['variant']> = {
   PREPARATION_PENDING: 'muted', IN_PROGRESS: 'info', SALES_REVIEW: 'warning', GATE1_PENDING: 'warning', GATE1_GO: 'success', SALES_REJECTED: 'critical', GATE1_NO_GO: 'critical',
 };
 function Activity({ opportunity: o }: { opportunity: OpportunityDetail }) {
-  return <Panel title="Activity & decisions" description="Backend-recorded identity, timestamps and reviewed package revisions" tone="neutral"><div className="space-y-3">{o.activity?.map(event => <article key={event.id} className="border-b pb-3"><h3 className="text-sm font-semibold">{event.action}</h3><p className="mt-1 text-xs text-muted-foreground">{userLabel(event.actor)} · {new Date(event.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST{event.packageRevision !== null ? ` · package v${event.packageRevision}` : ''}</p>{event.note && <p className="mt-3 whitespace-pre-wrap break-words text-sm">{event.note}</p>}</article>)}{!o.activity?.length && <p className="text-sm text-muted-foreground">No activity returned.</p>}</div></Panel>;
+  return <Panel title="Activity & decisions" description="Recorded decisions, users and timestamps" tone="neutral"><div className="space-y-3">{o.activity?.map(event => <article key={event.id} className="border-b pb-3"><h3 className="text-sm font-semibold">{event.action}</h3><p className="mt-1 text-xs text-muted-foreground">{userLabel(event.actor)} · {new Date(event.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p>{event.note && <p className="mt-3 whitespace-pre-wrap break-words text-sm">{event.note}</p>}</article>)}{!o.activity?.length && <p className="text-sm text-muted-foreground">No activity returned.</p>}</div></Panel>;
 }
 function Documents({ opportunity: o }: { opportunity: OpportunityDetail }) {
   return <Panel title="Documents" description="Files attached to this opportunity" tone="neutral"><Values values={[
@@ -50,7 +50,6 @@ function SolicitationPanel({ opportunity: o }: { opportunity: OpportunityDetail 
 function ScopeSummaryPanel({ o }: { o: OpportunityDetail }) {
   const scope = o.scope;
   return <Panel title="Saved scope summary" tone="rose" accentIcon headerRight={<div className="flex shrink-0 items-center gap-2">
-    <Badge variant="muted" size="sm">Revision {scope?.revision ?? 0}</Badge>
     {scope && <DetailDrawer title="Scope & assessment" description="Full scope summary, alignment and risk items as saved.">
       <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon><p className="whitespace-pre-wrap break-words text-sm">{scope.summary || 'Not provided'}</p></Panel><div className="mt-4"><ScopeReadOnly scope={scope} /></div>
     </DetailDrawer>}
@@ -66,7 +65,7 @@ function splitMoney(formatted: string): [string, string] {
 function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
   const estimation = o.estimation;
   const [whole, cents] = estimation ? splitMoney(money(estimation.total, o.currencyCode)) : ['', ''];
-  return <Panel title="Saved estimation summary" tone="amber" accentIcon headerRight={<Badge variant="muted" size="sm" className="shrink-0">Revision {estimation?.revision ?? 0}</Badge>}>
+  return <Panel title="Saved estimation summary" tone="amber" accentIcon>
     {estimation ? <>
       <p className="flex items-center gap-2 text-xs text-muted-foreground">Estimate total<Badge variant="warning" size="sm">{o.currencyCode}</Badge></p>
       <p className="mb-4 mt-1 text-lg font-semibold tabular-nums">{whole}{cents}</p>
@@ -79,7 +78,7 @@ function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
             <TableHead className="px-2 py-1.5 text-xs text-right">People</TableHead>
             <TableHead className="px-2 py-1.5 text-xs text-right">Rate / hr</TableHead>
             <TableHead className="px-2 py-1.5 text-xs text-right">Amount</TableHead>
-          </TableRow></TableHeader><TableBody>{estimation.rows.map(row => { let amount = '—'; try { amount = money(rowAmount(row), o.currencyCode); } catch { /* shown as — */ } return <TableRow key={row.id}>
+          </TableRow></TableHeader><TableBody>{estimation.rows.map(row => { let amount = '—'; try { amount = money(rowAmount(row, estimation), o.currencyCode); } catch { /* shown as — */ } return <TableRow key={row.id}>
             <TableCell className="px-2 py-1.5 text-sm">{row.workItem}</TableCell>
             <TableCell className="px-2 py-1.5 text-right text-sm">{row.hours}</TableCell>
             <TableCell className="px-2 py-1.5 text-right text-sm">{row.people}</TableCell>
@@ -94,10 +93,8 @@ function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
 }
 function Overview({
   opportunity: o,
-  review = false,
 }: {
   opportunity: OpportunityDetail;
-  review?: boolean;
 }) {
   const f = o.form;
   const statusLabel = opportunityStatus(o).substage ?? opportunityStatus(o).stage ?? STATE_LABELS[o.state];
@@ -105,24 +102,23 @@ function Overview({
   return (
     <div className="opp-overview">
       <div className="space-y-3">
-        <Panel title="Opportunity details" tone="violet" accentIcon headerRight={<DetailDrawer title="Opportunity details" description="Full opportunity record.">
-          <Panel title="Opportunity details" tone="violet" accentIcon><Values values={[
-            ['Opportunity name', f.title], ['Client budget', money(o.estimatedValue, o.currencyCode)], ['Client budget (USD)', f.estimatedValueUsd ? money(f.estimatedValueUsd, 'USD') : ''], ['Currency', o.currencyCode], ['Service line', f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine], ['Lead source', LEAD_SOURCES.find(source => source.id === f.leadSource)?.label ?? f.leadSource], ['Owner', userLabel(o.owner)], ['Priority', f.priority], ['Description', f.description],
-          ]} /></Panel>
-        </DetailDrawer>}>
+        <Panel title="Opportunity details" tone="violet" accentIcon className="opp-record-panel">
           <dl className="opp-record-details">
             <div><dt>Opportunity</dt><dd className="opp-record-title">{o.title}</dd><dd className="opp-record-reference">{o.number}</dd></div>
-            <div className="opp-record-status"><dt>Status</dt><dd className="opp-record-badges"><Badge variant={STATUS_BADGE_VARIANT[o.state] ?? 'outline'} size="sm">{statusLabel}</Badge><Badge variant="muted" size="sm">{review ? `Submitted package revision ${o.packageRevision ?? 'not submitted'}` : `Revision ${o.revision}`}</Badge></dd></div>
+            <div className="opp-record-status"><dt>Status</dt><dd className="opp-record-badges"><Badge variant={STATUS_BADGE_VARIANT[o.state] ?? 'outline'} size="sm">{statusLabel}</Badge></dd></div>
             <div className="opp-record-wide opp-record-budget">
               <dt className="text-xs text-muted-foreground">Client budget</dt>
               <dd className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                <strong className="text-lg font-semibold">{money(o.estimatedValue, o.currencyCode)}</strong>
+                <strong className="text-base font-semibold">{money(o.estimatedValue, o.currencyCode)}</strong>
                 {f.estimatedValueUsd ? <span className="text-xs text-muted-foreground">USD equivalent · {money(f.estimatedValueUsd, 'USD')}</span> : null}
+                <span className="text-xs text-muted-foreground">Currency: {o.currencyCode || 'Not provided'}</span>
               </dd>
             </div>
-            <div className="opp-record-wide"><dt className="text-xs text-muted-foreground">Service line</dt><dd className="mt-0.5">{f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine}</dd></div>
-            <div><dt className="text-xs text-muted-foreground">Owner</dt><dd className="mt-0.5">{userLabel(o.owner)}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Service line</dt><dd className="mt-0.5">{f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine}</dd></div>
             <div><dt className="text-xs text-muted-foreground">Lead source</dt><dd className="mt-0.5">{LEAD_SOURCES.find(source => source.id === f.leadSource)?.label ?? f.leadSource}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Owner</dt><dd className="mt-0.5">{userLabel(o.owner)}</dd></div>
+            <div><dt>Priority</dt><dd>{f.priority || 'Not provided'}</dd></div>
+            <div className="opp-record-wide"><dt>Description</dt><dd className="whitespace-pre-wrap">{f.description || 'Not provided'}</dd></div>
           </dl>
         </Panel>
 
@@ -166,7 +162,6 @@ function Overview({
             <Values
               values={[
                 ['Reviewed by', userLabel(o.salesRecommendation.actor)],
-                ['Package revision', o.salesRecommendation.packageRevision],
                 ['Recommendation', o.salesRecommendation.note],
               ]}
             />
@@ -234,7 +229,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
           <h3 className="mt-3 text-sm font-semibold">Available after CEO approval</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">This opportunity is currently in {o.stageId === 1 ? 'Identified' : 'Qualifying (Go/No-Go)'}. {tab.label} will be available once the CEO approves this opportunity and it moves to the Solution/Scoping Estimation (Engineering) stage.</p>
         </div> : tab.key === 'overview' ? <Overview opportunity={o} />
-          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} registerDraft={registerDraft} sidebarTarget={estimationSidebar} selectedVersion={selectedVersion} onSelectVersion={setSelectedVersion} />
+          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={false} registerDraft={registerDraft} sidebarTarget={estimationSidebar} selectedVersion={selectedVersion} onSelectVersion={setSelectedVersion} />
           : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} />
           : tab.key === 'documents' ? <Documents opportunity={o} />
           : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />

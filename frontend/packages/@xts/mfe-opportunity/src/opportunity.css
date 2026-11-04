@@ -8,13 +8,11 @@
    this app's wide content from dragging the sidebar off-screen, but this
    still clips anything that slips past that and would otherwise create a
    second, page-level horizontal scrollbar alongside .opp-board's own. */
-.opportunity-root { min-width: 0; overflow-x: hidden; color: hsl(var(--foreground)); background: #f5f5fc; min-height: calc(100dvh - 56px); display: flex; flex-direction: column; }
+.opportunity-root { min-width: 0; overflow-x: clip; color: hsl(var(--foreground)); background: #f5f5fc; min-height: calc(100dvh - 56px); display: flex; flex-direction: column; }
 .opportunity-root > .opp-page { flex: 1 1 auto; min-height: 0; }
 .opp-page { padding: 14px 20px; width: 100%; margin-inline: auto; min-width: 0; }
-/* The pipeline board fills whatever vertical space is actually left in the viewport (no fixed
-   px guess, so it adapts to any screen size/zoom) instead of being capped at a fixed height —
-   its own horizontal scrollbar then naturally sits right at the bottom of the page, reachable
-   without a separate page-level scroll, rather than stranded mid-page above empty space. */
+/* The board measures the space below the header and filters; each lane owns
+   its vertical scrolling so the horizontal scrollbar stays in view. */
 .opp-pipeline-page { display: flex; flex-direction: column; min-height: 0; }
 .opp-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .opp-heading h2 { font-size: 24px; line-height: 1.3; font-weight: 650; letter-spacing: -.65px; margin-bottom: 3px; overflow-wrap: anywhere; }
@@ -118,12 +116,16 @@
 .opp-stat:nth-child(3) { border-color: #e8d9b8; border-top-color: #b08a33; background: linear-gradient(120deg,#fff 45%,#fff8e9); }
 .opp-stat:nth-child(4) { border-color: #bddfd3; border-top-color: #3e957e; background: linear-gradient(120deg,#fff 45%,#edf9f4); }
 .opp-stat > strong { display: block; font-size: 21px; font-weight: 650; margin: 3px 0; overflow-wrap: anywhere; }
-/* flex: 1 1 auto (inside .opp-pipeline-page's flex column) makes the board fill whatever height
-   is actually left in the viewport — not a fixed px guess — so its own horizontal scrollbar sits
-   right at the bottom of the page on any screen size, reachable without scrolling the page down
-   first. Each lane scrolls its own cards vertically instead of growing the board. */
-.opp-board { display: flex; flex-wrap: nowrap; gap: 12px; align-items: flex-start; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; flex: 1 1 auto; min-height: 280px; }
-.opp-lane { flex: 0 0 320px; min-width: 0; max-height: 100%; overflow-y: auto; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
+.opp-board-container { min-width: 0; }
+.opp-board { display: flex; flex-wrap: nowrap; gap: 12px; align-items: stretch; height: var(--opp-board-height, 55dvh); min-height: 120px; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; scrollbar-width: auto; scrollbar-color: #8e96a8 #e8eaf2; }
+.opp-board::-webkit-scrollbar { height: 12px; }
+.opp-board::-webkit-scrollbar-track { background: #e8eaf2; border-radius: 8px; }
+.opp-board::-webkit-scrollbar-thumb { background: #8e96a8; border: 2px solid #e8eaf2; border-radius: 8px; }
+.opp-board::-webkit-scrollbar-thumb:hover { background: #64708a; }
+.opp-lane { display: flex; flex-direction: column; flex: 0 0 320px; min-width: 0; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
+.opp-lane > h3 { flex-shrink: 0; }
+/* Contain positioned card labels within the lane so they cannot expand the outer page. */
+.opp-lane-cards { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: #a4adbf transparent; padding-right: 3px; }
 .opp-pipeline-card { border: 1px solid #e1e5ed; border-radius: 9px; background: white; margin-bottom: 8px; box-shadow: 0 2px 3px #14213d03; overflow: hidden; min-width: 0; }
 .opp-pipeline-card:hover { border-color: #aaa5ee; }.opp-card-main { display: block; padding: 10px 12px; overflow-wrap: anywhere; }.opp-card-main:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -3px; }
 .opp-highlight { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; animation: opp-saved 6s forwards; }
@@ -209,18 +211,23 @@
   .opp-question-categories > button { min-height: 40px; }
 }
 .opp-detail-heading { display: grid; gap: 4px; margin-bottom: 8px; }
-.opp-record-details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px 20px; margin: 0; font-size: 14px; line-height: 20px; }
+.opp-workspace-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
+.opp-workspace-identity h2 { margin: 0; max-width: 100%; font-size: 18px; line-height: 26px; font-weight: 650; letter-spacing: -.25px; overflow-wrap: anywhere; }
+.opp-workspace-identity .opp-opportunity-number > strong { font-size: 12px; }
+.opp-record-panel > :first-child { padding: 8px 14px; }
+.opp-record-panel > :nth-child(2) { padding: 10px 14px; }
+.opp-record-details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 16px; margin: 0; font-size: 14px; line-height: 20px; }
 .opp-record-details > div { min-width: 0; }
 .opp-record-details .opp-record-wide { grid-column: 1 / -1; }
-.opp-record-details dt { margin-bottom: 4px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 16px; }
+.opp-record-details dt { margin-bottom: 2px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 16px; }
 .opp-record-details dd { margin: 0; overflow-wrap: anywhere; }
-.opp-record-details .opp-record-title { font-size: 18px; line-height: 26px; font-weight: 600; }
+.opp-record-details .opp-record-title { font-size: 16px; line-height: 22px; font-weight: 600; }
 .opp-record-details .opp-record-reference { margin-top: 2px; color: hsl(var(--muted-foreground)); font-size: 12px; }
 .opp-record-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .opp-record-badges > span { max-width: 100%; white-space: normal; }
 .opp-record-status { text-align: right; }
 .opp-record-status .opp-record-badges { justify-content: flex-end; }
-.opp-record-budget { border-top: 1px solid hsl(var(--border)); padding-top: 14px; font-variant-numeric: tabular-nums; }
+.opp-record-budget { border-top: 1px solid hsl(var(--border)); padding-top: 8px; font-variant-numeric: tabular-nums; }
 @media (max-width: 480px) { .opp-record-details { grid-template-columns: minmax(0,1fr); } }
 .opp-detail-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
 .opp-detail-toolbar > .opp-review-actions { flex: 0 1 auto; margin-left: auto; max-width: 100%; }
@@ -344,6 +351,22 @@
 .opp-progress-actor { color: #56657e; }
 .opp-progress-detail-label { color: #24816a; }
 .opp-stage-completion { margin-top: 4px; }
+.opp-revision-journey { margin-bottom: 14px; padding: 10px; border: 1px solid hsl(var(--primary) / .2); border-radius: 8px; background: hsl(var(--primary) / .04); }
+.opp-revision-heading { display: flex; align-items: center; gap: 7px; color: hsl(var(--primary)); font-size: 12px; line-height: 18px; }
+.opp-revision-heading svg { flex-shrink: 0; }
+.opp-revision-heading { margin-bottom: 6px; }
+.opp-revision-journey summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none; color: hsl(var(--primary)); font-size: 11px; font-weight: 600; }
+.opp-revision-journey summary::-webkit-details-marker { display: none; }
+.opp-revision-journey summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; border-radius: 2px; }
+.opp-revision-journey details[open] summary > svg { transform: rotate(180deg); }
+.opp-revision-journey ol { display: grid; gap: 6px; max-height: 180px; overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 8px 0 0; padding: 0 4px 0 0; }
+.opp-revision-journey li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 6px; font-size: 10px; line-height: 15px; }
+.opp-revision-outcome { font-weight: 500; overflow-wrap: anywhere; }
+.opp-revision-journey time { color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.opp-revision-older { display: block; margin-top: 8px; color: hsl(var(--primary)); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
+.opp-journey-marker { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid hsl(var(--border)); border-radius: 50%; background: hsl(var(--background)); color: hsl(var(--muted-foreground)); font-size: 10px; }
+.opp-journey-return .opp-journey-marker { border-color: hsl(var(--primary) / .3); background: hsl(var(--primary) / .1); color: hsl(var(--primary)); }
+.opp-journey-return .opp-revision-outcome { color: hsl(var(--primary)); }
 .opp-stage-completion > strong { display: block; color: #24816a; font-size: 11px; line-height: 17px; font-weight: 500; }
 .opp-substage-history { list-style: none; display: grid; gap: 9px; margin: 7px 0 0; padding: 0; }
 .opp-substage-history > li, .opp-substage-current { padding-left: 9px; border-left: 2px solid #e5e8ef; }

@@ -67,6 +67,7 @@ export function ResponseWorkspace({ opportunity, onSaved, formDirty = false, rea
   const questionsId = useId();
   const confirm = useUnsaved(false);
   const responses = opportunity.responses ?? [];
+  const answeredCount = responses.filter(response => response.answer.trim().length > 0).length;
   const questionnaire = opportunity.form.rfp.type === 'QUESTIONNAIRE';
   const groups = new Map<string, ResponseItem[]>();
   if (questionnaire) responses.forEach(response => {
@@ -86,7 +87,7 @@ export function ResponseWorkspace({ opportunity, onSaved, formDirty = false, rea
     </Button>;
   }
   return <div className="opp-assignment">
-    <Panel title="Opportunity questions" description={`${responses.length} questions saved for this opportunity`} tone="violet">
+    <Panel title="Opportunity questions" description={`${answeredCount} / ${responses.length} answered`} tone="violet">
       <div className="space-y-3">{questionnaire ? <>
         <div role="group" aria-label="Question categories" className="grid grid-cols-2 gap-2 xl:grid-cols-3">
           {Array.from(groups, ([category, items]) => <Button key={category} type="button" variant="outline"

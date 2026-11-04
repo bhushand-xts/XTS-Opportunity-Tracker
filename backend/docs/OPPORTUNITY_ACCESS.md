@@ -46,3 +46,49 @@ Regression checks, from `backend/services/opportunity`:
 npm run build
 node --test dist/services/opportunity/src/lib/opportunityAccess.test.js dist/services/opportunity/src/services/opportunity.service.test.js
 ```
+
+Estimation persistence uses only `tbl_opportunity_estimation` and
+`tbl_opportunity_estimation_tracker`. The saved sidebar, viewing, editing,
+deletion and CEO submission all read the main table. No legacy records are
+imported. Names use the existing `estimation_name` column (500 characters);
+allocation, saved rates, person-weeks and USD costs use the four JSONB columns.
+No revision column is required: concurrency tokens are derived from creations
+and tracker history.
+
+Creating a named estimate adds no tracker record. Editing updates that same ID
+and copies exactly one complete previous row into the tracker, with original
+rates, names, flags and audit timestamps preserved. Both writes commit together
+or roll back together. Deletion retains the named row with a deleted marker in
+its allocation JSON and archives the previous row before hiding it from lists.
+CEO submission marks the selected main-table estimate with `isselected` and
+restores its saved inputs for review. It creates no additional named estimate.
+Only that selected estimate has `is_current = TRUE`. Alternatives and the
+unnamed working copy have `is_current = FALSE`; the working copy is identified
+by its allocation metadata instead of the current flag. A main-table constraint
+keeps `is_current` equal to `isselected`.
+During pending or held CEO review, the team can save alternatives but cannot
+replace the submitted selection; attempts show "Estimation already submitted."
+The CEO list, matrix and direct saved-estimate lookup expose only the selected
+submitted estimate. Rate updates are limited to that same submitted main-table
+row and never insert another main record; its exact previous row is archived once.
+
+Only the Estimation Team can create or edit estimates in Engineering (3/7), pending
+CEO review (4/8) and held CEO review (4/9). Submission and deletion remain limited
+to the Estimation Team. The CEO can edit billing rates for a saved estimate with
+the rate-only mutation and Update opportunity button. The main row's
+`rate_snapshot.roles` stores billing rates by technical role code, including rate,
+billing period and USD currency. Costs are recalculated on the server, and exactly
+one complete previous named row is archived. Neither this mutation nor resource
+editing changes `mst_rate`; resource edits preserve existing opportunity rates.
+Approval remains CEO-only. Approval, closure and a
+pending negotiation revision request lock editing. USD is independent of the
+opportunity's client-budget currency; saved rates are preserved on edit.
+
+Fresh installations use
+`database/migrations/20261103_opportunity_estimation_persistence.sql` for the
+main/tracker tables and indexes. It neither imports nor deletes existing data.
+Existing installations apply `20261104_estimation_current_selection.sql` to
+correct old current flags. It archives each changed named row once and preserves
+existing tracker rows unchanged; rerunning it adds no duplicate history.
+The PostgreSQL integration test is opt-in via `ESTIMATION_DB_TEST=true` and uses
+connection-local temporary tables only.

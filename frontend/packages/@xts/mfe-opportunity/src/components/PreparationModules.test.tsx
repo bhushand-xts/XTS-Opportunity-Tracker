@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { MockedProvider } from '@apollo/client/testing';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -26,7 +26,7 @@ const initial = () => fixtureOpportunity({ stageId: 3, subStageId: 7, state: 'IN
 
 function savedVersionResult(start: OpportunityDetail, estimation: Estimation, revision: number) {
   const saved = { ...estimation, revision };
-  return { opportunity: { ...start, estimation: saved }, version: { id: '1', version: 1, name: 'Baseline', status: 'SAVED' as const, currencyCode: start.currencyCode, personWeeks: '1', createdBy: 1, createdAt: '2026-11-03T00:00:00Z', estimation: saved } };
+  return { opportunity: { ...start, estimation: saved }, version: { id: '1', revision: 1, version: 1, name: 'Baseline', status: 'SAVED' as const, currencyCode: start.currencyCode, personWeeks: '1', createdBy: 1, createdAt: '2026-11-03T00:00:00Z', estimation: saved } };
 }
 
 
@@ -220,4 +220,80 @@ it('removes a previously saved scope after confirmation', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
   await waitFor(() => expect(saveScope).toHaveBeenCalledWith(expect.objectContaining({ scope: expect.objectContaining({ summary: '' }) })));
   expect(screen.queryByText('Scope is required.')).not.toBeInTheDocument();
+});
+
+
+it('updates the same saved estimate with fresh data and saved USD rates when the client budget uses B', async () => {
+  const grid = { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '1' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] };
+  const estimation: Estimation = { revision: 2, rows: [{ id: 'grid-1-PM', workItem: 'Discovery & Design ? Project Manager', hours: '40', people: 1, hourlyRate: '10' }], assumptions: 'Keep rates', total: '400.00', grid };
+  const saved = { id: '22', revision: 2, version: 1, name: 'Baseline', status: 'SAVED' as const, currencyCode: 'USD', personWeeks: '1', createdBy: 7, createdAt: '2026-11-03T00:00:00Z', estimation };
+  const start = { ...initial(), currencyCode: 'B', estimation: { ...estimation, revision: 5 } };
+  const estimationVersion = vi.fn(async () => saved);
+  const saveEstimationVersion = vi.fn(async (command: { estimation: Estimation; name: string }) => ({ version: { ...saved, name: command.name, revision: 3, estimation: command.estimation }, opportunity: { ...start, estimation: { ...command.estimation, revision: 6 } } }));
+  render(withProviders(<OpportunityServiceContext.Provider value={{ ...productionOpportunityService, estimationVersions: vi.fn(async () => [{ ...saved, revision: 1, name: 'Old list name' }]), estimationVersion, saveEstimationVersion }}><EstimationModule opportunity={start} onSaved={vi.fn()} readOnly={false} showActions={false} /></OpportunityServiceContext.Provider>));
+  await screen.findByRole('spinbutton', { name: 'Discovery & Design duration in weeks' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Estimation name' })).toHaveValue('Baseline'));
+  expect(estimationVersion).toHaveBeenCalledWith(start.id, '22');
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Discovery & Design duration in weeks' }), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+  await waitFor(() => expect(saveEstimationVersion).toHaveBeenCalledWith(expect.objectContaining({ sourceVersionId: '22', sourceRevision: 2, estimation: expect.objectContaining({ revision: 5, total: '800.00', rows: [expect.objectContaining({ hourlyRate: '10.0000', hours: '80' })] }) })));
+});
+
+
+it('lets the CEO reprice a saved estimate with a rate-only update and live cost recalculation', async () => {
+  const grid = { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] };
+  const estimate: Estimation = { revision: 4, assumptions: '', total: '4000.00', rates: [{ roleCode: 'PM', rate: '8000', rateType: 'Monthly', currencyCode: 'USD' }], grid,
+    rows: [{ id: 'grid-1-PM', workItem: 'Discovery', hours: '80', people: 1, hourlyRate: '50.0000' }] };
+  const start = fixtureOpportunity({ stageId: 4, subStageId: 8, allowedActions: ['EDIT_ESTIMATION_RATES'], estimation: estimate });
+  const saved = { id: '13', revision: 2, version: 3, name: 'CEO review', isSelected: true, status: 'SUBMITTED' as const, currencyCode: 'USD', personWeeks: '2', createdBy: 7, createdAt: '2026-11-03T00:00:00Z', estimation: estimate };
+  const updated = { ...estimate, total: '6000.00', rates: [{ ...estimate.rates![0], rate: '12000' }], rows: [{ ...estimate.rows[0], hourlyRate: '75.0000' }] };
+  const updateEstimationRates = vi.fn(async () => ({ version: { ...saved, revision: 3, estimation: updated }, opportunity: { ...start, estimation: { ...updated, revision: 5 } } }));
+  const saveEstimationVersion = vi.fn();
+  const estimationVersion = vi.fn(async () => saved);
+  const onSaved = vi.fn();
+  let reader: (() => Estimation) | null = null;
+  render(withProviders(<OpportunityServiceContext.Provider value={{ ...productionOpportunityService, saveEstimationVersion, updateEstimationRates, estimationVersions: vi.fn(async () => [saved]), estimationVersion }}><EstimationModule opportunity={start} onSaved={onSaved} readOnly={false} showActions={false} registerDraft={value => { reader = value; }} /></OpportunityServiceContext.Provider>));
+  expect(screen.queryByText('Edit rates')).not.toBeInTheDocument();
+  expect(screen.queryByText('Update opportunity')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save Estimation' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('spinbutton', { name: /duration in weeks/ })).not.toBeInTheDocument();
+  await screen.findByText('Discovery & Design');
+  fireEvent.click(screen.getByRole('button', { name: 'Rate master' }));
+  const input = await screen.findByLabelText('Rate for PM');
+  expect(input).toHaveValue(8000);
+  fireEvent.change(input, { target: { value: '-1' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(input).toHaveAttribute('aria-invalid', 'true');
+  expect(updateEstimationRates).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: '12000' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  fireEvent.click(screen.getByRole('button', { name: 'Close rate master' }));
+  const matrix = within(screen.getByRole('region', { name: 'Estimation matrix' }));
+  expect(matrix.getAllByText('$6,000.00').length).toBeGreaterThan(0);
+  act(() => { expect(() => reader?.()).toThrow('Update opportunity'); });
+  fireEvent.click(screen.getByRole('button', { name: 'Update opportunity' }));
+  await waitFor(() => expect(updateEstimationRates).toHaveBeenCalledWith({ opportunityId: start.id, estimationId: '13', revision: 2, rates: [{ roleCode: 'PM', rate: '12000' }] }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(saveEstimationVersion).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Update opportunity' })).not.toBeInTheDocument();
+}, 120000);
+
+
+it('previews and saves costs directly from monthly rates without intermediate hourly rounding', async () => {
+  const grid = { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] };
+  const estimate: Estimation = { revision: 1, assumptions: '', total: '172732.51', grid,
+    rates: [{ roleCode: 'PM', rate: '345465.03', rateType: 'Monthly', currencyCode: 'USD' }],
+    rows: [{ id: 'grid-1-PM', workItem: 'Discovery - PM', hours: '80', people: 1, hourlyRate: '2159.1564' }] };
+  const start = { ...initial(), estimation: estimate };
+  const saveEstimationVersion = vi.fn(async ({ estimation }: { estimation: Estimation }) => savedVersionResult(start, estimation, 2));
+  render(withProviders(<OpportunityServiceContext.Provider value={{ ...productionOpportunityService, saveEstimationVersion, estimationVersions: vi.fn(async () => []) }}><EstimationModule opportunity={start} onSaved={vi.fn()} readOnly={false} showActions={false} /></OpportunityServiceContext.Provider>));
+  await screen.findByRole('spinbutton', { name: 'Discovery & Design duration in weeks' });
+  const matrix = within(screen.getByRole('region', { name: 'Estimation matrix' }));
+  expect(matrix.getAllByText('$1,72,732.52').length).toBeGreaterThan(0);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Estimation name' }), { target: { value: 'Precise monthly estimate' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save Estimation' }));
+  await waitFor(() => expect(saveEstimationVersion).toHaveBeenCalledWith(expect.objectContaining({ estimation: expect.objectContaining({ total: '172732.52', rates: estimate.rates }) })));
 });

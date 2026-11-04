@@ -1,10 +1,11 @@
+import { ESTIMATION_CURRENCY_CODE, applyEstimationRates, estimationPayload } from '../lib/estimationPersistence';
 import * as repository from "../repositories/opportunity.repository";
 import * as scopeRepository from '../repositories/scope.repository';
 import * as validator from "../validators/opportunity.validator";
 import * as userService from "../integrations/userService";
 import { roleAccess, holdReasonCode } from '../integrations/adminService';
 import { opportunityAccess, type OpportunityAccess } from '../lib/opportunityAccess';
-import { assertPreparationWritable, preparationModulesLocked } from '../lib/opportunityPreparation';
+import { assertEstimationWritable, estimationWritable, assertPreparationWritable, preparationModulesLocked } from '../lib/opportunityPreparation';
 import { documentUploadAudit } from '../lib/documentStorage';
 import { transaction } from "../config/db";
 import { attachSource } from "../extraction/repository";
@@ -201,12 +202,17 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
     if (opportunity.subStageId !== 6) actions.push('GATE1_HOLD');
     actions.push('GATE1_NO_GO');
   }
-  if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('EDIT_ESTIMATION', 'SUBMIT_ESTIMATE');
+  if (estimationWritable(opportunity) && access.estimate && access.canView(opportunity)) actions.push('EDIT_ESTIMATION');
+  if (estimationWritable(opportunity) && access.gateReview && access.canView(opportunity)) actions.push('EDIT_ESTIMATION_RATES');
+  if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('SUBMIT_ESTIMATE');
   if (!preparationModulesLocked(opportunity) && access.canView(opportunity)) actions.push('EDIT_SCOPE');
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) {
     actions.push('ESTIMATE_APPROVE');
     if (opportunity.subStageId === 8) actions.push('ESTIMATE_HOLD');
     actions.push('ESTIMATE_REJECT');
+  }
+  if (opportunity.stageId === 4 && opportunity.subStageId === 5 && access.gateReview) {
+    actions.push('ESTIMATE_REVISION_APPROVE', 'ESTIMATE_REVISION_DECLINE');
   }
   if (access.review) {
     if (opportunity.stageId === 5 && opportunity.subStageId === 10) actions.push('BID_SUBMITTED');
@@ -461,11 +467,12 @@ async function transitionWorkflow(
   opportunityDescription: string | null,
   ctx: any,
   reasonCodeId?: number | null,
+  requiresRevisedEstimation = false,
   estimation?: repository.OpportunityEstimation,
   estimationVersionId?: string
 ) {
   const before = await repository.findById(opportunityId);
-  const result = await transitionWorkflowCore(opportunityId, action, comment, opportunityDescription, ctx, reasonCodeId, estimation, estimationVersionId);
+  const result = await transitionWorkflowCore(opportunityId, action, comment, opportunityDescription, ctx, reasonCodeId, requiresRevisedEstimation, estimation, estimationVersionId);
   if (result && before) {
     const userId = (await accessFor(ctx)).userId;
     void notifyWorkflowTransition(opportunityId, userId, before.stageId, comment);
@@ -480,6 +487,7 @@ async function transitionWorkflowCore(
   opportunityDescription: string | null,
   ctx: any,
   reasonCodeId?: number | null,
+  requiresRevisedEstimation = false,
   estimation?: repository.OpportunityEstimation,
   estimationVersionId?: string
 ) {
@@ -487,6 +495,7 @@ async function transitionWorkflowCore(
   const opportunity = await repository.findById(opportunityId);
   if (!opportunity) throw notFound('Opportunity not found.');
   const audit = workflowAudit(access);
+  if (requiresRevisedEstimation && action !== 'START_NEGOTIATION') throw validationFailed('Estimation revision requests are only available during negotiation.');
   if (action === 'RESUBMIT') throw validationFailed('Use Update Opportunity to save corrections and send the opportunity for review.');
   if (action === 'OPPORTUNITY_HOLD') throw validationFailed('Hold is not available after bid submission. Choose Under Negotiation, Won or Lost.');
   const reviewingSales = opportunity.stageId === 1 && [1, 3].includes(opportunity.subStageId ?? 0) && access.review;
@@ -497,12 +506,28 @@ async function transitionWorkflowCore(
     throw conflict('This opportunity is already on hold. Choose another available action.');
   }
   const closing = action === 'CLOSE_OPPORTUNITY' && access.review && [1, 2, 3, 4, 5, 6].includes(opportunity.stageId ?? 0);
+  if (action === 'START_NEGOTIATION') {
+    if (!access.review || !submittedBid) throw conflict('The Sales Head role and the preceding sales workflow step are required.');
+    if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) throw validationFailed('Select a negotiation reason.');
+    const reason = await holdReasonCode(reasonCodeId!);
+    if (!reason || !reason.isActive || reason.id !== reasonCodeId || reason.isNegotiationReason !== true) throw validationFailed('Select an active negotiation reason.');
+    audit.reasonCodeId = reason.id;
+    return persistTransition(opportunity, opportunityId, requiresRevisedEstimation ? 4 : 6, requiresRevisedEstimation ? 5 : 12,
+      null, userId, comment?.trim() || null, null, audit);
+  }
+  if (action === 'APPROVE_ESTIMATE_REVISION' || action === 'DECLINE_ESTIMATE_REVISION') {
+    if (!access.gateReview || opportunity.stageId !== 4 || opportunity.subStageId !== 5) {
+      throw conflict('The CEO role and a pending estimation revision request are required.');
+    }
+    const approve = action === 'APPROVE_ESTIMATE_REVISION';
+    return persistTransition(opportunity, opportunityId, approve ? 3 : 6, approve ? 7 : 12, null, userId, comment?.trim() || null, null, audit);
+  }
   if ((action === 'HOLD' || action === 'REJECT') && (reviewingSales || reviewingCeo || reviewingEstimate)) {
     const reasonLabel = action === 'HOLD' ? 'hold' : 'rejection';
     if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) throw validationFailed(`Select a ${reasonLabel} reason.`);
     if (!comment?.trim()) throw validationFailed(`Enter a ${reasonLabel} description.`);
     const reason = await holdReasonCode(reasonCodeId!);
-    if (!reason || !reason.isActive || reason.id !== reasonCodeId) throw validationFailed(`Select an active ${reasonLabel} reason.`);
+    if (!reason || !reason.isActive || reason.id !== reasonCodeId || reason.isNegotiationReason === true) throw validationFailed(`Select an active ${reasonLabel} reason.`);
     audit.reasonCodeId = reason.id;
   }
 
@@ -511,7 +536,7 @@ async function transitionWorkflowCore(
     return persistTransition(opportunity, opportunityId, 9, 18, null, userId, comment?.trim() || null, null, audit);
   }
   const salesTargets = {
-    BID_SUBMITTED: [5, 10, 5, 11], START_NEGOTIATION: [5, 11, 6, 12],
+    BID_SUBMITTED: [5, 10, 5, 11],
     MARK_WON: [6, 12, 7, 13], MARK_LOST: [6, 12, 8, 14],
     RESUME_NEGOTIATION: [10, 19, 6, 12], RESUME_PROPOSAL: [10, 20, 5, 11],
   } as const;
@@ -523,6 +548,9 @@ async function transitionWorkflowCore(
   }
 
   if (action === 'SUBMIT_ESTIMATE') {
+    if (access.estimate && opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) {
+      throw conflict('Estimation already submitted.');
+    }
     if (!access.estimate || opportunity.stageId !== 3 || opportunity.subStageId !== 7) {
       throw conflict('The Estimation Team role and an in-progress estimate are required.');
     }
@@ -530,18 +558,22 @@ async function transitionWorkflowCore(
     const version = await repository.findEstimationVersion(opportunityId, estimationVersionId);
     if (!version) throw validationFailed('Select a saved estimation belonging to this opportunity.');
     validateCompletedEstimate(version.estimation);
-    const currencyCode = await repository.findCurrencyCode(opportunity.currencyId);
-    if (version.currencyCode !== (currencyCode ?? '')) throw validationFailed('The selected estimation uses a different currency. Save a new estimation before submitting.');
+    if (version.currencyCode !== ESTIMATION_CURRENCY_CODE) throw validationFailed('The selected estimation uses a different currency. Save a new estimation before submitting.');
     const currentEstimate = await repository.findEstimation(opportunityId);
     if (!currentEstimate) throw conflict('The current estimate is unavailable. Refresh before submitting.');
     const note = [comment?.trim(), `Estimation: ${version.name} (V${version.version})`].filter(Boolean).join('\n');
     return repository.transitionWorkflow(opportunityId, 4, 8, null, userId, note, null, audit,
-      { stageId: opportunity.stageId, subStageId: opportunity.subStageId, estimationRevision: currentEstimate.revision, selectedVersionId: version.id });
+      { stageId: opportunity.stageId, subStageId: opportunity.subStageId, estimationRevision: currentEstimate.revision, selectedVersionId: version.id, selectedRevision: version.revision });
   }
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) {
     if (!access.gateReview) throw conflict('The CEO role is required to review estimates.');
     if (action === 'HOLD') return persistTransition(opportunity, opportunityId, 4, 9, null, userId, comment?.trim() || null, null, audit);
-    if (action === 'APPROVE') return persistTransition(opportunity, opportunityId, 5, 10, null, userId, comment?.trim() || null, null, audit);
+    if (action === 'APPROVE') {
+      const estimate = await repository.findEstimation(opportunityId);
+      validateCompletedEstimate(estimate);
+      return repository.transitionWorkflow(opportunityId, 5, 10, null, userId, comment?.trim() || null, null, audit,
+        { stageId: opportunity.stageId, subStageId: opportunity.subStageId, estimationRevision: estimate!.revision });
+    }
     if (action === 'REJECT') return persistTransition(opportunity, opportunityId, 9, 17, null, userId, comment!.trim(), null, audit);
     throw validationFailed('Use Hold, Approve or Reject for estimate review.');
   }
@@ -671,6 +703,10 @@ export async function allowedActions(opportunity: repository.Opportunity, ctx: a
 
 export async function getEstimation(opportunityId: number, ctx: any) {
   await get(opportunityId, ctx);
+  if ((await accessFor(ctx)).gateReview) {
+    const [submitted] = await repository.listEstimationVersions(opportunityId, true);
+    return submitted?.estimation ?? null;
+  }
   return repository.findEstimation(opportunityId);
 }
 
@@ -792,6 +828,12 @@ export async function getStageHistory(opportunityId: number, ctx: any) {
 }
 
 function validateEstimationDraft(input: repository.OpportunityEstimation) {
+  if (input.rates !== undefined && (!Array.isArray(input.rates) || input.rates.length > 500 ||
+    new Set(input.rates.map(rate => rate.roleCode)).size !== input.rates.length || input.rates.some(rate =>
+      !rate || !input.grid?.roleCodes.includes(rate.roleCode) || !/^\d{1,10}(\.\d{1,4})?$/.test(rate.rate) || Number(rate.rate) <= 0 ||
+      !['monthly', 'weekly'].includes(rate.rateType.toLowerCase()) || rate.currencyCode !== ESTIMATION_CURRENCY_CODE))) {
+    throw validationFailed('Use unique technical roles with positive USD monthly or weekly rates (up to four decimal places).');
+  }
   if (!Number.isSafeInteger(input.revision) || input.revision < 0 || !Array.isArray(input.rows) || input.rows.length > 500) throw validationFailed('Provide an estimation revision and at most 500 work items.');
   // Drafts may be incomplete. Preserve blanks and zero-effort selections, but
   // reject malformed or negative values rather than silently losing them.
@@ -816,14 +858,15 @@ function validateEstimationDraft(input: repository.OpportunityEstimation) {
     const [whole, fraction = ''] = value.split('.');
     return BigInt(whole) * 10000n + BigInt(fraction.padEnd(4, '0'));
   };
-  let cents = 0n;
   for (const row of input.rows) {
     if (!row.id?.trim() || ids.has(row.id) || !row.workItem?.trim() || !Number.isSafeInteger(row.people) || row.people < 1 || row.people > 100000) throw validationFailed('Each work item needs a unique ID, a name and a positive whole number of people.');
     ids.add(row.id);
-    cents += (decimal(row.hours) * decimal(row.hourlyRate) * BigInt(row.people) + 500000n) / 1000000n;
+    decimal(row.hours); decimal(row.hourlyRate);
   }
+  const total = estimationPayload(input).cost.total;
+  const cents = BigInt(total.replace('.', ''));
   if (cents > 999999999999999999n) throw validationFailed('The estimation total is too large.');
-  return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
+  return total;
 }
 
 function validateCompletedEstimate(estimate: repository.OpportunityEstimation | null | undefined) {
@@ -844,27 +887,42 @@ function validateCompletedEstimate(estimate: repository.OpportunityEstimation | 
 }
 
 export async function listEstimationVersions(opportunityId: number, ctx: any) {
-  await getEstimation(opportunityId, ctx);
-  return repository.listEstimationVersions(opportunityId);
-}
-export async function saveEstimationVersion(opportunityId: number, input: repository.OpportunityEstimation, name: string, requestKey: string, ctx: any, sourceVersionId?: string) {
+  await get(opportunityId, ctx);
   const access = await accessFor(ctx);
-  const current = await repository.findById(opportunityId);
-  if (!access.estimate || current?.stageId !== 3 || current.subStageId !== 7) throw conflict('Only the Estimation Team can save a version of an in-progress estimate.');
-  if (!name?.trim() || name.trim().length > 150) throw validationFailed('Enter an estimation name of up to 150 characters.');
+  return repository.listEstimationVersions(opportunityId, access.gateReview);
+}
+export async function getEstimationVersion(opportunityId: number, estimationId: string, ctx: any) {
+  await get(opportunityId, ctx);
+  if (!/^[1-9]\d{0,18}$/.test(estimationId) || BigInt(estimationId) > 9223372036854775807n) throw validationFailed('Select a saved estimation.');
+  const saved = await repository.findEstimationVersion(opportunityId, estimationId);
+  if (!saved || (await accessFor(ctx)).gateReview && (!saved.isSelected || saved.status !== 'SUBMITTED')) throw notFound('Saved estimation not found.');
+  return saved;
+}
+export async function saveEstimationVersion(opportunityId: number, input: repository.OpportunityEstimation, name: string, requestKey: string, ctx: any, sourceVersionId?: string, sourceRevision?: number) {
+  const access = await accessFor(ctx);
+  const current = await get(opportunityId, ctx);
+  if (!access.estimate) throw conflict('Only the Estimation Team can add or edit estimates.');
+  assertEstimationWritable(current);
+  if (!name?.trim() || name.trim().length > 500) throw validationFailed('Enter an estimation name of up to 500 characters.');
   if (!requestKey || requestKey.length > 100) throw validationFailed('A save request key is required.');
-  if (sourceVersionId !== undefined && !/^[1-9]\d*$/.test(sourceVersionId)) throw validationFailed('Select a valid saved estimate to edit.');
+  if (sourceVersionId !== undefined && (!/^[1-9]\d{0,18}$/.test(sourceVersionId) || BigInt(sourceVersionId) > 9223372036854775807n || !Number.isSafeInteger(sourceRevision) || sourceRevision! < 1)) throw validationFailed('Select a saved estimation and its current revision before editing.');
+  if (!sourceVersionId && sourceRevision !== undefined) throw validationFailed('Select a saved estimation to edit.');
+  validateEstimationDraft(input);
+  input = applyEstimationRates(input);
   validateCompletedEstimate(input);
   const total = validateEstimationDraft(input);
-  return repository.saveEstimationVersion(opportunityId, { ...input, total, status: 'DRAFT' }, name.trim(), access.userId, requestKey, sourceVersionId);
+  return repository.saveEstimationVersion(opportunityId, { ...input, total, status: current.stageId === 4 ? 'SUBMITTED' : 'DRAFT' }, name.trim(), access.userId, requestKey, sourceVersionId, sourceRevision);
 }
 
 export async function saveEstimation(opportunityId: number, input: repository.OpportunityEstimation, ctx: any) {
   const access = await accessFor(ctx);
-  const current = await repository.findById(opportunityId);
-  if (!access.estimate || current?.stageId !== 3 || current.subStageId !== 7) throw conflict('Only the Estimation Team can save an in-progress estimation.');
+  const current = await get(opportunityId, ctx);
+  if (!access.estimate) throw conflict('Only the Estimation Team can add or edit estimates.');
+  assertEstimationWritable(current);
+  validateEstimationDraft(input);
+  input = applyEstimationRates(input);
   const total = validateEstimationDraft(input);
-  await repository.saveEstimation(opportunityId, { ...input, status: 'DRAFT', assumptions: input.assumptions ?? '', total }, access.userId);
+  await repository.saveEstimation(opportunityId, { ...input, status: current.stageId === 4 ? 'SUBMITTED' : 'DRAFT', assumptions: input.assumptions ?? '', total }, access.userId);
   return get(opportunityId, ctx);
 }
 
@@ -882,7 +940,18 @@ export {
 
 export async function deleteEstimationVersion(opportunityId: number, versionId: string, ctx: any) {
   const access = await accessFor(ctx);
+  await get(opportunityId, ctx);
   if (!access.estimate) throw conflict('Only the Estimation Team can delete saved estimates.');
   if (!/^[1-9]\d*$/.test(versionId)) throw validationFailed('Select a valid saved estimate.');
   return repository.deleteEstimationVersion(opportunityId, versionId, access.userId);
+}
+
+export async function updateEstimationRates(opportunityId: number, estimationId: string, revision: number, rates: { roleCode: string; rate: string }[], ctx: any) {
+  const access = await accessFor(ctx);
+  if (!access.gateReview) throw conflict('Only the CEO can update opportunity estimation rates.');
+  assertEstimationWritable(await get(opportunityId, ctx));
+  if (!/^[1-9]\d{0,18}$/.test(estimationId) || BigInt(estimationId) > 9223372036854775807n || !Number.isSafeInteger(revision) || revision < 1) throw validationFailed('Select a saved estimation and its current revision.');
+  if (!Array.isArray(rates) || !rates.length || rates.length > 500 || new Set(rates.map(rate => rate.roleCode)).size !== rates.length || rates.some(rate =>
+    typeof rate?.roleCode !== 'string' || !rate.roleCode.trim() || typeof rate.rate !== 'string' || !/^\d{1,10}(\.\d{1,4})?$/.test(rate.rate) || Number(rate.rate) <= 0)) throw validationFailed('Enter positive rates with up to four decimal places for unique technical roles.');
+  return repository.updateEstimationRates(opportunityId, estimationId, revision, rates, access.userId);
 }

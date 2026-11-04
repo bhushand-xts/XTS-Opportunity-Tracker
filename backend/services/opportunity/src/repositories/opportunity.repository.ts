@@ -1,3 +1,4 @@
+import * as estimationRepository from './estimation.repository';
 import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import { query, transaction } from "../config/db";
 import type { PoolClient } from "pg";
@@ -796,7 +797,7 @@ async function finalizeRfpIntakeOpportunity(
   });
 }
 
-export type OpportunityWorkflowAction = 'REQUEST_CHANGES' | 'HOLD' | 'APPROVE' | 'REJECT' | 'RESUBMIT' | 'SUBMIT_ESTIMATE' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY';
+export type OpportunityWorkflowAction = 'APPROVE_ESTIMATE_REVISION' | 'DECLINE_ESTIMATE_REVISION' | 'REQUEST_CHANGES' | 'HOLD' | 'APPROVE' | 'REJECT' | 'RESUBMIT' | 'SUBMIT_ESTIMATE' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY';
 
 export interface WorkflowAudit {
   reasonCodeId?: number | null;
@@ -826,6 +827,7 @@ export async function findStageHistory(opportunityId: number): Promise<Opportuni
 
 export interface OpportunityEstimation {
   revision: number;
+  rates?: { roleCode: string; rate: string; rateType: string; currencyCode: string }[];
   rows: { id: string; workItem: string; hours: string; people: number; hourlyRate: string }[];
   assumptions: string;
   total: string;
@@ -837,82 +839,14 @@ export interface OpportunityEstimation {
   } | null;
 }
 
-export async function findEstimation(opportunityId: number): Promise<OpportunityEstimation | null> {
-  const rows = await query<OpportunityEstimation>(
-    'SELECT revision, status, rows, assumptions, total::TEXT AS total, draft_grid AS grid FROM tbl_opportunity_estimation_matrix WHERE opportunity_id = $1', [opportunityId]);
-  return rows[0] ?? null;
-}
-
-export async function saveEstimation(opportunityId: number, estimation: OpportunityEstimation, userId: number) {
-  return transaction(client => saveEstimationWithClient(client, opportunityId, estimation, userId));
-}
-
-async function saveEstimationWithClient(client: PoolClient, opportunityId: number, estimation: OpportunityEstimation, userId: number) {
-    const opportunity = await client.query<{ stage_id: number; sub_stage_id: number }>(
-      'SELECT stage_id, sub_stage_id FROM tbl_opportunity WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE', [opportunityId]);
-    if (opportunity.rows[0]?.stage_id !== 3 || opportunity.rows[0]?.sub_stage_id !== 7) throw new Error('The opportunity is no longer in estimation. Refresh before saving.');
-    const result = await client.query(
-      `INSERT INTO tbl_opportunity_estimation_matrix (opportunity_id, revision, rows, assumptions, total, updated_by, status, draft_grid)
-       SELECT $1, 1, $2::JSONB, $3, $4, $5, 'DRAFT', $7::JSONB WHERE $6 = 0 OR EXISTS
-         (SELECT 1 FROM tbl_opportunity_estimation_matrix WHERE opportunity_id = $1)
-       ON CONFLICT (opportunity_id) DO UPDATE SET revision = tbl_opportunity_estimation_matrix.revision + 1,
-         rows = EXCLUDED.rows, assumptions = EXCLUDED.assumptions, total = EXCLUDED.total, status = 'DRAFT', draft_grid = EXCLUDED.draft_grid,
-         updated_by = EXCLUDED.updated_by, updated_dt = CURRENT_TIMESTAMP
-       WHERE tbl_opportunity_estimation_matrix.revision = $6 RETURNING revision`,
-      [opportunityId, JSON.stringify(estimation.rows), estimation.assumptions, estimation.total, userId, estimation.revision, estimation.grid ? JSON.stringify(estimation.grid) : null]);
-    if (!result.rows.length) throw new Error('The estimation changed. Refresh before saving.');
-}
-
-export interface EstimationVersion {
-  id: string; version: number; name: string; status: 'SAVED' | 'SUBMITTED';
-  currencyCode: string; personWeeks: string; createdBy: number; createdAt: string;
-  estimation: OpportunityEstimation;
-}
-const VERSION_COLUMNS = `estimation_version_id::TEXT AS id, version, name, status, currency_code AS "currencyCode", person_weeks::TEXT AS "personWeeks", created_by AS "createdBy", created_dt AS "createdAt", snapshot AS estimation`;
-export async function listEstimationVersions(opportunityId: number): Promise<EstimationVersion[]> {
-  return query<EstimationVersion>(`SELECT ${VERSION_COLUMNS} FROM tbl_opportunity_estimation_versions WHERE opportunity_id = $1 AND deleted_dt IS NULL ORDER BY version DESC`, [opportunityId]);
-}
-export async function findEstimationVersion(opportunityId: number, versionId: string): Promise<EstimationVersion | null> {
-  const rows = await query<EstimationVersion>(`SELECT ${VERSION_COLUMNS} FROM tbl_opportunity_estimation_versions WHERE opportunity_id = $1 AND estimation_version_id = $2 AND deleted_dt IS NULL`, [opportunityId, versionId]);
-  return rows[0] ?? null;
-}
-async function snapshotEstimation(client: PoolClient, opportunityId: number, name: string, status: 'SAVED' | 'SUBMITTED', userId: number, requestKey: string): Promise<EstimationVersion> {
-  const result = await client.query<EstimationVersion>(`INSERT INTO tbl_opportunity_estimation_versions (opportunity_id, version, name, status, snapshot, currency_code, person_weeks, created_by, request_key)
-    SELECT $1, COALESCE((SELECT MAX(version) FROM tbl_opportunity_estimation_versions WHERE opportunity_id = $1), 0) + 1, $2, $3,
-      jsonb_build_object('revision', e.revision, 'rows', e.rows, 'assumptions', e.assumptions, 'total', e.total::TEXT, 'status', e.status, 'grid', e.draft_grid),
-      COALESCE(c.currency_code, ''), COALESCE((SELECT SUM((r->>'hours')::NUMERIC * (r->>'people')::NUMERIC) / 40 FROM jsonb_array_elements(e.rows) r), 0), $4, $5
-    FROM tbl_opportunity_estimation_matrix e JOIN tbl_opportunity o ON o.opportunity_id = e.opportunity_id LEFT JOIN mst_currency c ON c.currency_id = o.currency_id
-    WHERE e.opportunity_id = $1
-    RETURNING ${VERSION_COLUMNS}`, [opportunityId, name, status, userId, requestKey]);
-  if (!result.rows[0]) throw conflict('Save an estimate before creating a version.');
-  return result.rows[0];
-}
-export async function saveEstimationVersion(opportunityId: number, estimation: OpportunityEstimation, name: string, userId: number, requestKey: string, sourceVersionId?: string): Promise<EstimationVersion> {
-  return transaction(async client => {
-    await client.query('SELECT opportunity_id FROM tbl_opportunity WHERE opportunity_id = $1 FOR UPDATE', [opportunityId]);
-    const existing = await client.query<EstimationVersion>(`SELECT ${VERSION_COLUMNS} FROM tbl_opportunity_estimation_versions WHERE opportunity_id = $1 AND request_key = $2`, [opportunityId, requestKey]);
-    if (existing.rows[0]) return existing.rows[0];
-    if (sourceVersionId) {
-      const source = await client.query(`SELECT status FROM tbl_opportunity_estimation_versions WHERE opportunity_id = $1 AND estimation_version_id = $2 AND deleted_dt IS NULL FOR UPDATE`, [opportunityId, sourceVersionId]);
-      if (source.rows[0]?.status !== 'SAVED') throw conflict('This saved estimate is unavailable or submitted and cannot be edited.');
-    }
-    await saveEstimationWithClient(client, opportunityId, estimation, userId);
-    const saved = await snapshotEstimation(client, opportunityId, name, 'SAVED', userId, requestKey);
-    if (sourceVersionId) await client.query('UPDATE tbl_opportunity_estimation_versions SET supersedes_id = $2 WHERE estimation_version_id = $1', [saved.id, sourceVersionId]);
-    return saved;
-  });
-}
-
-export async function deleteEstimationVersion(opportunityId: number, versionId: string, userId: number): Promise<boolean> {
-  return transaction(async client => {
-    const opportunity = await client.query('SELECT stage_id, sub_stage_id FROM tbl_opportunity WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE', [opportunityId]);
-    if (opportunity.rows[0]?.stage_id !== 3 || opportunity.rows[0]?.sub_stage_id !== 7) throw conflict('The opportunity is no longer in estimation.');
-    const version = await client.query('SELECT status, deleted_dt FROM tbl_opportunity_estimation_versions WHERE opportunity_id = $1 AND estimation_version_id = $2 FOR UPDATE', [opportunityId, versionId]);
-    if (!version.rows[0] || version.rows[0].status !== 'SAVED') throw conflict('This estimate is unavailable or submitted and cannot be deleted.');
-    if (!version.rows[0].deleted_dt) await client.query('UPDATE tbl_opportunity_estimation_versions SET deleted_dt = CURRENT_TIMESTAMP, deleted_by = $3 WHERE opportunity_id = $1 AND estimation_version_id = $2', [opportunityId, versionId, userId]);
-    return true;
-  });
-}
+export const findEstimation = estimationRepository.findEstimation;
+export const saveEstimation = estimationRepository.saveEstimation;
+export const listEstimationVersions = estimationRepository.listEstimationVersions;
+export const findEstimationVersion = estimationRepository.findEstimationVersion;
+export const saveEstimationVersion = estimationRepository.saveEstimationVersion;
+export const deleteEstimationVersion = estimationRepository.deleteEstimationVersion;
+export const updateEstimationRates = estimationRepository.updateEstimationRates;
+export type { EstimationVersion } from './estimation.repository';
 
 async function transitionWorkflow(
   opportunityId: number,
@@ -923,7 +857,7 @@ async function transitionWorkflow(
   comment: string | null,
   opportunityDescription?: string | null,
   audit: WorkflowAudit = {},
-  expected?: { stageId: number | null; subStageId: number | null; estimationRevision?: number; selectedVersionId?: string }
+  expected?: { stageId: number | null; subStageId: number | null; estimationRevision?: number; selectedVersionId?: string; selectedRevision?: number }
 ): Promise<Opportunity | null> {
   return transaction(async (client) => {
     const current = await client.query<{ stageId: number; subStageId: number }>(
@@ -934,20 +868,12 @@ async function transitionWorkflow(
     }
     if (expected && (current.rows[0].stageId !== expected.stageId || current.rows[0].subStageId !== expected.subStageId)) throw new Error('This opportunity changed while you were reviewing it. Refresh before making a decision.');
     if (expected?.estimationRevision !== undefined) {
-      const estimate = await client.query<{ revision: number }>('SELECT revision FROM tbl_opportunity_estimation_matrix WHERE opportunity_id = $1 FOR UPDATE', [opportunityId]);
+      const estimate = await client.query<{ revision: number }>(`SELECT ${estimationRepository.ESTIMATION_REVISION_SQL} AS revision FROM tbl_opportunity_estimation e WHERE e.opportunity_id = $1 AND NOT (e.resource_allocation ? 'saved') FOR UPDATE OF e`, [opportunityId]);
       if (estimate.rows[0]?.revision !== expected.estimationRevision) throw conflict('The estimate changed before submission. Refresh and review it before submitting.');
     }
-    let submittedName = 'Submitted estimate';
-    let submittedRevision = expected?.estimationRevision;
-    if (expected?.selectedVersionId !== undefined) {
-      const selected = await client.query<{ estimation: OpportunityEstimation; name: string }>(`SELECT v.snapshot AS estimation, v.name
-        FROM tbl_opportunity_estimation_versions v JOIN tbl_opportunity o ON o.opportunity_id = v.opportunity_id
-        LEFT JOIN mst_currency c ON c.currency_id = o.currency_id
-        WHERE v.opportunity_id = $1 AND v.estimation_version_id = $2 AND v.deleted_dt IS NULL AND v.currency_code = COALESCE(c.currency_code, '')`, [opportunityId, expected.selectedVersionId]);
-      if (!selected.rows[0] || expected.estimationRevision === undefined) throw conflict('The selected saved estimation is no longer available for submission.');
-      await saveEstimationWithClient(client, opportunityId, { ...selected.rows[0].estimation, revision: expected.estimationRevision }, userId);
-      submittedRevision = expected.estimationRevision + 1;
-      submittedName = `Submitted: ${selected.rows[0].name}`.slice(0, 150);
+    if (stageId === 4 && subStageId === 8) {
+      if (!expected?.selectedVersionId || expected.estimationRevision === undefined) throw conflict('Select a saved estimation before submitting.');
+      await estimationRepository.submitSelectedEstimation(client, opportunityId, expected.selectedVersionId, expected.estimationRevision, expected.selectedRevision, userId);
     }
     await recordPreviousVersion(client, 'tbl_opportunity', opportunityId);
     const updated = await client.query<{ opportunityId: number }>(
@@ -960,13 +886,6 @@ async function transitionWorkflow(
       [stageId, subStageId, assignedTo, opportunityDescription ?? null, userId, opportunityId]
     );
     if (!updated.rows[0]) return null;
-
-    // Keep the persisted estimate label consistent with the existing submission
-    // transition; draft saving never invokes this workflow transition.
-    if (stageId === 4 && subStageId === 8) {
-      await client.query("UPDATE tbl_opportunity_estimation_matrix SET status = 'SUBMITTED' WHERE opportunity_id = $1", [opportunityId]);
-      await snapshotEstimation(client, opportunityId, submittedName, 'SUBMITTED', userId, `submitted-${submittedRevision ?? Date.now()}`);
-    }
 
     await client.query(
       `UPDATE tbl_opportunity_engage_tracker SET is_current = FALSE

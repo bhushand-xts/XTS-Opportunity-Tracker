@@ -74,19 +74,15 @@ import { useOpportunityService } from '../services/OpportunityService';
 import { useSave } from '../hooks/useSave';
 import { randomUUID } from '../lib/uuid';
 import { useUnsaved } from '../hooks/useUnsaved';
-import { estimateTotal, isPreparationLocked, isPreparing, money, RISK_SEVERITY_OPTIONS } from '../lib/workflow';
+import { estimateTotal, rowAmount, isPreparationLocked, isPreparing, money, RISK_SEVERITY_OPTIONS } from '../lib/workflow';
 import { Field, Notice, Panel, Values } from './ui';
 import { CREATE_ESTIMATION_PHASE, GET_ESTIMATION_MASTERS } from '../services/estimationMasters.queries';
 
+const ESTIMATION_CURRENCY_CODE = 'USD';
 const RATE_MASTER_MENU_KEY = 'technical_roles_and_rate_master';
 const ESTIMATE_PHASE_MENU_KEY = 'estimate_phase_master';
-// The backend's EstimateRow only has hours/people/hourlyRate — no phase, role, duration or
-// resource-allocation fields. The grid below persists Duration-in-weeks × Resource-allocation
-// as an equivalent hours/hourlyRate pair (at a standard 40-hour week) so the existing
-// rowAmount/estimateTotal math and the real saveOpportunityEstimation mutation keep working
-// unchanged. The one limit this creates: reloading a saved estimate recovers the correct
-// Person-week (and cost) per phase/role, but not the original separate Duration and Resource
-// allocation values that produced it — only their product was ever persisted.
+// Grid inputs retain duration and allocation separately. Calculation rows use a
+// 40-hour week; billing rates are stored once per technical role in the snapshot.
 const HOURS_PER_WEEK = 40;
 function gridRowId(phaseId: number, roleCode: string) { return `grid-${phaseId}-${roleCode}`; }
 function cellKey(phaseId: number, roleCode: string) { return `${phaseId}:${roleCode}`; }
@@ -189,7 +185,7 @@ export function EstimationModule({
     );
 
   const roles = (masters?.rateMasters ?? [])
-    .filter((r): r is RateMaster => Boolean(r?.isActive))
+    .filter((r): r is RateMaster => Boolean(r?.isActive && masters?.currencies?.some(c => c?.isActive && c.currencyId === r.currencyId && c.currencyCode === ESTIMATION_CURRENCY_CODE)))
     .sort((a, b) => a.roleName.localeCompare(b.roleName));
 
   const currencies = (masters?.currencies ?? []).filter(
@@ -212,10 +208,13 @@ export function EstimationModule({
   const initialEstimation = o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' };
   const [draft, setDraft] = useState<Estimation>(initialEstimation);
   const [baseline, setBaseline] = useState<string | null>(null);
-  const [validation, setValidation] = useState<string>();
   const estimationStep = o.stageId == null ? isPreparing(o) :
-    o.stageId === 3 && o.subStageId === 7;
+    o.stageId === 3 && o.subStageId === 7 || o.stageId === 4 && [8, 9].includes(o.subStageId ?? 0);
   const editable = !readOnly && estimationStep && o.allowedActions.includes('EDIT_ESTIMATION');
+  const canEditRates = !readOnly && estimationStep && o.allowedActions.includes('EDIT_ESTIMATION_RATES');
+  const [rateTarget, setRateTarget] = useState<EstimationVersion | null>(null);
+  const [rateOverrides, setRateOverrides] = useState<Record<string, string>>({});
+  const [invalidRates, setInvalidRates] = useState(false);
 
   const [selectedPhaseIds, setSelectedPhaseIds] = useState<Set<number>>(new Set());
   const [selectedRoleCodes, setSelectedRoleCodes] = useState<Set<string>>(new Set());
@@ -255,6 +254,29 @@ export function EstimationModule({
 
   const activePhases = phases.filter(p => selectedPhaseIds.has(p.id));
   const activeRoles = roles.filter(r => selectedRoleCodes.has(r.roleCode));
+  const snapshotRates = activeRoles.map(role => {
+    const saved = draft.rates?.find(rate => rate.roleCode === role.roleCode);
+    const oldRow = draft.rows.find(row => activePhases.some(phase => row.id === gridRowId(phase.id, role.roleCode)));
+    const matchesMaster = oldRow && (monthlyRate(role) / 160).toFixed(4) === Number(oldRow.hourlyRate).toFixed(4);
+    return { roleCode: role.roleCode, rate: rateOverrides[role.roleCode] ?? saved?.rate ?? (oldRow && !matchesMaster ? (Number(oldRow.hourlyRate) * 160).toFixed(4) : String(role.defaultRate)),
+      rateType: saved?.rateType ?? (oldRow && !matchesMaster ? 'Monthly' : role.rateType), currencyCode: ESTIMATION_CURRENCY_CODE };
+  });
+  const displayedRoles = roles.map(role => {
+    const rate = snapshotRates.find(rate => rate.roleCode === role.roleCode);
+    return rate ? { ...role, defaultRate: Number(rate.rate), rateType: rate.rateType } : role;
+  });
+  useEffect(() => {
+    if (!canEditRates || !masters || !service.estimationVersions) return;
+    let cancelled = false;
+    void service.estimationVersions(o.id).then(versions => {
+      if (cancelled) return;
+      const current = versions.find(version => version.isSelected && version.status === 'SUBMITTED');
+      if (current) loadVersion(current, true);
+    }).catch(() => { /* The saved-estimate panel provides the error and retry. */ });
+    return () => { cancelled = true; };
+    // Initialize from the actual current estimate, never an arbitrary alternative.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canEditRates, masters, o.id, o.estimation?.revision, service]);
   const durationError = (phaseId: number) => {
     const value = duration[phaseId] ?? '';
     return submissionAttempted && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) <= 0) ? 'Enter weeks greater than 0.' : undefined;
@@ -263,7 +285,13 @@ export function EstimationModule({
     const value = allocation[cellKey(phaseId, roleCode)] ?? '';
     return submissionAttempted && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0) ? 'Enter effort (0 if unused).' : undefined;
   };
-  const rateError = (role: RateMaster) => submissionAttempted && activePhases.some(phase => Number(allocation[cellKey(phase.id, role.roleCode)]) > 0) && (!Number.isFinite(monthlyRate(role)) || monthlyRate(role) <= 0);
+  function hourlyRate(phaseId: number, role: RateMaster) {
+    const rate = snapshotRates.find(rate => rate.roleCode === role.roleCode);
+    if (rate && (draft.rates || rateOverrides[role.roleCode] !== undefined)) return Number((Number(rate.rate) / (rate.rateType.toLowerCase() === 'monthly' ? 160 : 40)).toFixed(4));
+    const saved = draft.rows.find(row => row.id === gridRowId(phaseId, role.roleCode));
+    return saved ? Number(saved.hourlyRate) : monthlyRate(role) / (HOURS_PER_WEEK * 4);
+  }
+  const rateError = (role: RateMaster) => submissionAttempted && activePhases.some(phase => Number(allocation[cellKey(phase.id, role.roleCode)]) > 0 && (!Number.isFinite(hourlyRate(phase.id, role)) || hourlyRate(phase.id, role) <= 0));
 
 
   // Person-week = Duration (weeks) × Resource allocation.
@@ -272,9 +300,10 @@ export function EstimationModule({
     return Number.isFinite(d) && Number.isFinite(a) && d > 0 && a > 0 ? d * a : 0;
   }
   // Cost = (Monthly rate ÷ 20) × (Person-week × 5).
-  function cellCost(phaseId: number, roleCode: string, role: RateMaster): number {
-    if (!editable) { const row = draft.rows.find(item => item.id === gridRowId(phaseId, roleCode)); return row ? Number(row.hours) * row.people * Number(row.hourlyRate) : 0; }
-    return (monthlyRate(role) / 20) * (personWeek(phaseId, roleCode) * 5);
+  function cellCost(phaseId: number, roleCode: string): number {
+    const row = rows.find(item => item.id === gridRowId(phaseId, roleCode));
+    try { return row ? Number(rowAmount(row, calculation)) : 0; }
+    catch { return 0; } // The workspace reports invalid numeric inputs below.
   }
   const effortTotal = activePhases.reduce((sum, p) => sum + activeRoles.reduce((s, r) => s + personWeek(p.id, r.roleCode), 0), 0);
 
@@ -291,27 +320,39 @@ export function EstimationModule({
     gridRows.push({
       id: gridRowId(phase.id, role.roleCode),
       workItem: `${phase.phaseName} — ${role.roleName}`,
-      hours: trimDecimal(weeks * HOURS_PER_WEEK),
+      hours: String(Number((weeks * HOURS_PER_WEEK).toFixed(4))),
       people: 1,
-      hourlyRate: (monthlyRate(role) / (HOURS_PER_WEEK * 4)).toFixed(4),
+      hourlyRate: hourlyRate(phase.id, role).toFixed(4),
     });
   }
-  const rows = editable ? [...gridRows, ...legacyRows] : draft.rows;
-  let total = '0.00', calculationError: string | undefined;
-  try { total = estimateTotal(rows); } catch (error) { calculationError = error instanceof Error ? error.message : 'Check numeric fields.'; }
+  const rows = editable ? [...gridRows, ...legacyRows] : draft.rows.map(row => {
+    const role = activeRoles.find(role => activePhases.some(phase => row.id === gridRowId(phase.id, role.roleCode)));
+    return role && rateOverrides[role.roleCode] !== undefined ? { ...row, hourlyRate: hourlyRate(0, role).toFixed(4) } : row;
+  });
   const grid = estimationGrid(selectedPhaseIds, selectedRoleCodes, duration, allocation);
+  const calculation = { grid, rates: snapshotRates };
+  let total = '0.00', calculationError: string | undefined;
+  try { total = estimateTotal(rows, calculation); } catch (error) { calculationError = error instanceof Error ? error.message : 'Check numeric fields.'; }
   // Loading/recalculating saved rows (rates, decimal formatting and row order)
   // is not a user edit. Compare only the editable inputs after seeding finishes.
-  const dirty = editable && baseline !== null && JSON.stringify({ assumptions: draft.assumptions, grid }) !== baseline;
+  const ratesDirty = canEditRates && Object.keys(rateOverrides).some(code => {
+    const saved = draft.rates?.find(rate => rate.roleCode === code);
+    const oldRow = draft.rows.find(row => activePhases.some(phase => row.id === gridRowId(phase.id, code)));
+    const role = roles.find(role => role.roleCode === code);
+    const matchesMaster = oldRow && role && (monthlyRate(role) / 160).toFixed(4) === Number(oldRow.hourlyRate).toFixed(4);
+    return Number(rateOverrides[code]) !== Number(saved?.rate ?? (oldRow && !matchesMaster ? Number(oldRow.hourlyRate) * 160 : role?.defaultRate));
+  });
+  const dirty = ratesDirty || editable && baseline !== null && JSON.stringify({ assumptions: draft.assumptions, grid }) !== baseline;
   useEffect(() => {
     registerDraft?.(() => {
       setSubmissionAttempted(true);
       if (!masters || mutation.saving) throw new Error('Wait for the estimate to finish loading or saving before submitting.');
       if (calculationError) throw new Error(calculationError);
-      return { revision: draft.revision, rows, assumptions: draft.assumptions, total, grid };
+      if (ratesDirty || invalidRates) throw new Error('Choose Update opportunity to save valid rates before continuing.');
+      return { revision: draft.revision, rows, rates: snapshotRates, assumptions: draft.assumptions, total, grid };
     });
     return () => registerDraft?.(null);
-  }, [registerDraft, masters, mutation.saving, calculationError, draft.revision, draft.assumptions, total, JSON.stringify(rows), JSON.stringify(grid)]);
+  }, [registerDraft, masters, mutation.saving, calculationError, draft.revision, draft.assumptions, total, ratesDirty, invalidRates, JSON.stringify(snapshotRates), JSON.stringify(rows), JSON.stringify(grid)]);
   useUnsaved(dirty);
 
   function togglePhase(id: number) {
@@ -348,13 +389,13 @@ export function EstimationModule({
   async function saveNamedVersion(name: string, source?: EstimationVersion) {
     if (!editable || mutation.saving) return false;
     setSubmissionAttempted(true);
-    const next: Estimation = { revision: draft.revision, rows, assumptions: draft.assumptions, total, grid };
+    const next: Estimation = { revision: draft.revision, rows, rates: snapshotRates, assumptions: draft.assumptions, total, grid };
     const error = calculationError ?? estimationSubmissionError(next);
     if (error) { toast.error(error); return false; }
     let succeeded = false;
-    await mutation.run(JSON.stringify({ name, estimation: next, sourceVersionId: source?.id }), key => {
+    await mutation.run(JSON.stringify({ name, estimation: next, sourceVersionId: source?.id, sourceRevision: source?.revision }), key => {
       if (!service.saveEstimationVersion) throw new Error('Saved versions are not available.');
-      return service.saveEstimationVersion({ opportunityId: o.id, expectedRevision: o.revision, idempotencyKey: key, name, estimation: next, sourceVersionId: source?.id });
+      return service.saveEstimationVersion({ opportunityId: o.id, expectedRevision: o.revision, idempotencyKey: key, name, estimation: next, sourceVersionId: source?.id, sourceRevision: source?.revision });
     }, saved => {
       if (saved.opportunity.estimation) {
         const clearedDuration = Object.fromEntries([...selectedPhaseIds].map(id => [id, '1']));
@@ -368,7 +409,7 @@ export function EstimationModule({
       }
       onSaved(saved.opportunity);
       succeeded = true;
-    }, source ? 'Estimation updated as a new revision.' : 'Estimation version saved.');
+    }, source ? 'Estimation updated.' : 'Estimation saved.');
     return succeeded;
   }
   async function deleteVersion(version: EstimationVersion) {
@@ -377,26 +418,42 @@ export function EstimationModule({
     await mutation.run(`delete-estimate-${version.id}`, async () => {
       if (!service.deleteEstimationVersion) throw new Error('Deleting saved estimates is not available.');
       await service.deleteEstimationVersion(o.id, version.id);
+      const updated = await service.detail(o.id);
+      setDraft(previous => ({ ...previous, revision: updated.estimation?.revision ?? 0 }));
+      onSaved(updated);
     }, () => {
       if (selectedVersion?.id === version.id) selectVersion(null);
       succeeded = true;
     }, 'Saved estimate deleted.');
     return succeeded;
   }
-  function loadVersion(version: EstimationVersion) {
-    if (!editable || mutation.saving) return false;
+  function loadVersion(version: EstimationVersion, quiet = false) {
+    if ((!editable && !canEditRates) || mutation.saving || ratesDirty) return false;
     const restored = version.estimation.grid;
     if (!restored || restored.phaseIds.some(id => !phases.some(phase => phase.id === id)) || restored.roleCodes.some(code => !roles.some(role => role.roleCode === code))) {
       toast.error('This version contains phases or roles that are no longer active. You can still view its historical snapshot.'); return false;
     }
-    if (version.currencyCode !== o.currencyCode) { toast.error('This version uses a different currency. View its snapshot instead of loading it.'); return false; }
+    if (version.currencyCode !== ESTIMATION_CURRENCY_CODE) { toast.error('Only USD estimates can be edited here. You can still view this saved estimate.'); return false; }
     setSelectedPhaseIds(new Set(restored.phaseIds)); setSelectedRoleCodes(new Set(restored.roleCodes));
     setDuration(Object.fromEntries(restored.durations.map(item => [item.phaseId, item.weeks])));
     setAllocation(Object.fromEntries(restored.allocations.map(item => [cellKey(item.phaseId, item.roleCode), item.effort])));
-    setDraft(previous => ({ ...previous, rows: version.estimation.rows, assumptions: version.estimation.assumptions }));
+    setDraft(previous => ({ ...previous, rows: version.estimation.rows, rates: version.estimation.rates, assumptions: version.estimation.assumptions }));
+    setRateOverrides({}); setRateTarget(canEditRates ? version : null);
     setSubmissionAttempted(false);
-    toast.info('Estimate opened for editing using current master rates. Choose Update to save a new revision.');
+    if (!quiet) toast.info('Estimate opened with its saved rates. Choose Update to save changes to this estimate.');
     return true;
+  }
+
+  async function updateRates() {
+    if (!canEditRates || !rateTarget || !ratesDirty || invalidRates || mutation.saving || calculationError) return;
+    await mutation.run(JSON.stringify({ estimationId: rateTarget.id, revision: rateTarget.revision, rates: rateOverrides }), async () => {
+      if (!service.updateEstimationRates) throw new Error('Updating opportunity rates is unavailable.');
+      return service.updateEstimationRates({ opportunityId: o.id, estimationId: rateTarget.id, revision: rateTarget.revision, rates: snapshotRates.map(({ roleCode, rate }) => ({ roleCode, rate })) });
+    }, saved => {
+      setRateTarget(saved.version); setRateOverrides({});
+      setDraft({ ...saved.version.estimation, revision: saved.opportunity.estimation?.revision ?? draft.revision });
+      onSaved(saved.opportunity);
+    }, 'Opportunity rates and costs updated.');
   }
 
   function onSubmitted(saved: OpportunityDetail) {
@@ -412,22 +469,23 @@ export function EstimationModule({
   }
 
   return <div className="opp-estimation-workspace space-y-3">
-    <Panel title="Select phases & technical roles" tone="indigo" icon={ClipboardList} accentIcon headerRight={estimationStep && draft.status === 'DRAFT' ? <Badge variant="muted">Draft</Badge> : undefined}>
+    <Panel title="Select phases & technical roles" tone="indigo" icon={ClipboardList} accentIcon>
       <div className="opp-estimation-controls grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
         <MultiSelectField label="Phases" options={phases.map(p => ({ id: String(p.id), label: p.phaseName }))} selected={new Set([...selectedPhaseIds].map(String))} onToggle={id => togglePhase(Number(id))} onSelectAll={selectAllPhases} onClear={clearPhases} disabled={!editable || mutation.saving}
           addControl={editable ? <>
             <DropdownMenuItem className="gap-2 font-medium text-primary" disabled={!canAddPhase} onSelect={() => { setAddPhaseError(undefined); setPhaseDialogOpen(true); }}><Plus className="size-4" aria-hidden="true" />Add phase</DropdownMenuItem>
             {!canAddPhase && <p className="px-2 py-1 text-xs text-muted-foreground">Phase Master Add permission is required.</p>}
           </> : undefined} />
-        <MultiSelectField label="Technical roles" options={roles.map(role => ({ id: role.roleCode, label: role.roleCode, searchText: role.roleName, description: canViewRates ? `${money(trimDecimal(role.defaultRate), currencies.find(currency => currency.currencyId === role.currencyId)?.currencyCode ?? o.currencyCode)} / ${role.rateType}` : role.roleCode }))} selected={selectedRoleCodes} onToggle={toggleRole} onSelectAll={selectAllRoles} onClear={clearRoles} disabled={!editable || mutation.saving}
+        <MultiSelectField label="Technical roles" options={roles.map(role => ({ id: role.roleCode, label: role.roleCode, searchText: role.roleName, description: canViewRates ? `${money(trimDecimal(role.defaultRate), currencies.find(currency => currency.currencyId === role.currencyId)?.currencyCode ?? ESTIMATION_CURRENCY_CODE)} / ${role.rateType}` : role.roleCode }))} selected={selectedRoleCodes} onToggle={toggleRole} onSelectAll={selectAllRoles} onClear={clearRoles} disabled={!editable || mutation.saving}
           addControl={editable && canAddRole ? <DropdownMenuItem className="gap-2 font-medium text-primary" onSelect={() => setAddingRole(true)}><Plus className="size-4" aria-hidden="true" />Add technical role</DropdownMenuItem> : undefined} />
-        {canViewRates && <EstimationRateMaster roles={roles} currencies={currencies} currencyCode={o.currencyCode} />}
+        {(canViewRates || canEditRates || editable) && <EstimationRateMaster roles={displayedRoles} currencies={currencies} currencyCode={ESTIMATION_CURRENCY_CODE} editableRoleCodes={canEditRates && rateTarget && !mutation.saving ? selectedRoleCodes : undefined} onRateChange={canEditRates && rateTarget ? (code, value) => setRateOverrides(previous => ({ ...previous, [code]: value })) : undefined} onValidationChange={setInvalidRates} />}
 
       </div>
     </Panel>
+    {canEditRates && ratesDirty && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3"><p className="text-sm text-muted-foreground">Rates changed for {rateTarget?.name}.</p><Button type="button" disabled={!rateTarget || invalidRates || mutation.saving || Boolean(calculationError)} onClick={() => void updateRates()}>{mutation.saving ? 'Updating...' : 'Update opportunity'}</Button></div>}
       <div className="space-y-3">
         <Panel title="Estimation matrix" tone="indigo">
-          <EstimationMatrix phases={activePhases} roles={activeRoles} editable={editable} saving={mutation.saving} validationId={validationId} currencyCode={o.currencyCode}
+          <EstimationMatrix phases={activePhases} roles={activeRoles} editable={editable} saving={mutation.saving} validationId={validationId} currencyCode={ESTIMATION_CURRENCY_CODE}
             duration={id => duration[id] ?? (editable ? '' : '0')} allocation={(id, code) => allocation[cellKey(id, code)] ?? (editable ? '' : '0')}
             onDuration={(id, value) => setDuration(previous => ({ ...previous, [id]: value }))}
             onAllocation={(id, code, value) => setAllocation(previous => ({ ...previous, [cellKey(id, code)]: value }))}
@@ -435,9 +493,9 @@ export function EstimationModule({
             formatNumber={trimDecimal} effortTotal={effortTotal} total={total} calculationError={calculationError} />
         </Panel>
         {legacyRows.length > 0 && <p className="text-xs text-muted-foreground">{legacyRows.length} previously saved item{legacyRows.length === 1 ? '' : 's'} not tied to a phase/role {legacyRows.length === 1 ? 'is' : 'are'} preserved and included in the total, though no longer editable here.</p>}
-        {(validation || calculationError) && <Notice error={validation ?? calculationError!} />}{mutation.error && <Notice error={mutation.error} />}
+        {calculationError && <Notice error={calculationError} />}{mutation.error && <Notice error={mutation.error} />}
       </div>
-    <SavedEstimationVersions sidebarTarget={sidebarTarget} opportunityId={o.id} revision={draft.revision} editable={editable} saving={mutation.saving} dirty={dirty} onSave={saveNamedVersion} onLoad={loadVersion} onDelete={deleteVersion} selectedVersion={selectedVersion} onSelectVersion={selectVersion}
+    <SavedEstimationVersions sidebarTarget={sidebarTarget} opportunityId={o.id} revision={draft.revision} editable={editable} saving={mutation.saving} dirty={dirty} onSave={saveNamedVersion} onLoad={loadVersion} onDelete={o.allowedActions.includes('SUBMIT_ESTIMATE') ? deleteVersion : undefined} selectedVersion={selectedVersion} onSelectVersion={selectVersion} selectionLocked={o.stageId === 4 && [8, 9].includes(o.subStageId ?? 0)} submittedOnly={canEditRates || o.allowedActions.includes('ESTIMATE_APPROVE')}
       submitAction={showActions && o.allowedActions.includes('SUBMIT_ESTIMATE') ? <div className={sidebarTarget ? 'w-full [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-full [&_button]:!whitespace-normal' : 'shrink-0 [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-auto [&_button]:!whitespace-nowrap'}><ReviewActions opportunity={o} onSaved={onSubmitted} variant="toolbar" selectedVersion={mutation.saving ? null : selectedVersion} getEstimation={() => {
         setSubmissionAttempted(true);
         if (!masters || mutation.saving) throw new Error('Wait for the estimate to finish loading or saving before submitting.');
@@ -453,7 +511,7 @@ export function EstimationModule({
       </form>
     </DialogContent>
   </Dialog>
-  {addingRole && editable && canAddRole && <EstimationRoleDialog open onOpenChange={setAddingRole} currencies={currencies.filter(currency => currency.isActive)} roles={masters?.rateMasters ?? []} defaultCurrencyId={currencies.find(currency => currency.currencyCode === o.currencyCode && currency.isActive)?.currencyId} onCreated={role => setSelectedRoleCodes(previous => new Set(previous).add(role.roleCode))} />}
+  {addingRole && editable && canAddRole && <EstimationRoleDialog open onOpenChange={setAddingRole} currencies={currencies.filter(currency => currency.isActive && currency.currencyCode === ESTIMATION_CURRENCY_CODE)} roles={masters?.rateMasters ?? []} defaultCurrencyId={currencies.find(currency => currency.currencyCode === ESTIMATION_CURRENCY_CODE && currency.isActive)?.currencyId} onCreated={role => setSelectedRoleCodes(previous => new Set(previous).add(role.roleCode))} />}
   </div>;
 }
 const SEVERITY_BADGE: Record<RiskSeverity, 'success' | 'warning' | 'critical'> = { LOW: 'success', MEDIUM: 'warning', HIGH: 'critical' };

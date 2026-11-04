@@ -1,98 +1,53 @@
 import 'dotenv/config';
 import assert from 'node:assert/strict';
-import { test, type TestContext } from 'node:test';
-import { saveEstimationVersion, deleteEstimationVersion, saveEstimation, transitionWorkflow, type OpportunityEstimation } from './opportunity.repository';
-const db = require('../config/db');
-const estimate: OpportunityEstimation = { revision: 2, rows: [{ id: 'grid-1-PM', workItem: 'Discovery — PM', hours: '40', people: 1, hourlyRate: '25' }], assumptions: 'Original', total: '1000', grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '1' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] } };
-function database(t: TestContext, options: { duplicate?: boolean; failSnapshot?: boolean; stale?: boolean; submitted?: boolean } = {}) {
-  const calls: { sql: string; params: unknown[] }[] = [];
-  t.mock.method(db.pool, 'connect', async () => ({ query: async (sql: string, params: unknown[] = []) => {
-    calls.push({ sql, params });
-    if (sql.startsWith('SELECT stage_id, sub_stage_id')) return { rows: [{ stage_id: 3, sub_stage_id: 7 }] };
-    if (sql.startsWith('SELECT stage_id AS')) return { rows: [{ stageId: 3, subStageId: 7 }] };
-    if (sql.startsWith('SELECT status')) return { rows: [{ status: options.submitted ? 'SUBMITTED' : 'SAVED', deleted_dt: null }] };
-    if (sql.startsWith('SELECT revision FROM')) return { rows: [{ revision: 2 }] };
-    if (sql.startsWith('SELECT v.snapshot AS estimation')) return { rows: [{ estimation: estimate, name: 'Baseline' }] };
-    if (sql.includes('FROM tbl_opportunity_estimation_versions WHERE') && sql.includes('request_key =')) return { rows: options.duplicate ? [{ id: '10', version: 1 }] : [] };
-    if (sql.startsWith('INSERT INTO tbl_opportunity_estimation_matrix')) return { rows: options.stale ? [] : [{ revision: 3 }] };
-    if (sql.startsWith('INSERT INTO tbl_opportunity_estimation_versions')) {
-      if (options.failSnapshot) throw new Error('Snapshot unavailable');
-      return { rows: [{ id: '11', version: 2 }] };
-    }
-    if (sql.startsWith('UPDATE tbl_opportunity\n')) return { rows: [{ opportunityId: 10 }] };
-    return { rows: [] };
-  }, release() {} }));
-  return calls;
-}
-test('named version saves draft and immutable snapshot together with database-assigned numbering', async t => {
-  const calls = database(t);
-  assert.equal((await saveEstimationVersion(10, estimate, 'Baseline', 7, 'request-1')).version, 2);
-  const snapshot = calls.find(call => call.sql.startsWith('INSERT INTO tbl_opportunity_estimation_versions'))!;
-  assert.deepEqual(snapshot.params, [10, 'Baseline', 'SAVED', 7, 'request-1']);
-  assert.match(snapshot.sql, /MAX\(version\)/);
-  assert.match(snapshot.sql, /'rows', e.rows/);
-  assert.match(snapshot.sql, /currency_code/);
-  assert.equal(calls.at(-1)?.sql, 'COMMIT');
-  assert.ok(calls.findIndex(call => call.sql.includes('FOR UPDATE')) < calls.findIndex(call => call === snapshot));
+import { test } from 'node:test';
+import { estimationPayload, restoreEstimation } from '../lib/estimationPersistence';
+import { estimationWritable } from '../lib/opportunityPreparation';
+import type { OpportunityEstimation } from './opportunity.repository';
+
+test('allocation, rates, effort and USD costs round-trip without losing precision', () => {
+  const input: OpportunityEstimation = { revision: 2, status: 'DRAFT', assumptions: 'Exact snapshot', total: '250.25', grid: null,
+    rows: [{ id: 'r', workItem: 'Engineering', hours: '1.25', people: 2, hourlyRate: '100.10' }] };
+  const payload = estimationPayload(input);
+  assert.equal(payload.effort.total, '0.0625');
+  assert.equal(payload.cost.total, '250.25');
+  assert.equal(payload.cost.currencyCode, 'USD');
+  assert.deepEqual(restoreEstimation({ revision: 2, resource_allocation: payload.allocation, rate_snapshot: payload.rates, person_weeks_cost: payload.cost }), input);
 });
-test('retrying a named save returns the same version without rewriting the draft', async t => {
-  const calls = database(t, { duplicate: true });
-  assert.equal((await saveEstimationVersion(10, estimate, 'Baseline', 7, 'same-request')).id, '10');
-  assert.equal(calls.some(call => call.sql.startsWith('INSERT')), false);
-});
-test('snapshot failure or stale draft rolls back the entire named save', async t => {
-  for (const options of [{ failSnapshot: true }, { stale: true }]) {
-    const calls = database(t, options);
-    await assert.rejects(saveEstimationVersion(10, estimate, 'Baseline', 7, 'request-2'));
-    assert.equal(calls.at(-1)?.sql, 'ROLLBACK');
-    assert.equal(calls.some(call => call.sql === 'COMMIT'), false);
-  }
-});
-test('ordinary Save Draft does not create a named version', async t => {
-  const calls = database(t);
-  await saveEstimation(10, estimate, 7);
-  assert.equal(calls.some(call => call.sql.includes('tbl_opportunity_estimation_versions')), false);
-});
-test('submission snapshots its exact persisted matrix in the workflow transaction', async t => {
-  const calls = database(t);
-  await transitionWorkflow(10, 4, 8, null, 7, 'Review', null, {}, { stageId: 3, subStageId: 7, estimationRevision: 2 });
-  const snapshot = calls.find(call => call.sql.startsWith('INSERT INTO tbl_opportunity_estimation_versions'))!;
-  assert.deepEqual(snapshot.params, [10, 'Submitted estimate', 'SUBMITTED', 7, 'submitted-2']);
-  assert.ok(calls.some(call => call.sql.includes('INSERT INTO tbl_opportunity_engage_tracker')));
-  assert.equal(calls.at(-1)?.sql, 'COMMIT');
+test('estimates remain writable through CEO review and lock after approval', () => {
+  for (const [stageId, subStageId] of [[3,7],[4,8],[4,9]]) assert.equal(estimationWritable({ stageId, subStageId }), true);
+  for (const [stageId, subStageId] of [[4,5],[5,10],[6,12],[7,13],[8,14],[9,17],[10,19]]) assert.equal(estimationWritable({ stageId, subStageId }), false);
 });
 
-test('selected-version submission restores the saved matrix and snapshots it atomically with the transition', async t => {
-  const calls = database(t);
-  await transitionWorkflow(10, 4, 8, null, 7, 'Review Baseline', null, {}, { stageId: 3, subStageId: 7, estimationRevision: 2, selectedVersionId: '7' });
-  const selected = calls.find(call => call.sql.startsWith('SELECT v.snapshot AS estimation'))!;
-  assert.deepEqual(selected.params, [10, '7']);
-  const saved = calls.find(call => call.sql.startsWith('INSERT INTO tbl_opportunity_estimation_matrix'))!;
-  assert.deepEqual(JSON.parse(saved.params[1] as string), estimate.rows);
-  const snapshot = calls.find(call => call.sql.startsWith('INSERT INTO tbl_opportunity_estimation_versions'))!;
-  assert.deepEqual(snapshot.params, [10, 'Submitted: Baseline', 'SUBMITTED', 7, 'submitted-3']);
-  assert.equal(calls.at(-1)?.sql, 'COMMIT');
+test('snapshot stores displayed billing rates by role once and calculates costs from unrounded monthly rates for every phase', () => {
+  const input: OpportunityEstimation = { revision: 1, assumptions: '', total: '0',
+    rates: [{ roleCode: 'BA', rate: '345465.03', rateType: 'Monthly', currencyCode: 'USD' }, { roleCode: 'qa', rate: '120', rateType: 'Monthly', currencyCode: 'USD' }],
+    grid: { phaseIds: [1, 5], roleCodes: ['BA', 'qa'], durations: [], allocations: [] },
+    rows: [1, 5].flatMap(id => ['BA', 'qa'].map(code => ({ id: `grid-${id}-${code}`, workItem: code, hours: '80', people: 1, hourlyRate: '9999' }))) };
+  const payload = estimationPayload(input);
+  assert.deepEqual(payload.rates.roles, { BA: { rate: '345465.03', rateType: 'Monthly', currencyCode: 'USD' }, qa: { rate: '120', rateType: 'Monthly', currencyCode: 'USD' } });
+  assert.deepEqual(payload.rates.legacyRows, []);
+  assert.equal(payload.cost.total, '345585.04');
+  assert.equal(payload.cost.rows[0].cost, '172732.52', 'Do not round a derived hourly rate before applying the monthly formula');
+  const restored = restoreEstimation({ revision: 1, resource_allocation: payload.allocation, rate_snapshot: payload.rates, person_weeks_cost: payload.cost });
+  assert.deepEqual(restored.rates, input.rates);
+  assert.deepEqual(restored.rows.map(row => row.hourlyRate), ['2159.1564', '0.7500', '2159.1564', '0.7500']);
 });
 
-test('Update creates a linked snapshot without overwriting the original', async t => {
-  const calls = database(t);
-  await saveEstimationVersion(10, estimate, 'Revised', 7, 'update-request', '9');
-  assert.ok(calls.some(call => call.sql.includes('SET supersedes_id') && JSON.stringify(call.params) === JSON.stringify(['11', '9'])));
-  assert.equal(calls.some(call => call.sql.includes('SET snapshot')), false);
-  assert.equal(calls.at(-1)?.sql, 'COMMIT');
+test('Project Manager uses duration times allocation, then monthly rate divided by 20 times person-weeks times 5', () => {
+  const input: OpportunityEstimation = { revision: 1, assumptions: '', total: '0',
+    rates: [{ roleCode: 'PM', rate: '4000', rateType: 'Monthly', currencyCode: 'USD' }],
+    grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '0.25' }] },
+    rows: [{ id: 'grid-1-PM', workItem: 'Project Manager', hours: '20', people: 1, hourlyRate: '25' }] };
+  const payload = estimationPayload(input);
+  assert.equal(payload.effort.total, '0.5');
+  assert.equal(payload.cost.total, '500.00');
+  assert.equal(payload.cost.rows[0].cost, '500.00');
 });
-test('submitted versions cannot be edited or deleted', async t => {
-  const calls = database(t, { submitted: true });
-  await assert.rejects(saveEstimationVersion(10, estimate, 'Revised', 7, 'update-request', '9'));
-  await assert.rejects(deleteEstimationVersion(10, '9', 7));
-  assert.equal(calls.some(call => call.sql.startsWith('INSERT')), false);
-  assert.equal(calls.at(-1)?.sql, 'ROLLBACK');
-});
-test('Delete archives the scoped version with actor and timestamp under the workflow lock', async t => {
-  const calls = database(t);
-  assert.equal(await deleteEstimationVersion(10, '9', 7), true);
-  const archived = calls.find(call => call.sql.includes('SET deleted_dt'))!;
-  assert.deepEqual(archived.params, [10, '9', 7]);
-  assert.equal(calls.some(call => call.sql.startsWith('DELETE')), false);
-  assert.equal(calls.at(-1)?.sql, 'COMMIT');
+
+test('old hourly snapshots remain readable and retain the original price', () => {
+  const restored = restoreEstimation({ revision: 1, resource_allocation: { schemaVersion: 1, status: 'DRAFT', assumptions: '', grid: null, rows: [{ id: 'old', workItem: 'Old task', hours: '40', people: 1 }] },
+    rate_snapshot: { rows: [{ id: 'old', hourlyRate: '25' }] }, person_weeks_cost: { total: '1000.00', currencyCode: 'USD', rows: [] } });
+  assert.equal(restored.rows[0].hourlyRate, '25');
+  assert.equal(estimationPayload(restored).cost.total, '1000.00');
 });

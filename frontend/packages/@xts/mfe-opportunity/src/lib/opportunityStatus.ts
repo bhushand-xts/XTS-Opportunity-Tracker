@@ -57,6 +57,7 @@ const SUBSTAGES: Record<number, { stageId: number; label: string }> = {
 /** Display persisted master IDs without changing the legacy workflow state. */
 export function opportunityStatus(opportunity: Pick<OpportunitySummary, 'state' | 'stageId' | 'subStageId'>) {
   if (opportunity.stageId == null) return { stage: STATE_LABELS[opportunity.state], substage: null };
+  if (opportunity.stageId === 4 && opportunity.subStageId === 5) return { stage: STAGE_LABELS[4], substage: 'Estimation revision approval pending' };
   const substage = opportunity.subStageId == null ? undefined : SUBSTAGES[opportunity.subStageId];
   return {
     stage: STAGE_LABELS[opportunity.stageId] ?? 'Status unavailable',

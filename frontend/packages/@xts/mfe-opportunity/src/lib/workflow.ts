@@ -1,4 +1,4 @@
-import type { Action, Decimal, DirectoryUser, EstimateRow, LookupOption, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
+import type { Action, Decimal, DirectoryUser, Estimation, EstimateRow, LookupOption, OpportunityDetail, OpportunityDraft, PreparedQuestion, ResponseItem, RfpQuestion } from '@xts/api-contracts';
 import { randomUUID } from './uuid';
 
 export const STATE_LABELS = {
@@ -50,7 +50,7 @@ export function isPreparing(o: OpportunityDetail) { return o.state === 'PREPARAT
 // Approved estimates stay fixed throughout proposal, negotiation, and outcomes. Stage 9
 // (No-Bid / Declined: Sales reject, CEO No-Go, estimate rejected, closed by Sales) is locked too.
 export function isPreparationLocked(o: Pick<OpportunityDetail, 'stageId' | 'subStageId'>) {
-  return [5, 6, 7, 8, 9, 10].includes(o.stageId ?? 0);
+  return [5, 6, 7, 8, 9, 10].includes(o.stageId ?? 0) || o.stageId === 4 && o.subStageId === 5;
 }
 export function may(o: OpportunityDetail, action: Action) { return o.allowedActions.includes(action); }
 export function canAnswer(o: OpportunityDetail, r: ResponseItem, userId: string | undefined) {
@@ -109,14 +109,22 @@ export function validDate(value: string) {
   return y > 0 && m >= 1 && m <= 12 && d >= 1 && d <= days[m - 1];
 }
 /** Exact fixed-point calculation; round each row to currency minor units. */
-export function rowAmount(row: EstimateRow): Decimal {
+export function rowAmount(row: EstimateRow, estimate?: Pick<Estimation, 'rates' | 'grid'>): Decimal {
   const scaled = (v: string) => { if (!/^\d+(\.\d{1,4})?$/.test(v)) throw new Error('Use non-negative decimals with at most four decimal places.'); const [a, b = ''] = v.split('.'); return BigInt(a) * 10000n + BigInt(b.padEnd(4, '0')); };
   if (!Number.isSafeInteger(row.people) || row.people < 1) throw new Error('People must be a positive whole number.');
-  const minor = (scaled(row.hours) * scaled(row.hourlyRate) * BigInt(row.people) + 500000n) / 1000000n;
+  const role = estimate?.rates?.find(rate => estimate.grid?.phaseIds.some(id => row.id === `grid-${id}-${rate.roleCode}`));
+  const phaseId = role && estimate?.grid?.phaseIds.find(id => row.id === `grid-${id}-${role.roleCode}`);
+  const duration = estimate?.grid?.durations.find(item => item.phaseId === phaseId)?.weeks;
+  const allocation = estimate?.grid?.allocations.find(item => item.phaseId === phaseId && item.roleCode === role?.roleCode)?.effort;
+  const effort = role && duration?.trim() && allocation?.trim() ? scaled(duration) * scaled(allocation) : scaled(row.hours) * BigInt(row.people) * 250n;
+  // (Monthly rate / 20) * (Person-weeks * 5), rounded only to cents.
+  const divisor = role?.rateType.trim().toLowerCase() === 'monthly' ? 40000000000n : 10000000000n;
+  const minor = role ? (scaled(role.rate) * effort + divisor / 2n) / divisor
+    : (scaled(row.hours) * scaled(row.hourlyRate) * BigInt(row.people) + 500000n) / 1000000n;
   return `${minor / 100n}.${String(minor % 100n).padStart(2, '0')}`;
 }
-export function estimateTotal(rows: EstimateRow[]): Decimal {
-  const cents = rows.reduce((sum, row) => sum + BigInt(rowAmount(row).replace('.', '')), 0n);
+export function estimateTotal(rows: EstimateRow[], estimate?: Pick<Estimation, 'rates' | 'grid'>): Decimal {
+  const cents = rows.reduce((sum, row) => sum + BigInt(rowAmount(row, estimate).replace('.', '')), 0n);
   return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
 }
 export function money(value: Decimal, code: string) {
@@ -139,7 +147,7 @@ export function decisionError(o: OpportunityDetail, decision: Action, reason: st
   }
   if ((decision.startsWith('SALES_') && o.state !== 'SALES_REVIEW') || (decision.startsWith('GATE1_') && o.state !== 'GATE1_PENDING')) return 'This package is no longer awaiting this decision. Refresh the opportunity.';
   if (o.packageRevision === null) return 'There is no submitted package to review.';
-  if (!confirmed) return 'Confirm that you reviewed this package revision.';
+  if (!confirmed) return 'Confirm that you reviewed this opportunity.';
   if ((decision === 'SALES_REJECT' || decision === 'GATE1_NO_GO') && !reason.trim()) return 'Enter a reason for this decision.';
   return null;
 }
@@ -160,6 +168,7 @@ export function applicableDecisions(o: OpportunityDetail): Action[] {
     decisions.push('GATE1_NO_GO');
   }
   if (stage === 3 && substage === 7) decisions.push('SUBMIT_ESTIMATE');
+  if (stage === 4 && substage === 5) decisions.push('ESTIMATE_REVISION_APPROVE', 'ESTIMATE_REVISION_DECLINE');
   if (stage === 4 && [8, 9].includes(substage ?? 0)) {
     decisions.push('ESTIMATE_APPROVE');
     if (substage === 8) decisions.push('ESTIMATE_HOLD');

@@ -271,28 +271,31 @@ test('a save based on a stale review step cannot overwrite a newer approval', as
   assert.equal(calls.at(-1), 'ROLLBACK');
 });
 
-test('estimation saving checks the locked stage and revision and binds matrix data', async t => {
-  let stage = 3, savedRevision = true;
+test('estimation saving checks the locked stage and tracker token before binding JSON data', async t => {
+  let stage = 3, stale = false;
   const calls: { sql: string; params: unknown[] }[] = [];
   const estimation = { revision: 2, rows: [{ id: 'row', workItem: "Engineering's estimate", hours: '2', people: 1, hourlyRate: '100' }], assumptions: 'One sprint', total: '200.00' };
   t.mock.method(db.pool, 'connect', async () => ({
     query: async (sql: string, params: unknown[] = []) => {
       calls.push({ sql, params });
-      return { rows: sql.startsWith('SELECT') ? [{ stage_id: stage, sub_stage_id: stage === 3 ? 7 : 8 }] : sql.includes('RETURNING revision') && savedRevision ? [{ revision: 3 }] : [] };
-    },
-    release: () => {},
+      if (sql.startsWith('SELECT o.stage_id')) return { rows: [{ stageId: stage, subStageId: stage === 3 ? 7 : 10 }] };
+      if (sql.startsWith('SELECT e.estimation_id')) return { rows: [{ estimation_id: '2', revision: stale ? 3 : 2 }] };
+      return { rows: [] };
+    }, release() {},
   }));
   await saveEstimation(10, estimation, 7);
-  const insert = calls.find(call => call.sql.includes('INSERT INTO'))!;
-  assert.deepEqual(insert.params, [10, JSON.stringify(estimation.rows), 'One sprint', '200.00', 7, 2]);
+  const update = calls.find(call => call.sql.startsWith('UPDATE tbl_opportunity_estimation'))!;
+  assert.equal(update.params[0], 10);
+  assert.equal(JSON.parse(String(update.params[1])).assumptions, 'One sprint');
+  assert.equal(JSON.parse(String(update.params[4])).total, '200.00');
   assert.equal(calls.at(-1)?.sql, 'COMMIT');
-  savedRevision = false;
+  stale = true;
   await assert.rejects(saveEstimation(10, estimation, 7), /estimation changed/);
   assert.equal(calls.at(-1)?.sql, 'ROLLBACK');
-  stage = 4;
-  const inserts = calls.filter(call => call.sql.includes('INSERT INTO')).length;
-  await assert.rejects(saveEstimation(10, estimation, 7), /no longer in estimation/);
-  assert.equal(calls.filter(call => call.sql.includes('INSERT INTO')).length, inserts);
+  stage = 5;
+  const count = calls.filter(call => call.sql.startsWith('INSERT')).length;
+  await assert.rejects(saveEstimation(10, estimation, 7), /read-only/);
+  assert.equal(calls.filter(call => call.sql.startsWith('INSERT')).length, count);
 });
 
 test('a decision and its engagement audit commit together with bound reason and role values', async t => {

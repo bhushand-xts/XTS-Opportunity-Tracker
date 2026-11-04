@@ -4,7 +4,7 @@ export type LocalDate = string;
 export type OpportunityState = 'PREPARATION_PENDING' | 'IN_PROGRESS' | 'SALES_REVIEW' | 'GATE1_PENDING' | 'GATE1_GO' | 'SALES_REJECTED' | 'GATE1_NO_GO';
 export type ResponseState = 'UNASSIGNED' | 'ASSIGNED' | 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'CHANGES_REQUESTED';
 export type Module = 'overview' | 'responses' | 'estimation' | 'scope' | 'assignment' | 'activity';
-export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
+export type Action = 'EDIT' | 'ASSIGN' | 'SAVE_ANSWER' | 'SUBMIT_ANSWER' | 'REVIEW_ANSWER' | 'EDIT_ESTIMATION' | 'EDIT_ESTIMATION_RATES' | 'EDIT_SCOPE' | 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_REVISION_APPROVE' | 'ESTIMATE_REVISION_DECLINE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT' | 'UPLOAD' | 'EXTRACT' | 'CLIENT_CREATE' | 'CLIENT_UPDATE';
 export interface DirectoryUser { id: string; name: string; email: string; roles: string[]; active: boolean; }
 export interface Contact { id?: string; name: string; title: string; email: string; phone: string; decisionRole: string; decisionRoleOther?: string; }
 export type AdditionalContact = Contact;
@@ -53,9 +53,11 @@ export interface EstimationGrid {
   durations: { phaseId: number; weeks: string }[];
   allocations: { phaseId: number; roleCode: string; effort: string }[];
 }
-export interface Estimation { revision: number; rows: EstimateRow[]; assumptions: string; total: Decimal; status?: 'DRAFT' | 'SUBMITTED'; grid?: EstimationGrid | null; }
+export interface EstimationRate { roleCode: string; rate: string; rateType: string; currencyCode: string; }
+export interface Estimation { revision: number; rows: EstimateRow[]; rates?: EstimationRate[]; assumptions: string; total: Decimal; status?: 'DRAFT' | 'SUBMITTED'; grid?: EstimationGrid | null; }
 export interface EstimationVersion {
-  id: string; version: number; name: string; status: 'SAVED' | 'SUBMITTED';
+  isSelected?: boolean;
+  id: string; revision: number; updatedBy?: number | null; updatedAt?: string | null; version: number; name: string; status: 'SAVED' | 'SUBMITTED';
   currencyCode: string; personWeeks: string; createdBy: number; createdAt: string;
   estimation: Estimation;
 }
@@ -93,7 +95,8 @@ export interface DecisionCommand extends VersionCommand {
   estimationVersionId?: string;
   expectedStageId?: number | null; expectedSubStageId?: number | null;
   reasonCodeId?: number | null;
-  decision: 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT';
+  requiresRevisedEstimation?: boolean;
+  decision: 'SALES_APPROVE' | 'SALES_REQUEST_CHANGES' | 'SALES_HOLD' | 'SALES_REJECT' | 'GATE1_GO' | 'GATE1_REQUEST_CHANGES' | 'GATE1_HOLD' | 'GATE1_NO_GO' | 'SUBMIT_ESTIMATE' | 'ESTIMATE_APPROVE' | 'ESTIMATE_REVISION_APPROVE' | 'ESTIMATE_REVISION_DECLINE' | 'ESTIMATE_HOLD' | 'ESTIMATE_REJECT' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY' | 'RESUBMIT';
   reason: string; confirmed: boolean;
 }
 export interface LookupOption { id: string; label: string; code?: string; }

@@ -107,7 +107,7 @@ export const opportunityTypeDefs = `#graphql
   input OpportunityRiskInput { id: ID!, description: String!, severity: String! }
   input OpportunityAlignmentInput { id: ID!, text: String! }
   input OpportunityScopeInput { revision: Int!, summary: String!, risks: [OpportunityRiskInput!]!, alignment: [OpportunityAlignmentInput!]! }
-  type OpportunityEstimationVersion { id: ID!, version: Int!, name: String!, status: String!, currencyCode: String!, personWeeks: String!, createdBy: Int!, createdAt: String!, estimation: OpportunityEstimation! }
+  type OpportunityEstimationVersion { id: ID!, isSelected: Boolean!, revision: Int!, updatedBy: Int, updatedAt: String, version: Int!, name: String!, status: String!, currencyCode: String!, personWeeks: String!, createdBy: Int!, createdAt: String!, estimation: OpportunityEstimation! }
   enum OpportunityEstimationStatus { DRAFT SUBMITTED }
   type OpportunityEstimationDuration { phaseId: Int!, weeks: String! }
   type OpportunityEstimationAllocation { phaseId: Int!, roleCode: String!, effort: String! }
@@ -115,9 +115,12 @@ export const opportunityTypeDefs = `#graphql
   input OpportunityEstimationDurationInput { phaseId: Int!, weeks: String! }
   input OpportunityEstimationAllocationInput { phaseId: Int!, roleCode: String!, effort: String! }
   input OpportunityEstimationGridInput { phaseIds: [Int!]!, roleCodes: [String!]!, durations: [OpportunityEstimationDurationInput!]!, allocations: [OpportunityEstimationAllocationInput!]! }
-  type OpportunityEstimation { revision: Int!, status: OpportunityEstimationStatus!, rows: [OpportunityEstimationRow!]!, assumptions: String!, total: String!, grid: OpportunityEstimationGrid }
+  type OpportunityEstimationRate { roleCode: String!, rate: String!, rateType: String!, currencyCode: String! }
+  input OpportunityEstimationRateInput { roleCode: String!, rate: String!, rateType: String!, currencyCode: String! }
+  input OpportunityEstimationRateUpdateInput { roleCode: String!, rate: String! }
+  type OpportunityEstimation { revision: Int!, status: OpportunityEstimationStatus!, rows: [OpportunityEstimationRow!]!, rates: [OpportunityEstimationRate!], assumptions: String!, total: String!, grid: OpportunityEstimationGrid }
   input OpportunityEstimationRowInput { id: String!, workItem: String!, hours: String!, people: Int!, hourlyRate: String! }
-  input OpportunityEstimationInput { revision: Int!, rows: [OpportunityEstimationRowInput!]!, assumptions: String!, total: String, grid: OpportunityEstimationGridInput }
+  input OpportunityEstimationInput { revision: Int!, rows: [OpportunityEstimationRowInput!]!, rates: [OpportunityEstimationRateInput!], assumptions: String!, total: String, grid: OpportunityEstimationGridInput }
 
   type RfpIntakeOpportunity {
     opportunityId: Int!
@@ -340,6 +343,8 @@ export const opportunityTypeDefs = `#graphql
     REJECT
     BID_SUBMITTED
     START_NEGOTIATION
+    APPROVE_ESTIMATE_REVISION
+    DECLINE_ESTIMATE_REVISION
     MARK_WON
     MARK_LOST
     OPPORTUNITY_HOLD
@@ -349,6 +354,7 @@ export const opportunityTypeDefs = `#graphql
   }
 
   extend type Query {
+    estimationVersion(opportunityId: Int!, estimationId: ID!): OpportunityEstimationVersion!
     estimationVersions(opportunityId: Int!): [OpportunityEstimationVersion!]!
     opportunityClientCreateAllowed: Boolean!
     opportunityClientUpdateAllowed: Boolean!
@@ -362,8 +368,9 @@ export const opportunityTypeDefs = `#graphql
   }
 
   extend type Mutation {
-    saveEstimationVersion(opportunityId: Int!, estimation: OpportunityEstimationInput!, name: String!, requestKey: String!, sourceVersionId: ID): OpportunityEstimationVersion!
+    saveEstimationVersion(opportunityId: Int!, estimation: OpportunityEstimationInput!, name: String!, requestKey: String!, sourceVersionId: ID, sourceRevision: Int): OpportunityEstimationVersion!
     deleteEstimationVersion(opportunityId: Int!, versionId: ID!): Boolean!
+    updateEstimationRates(opportunityId: Int!, estimationId: ID!, revision: Int!, rates: [OpportunityEstimationRateUpdateInput!]!): OpportunityEstimationVersion!
     saveOpportunityScope(opportunityId: Int!, scope: OpportunityScopeInput!, section: OpportunityAssessmentSection = ALL): Opportunity!
     saveOpportunityAnswer(opportunityId: Int!, responseId: Int!, revision: Int!, answer: String!): Opportunity!
     saveOpportunityEstimation(opportunityId: Int!, estimation: OpportunityEstimationInput!): Opportunity!
@@ -388,6 +395,7 @@ export const opportunityTypeDefs = `#graphql
       comment: String
       opportunityDescription: String
       reasonCodeId: Int
+      requiresRevisedEstimation: Boolean = false
     ): Opportunity!
   }
 `;

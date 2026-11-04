@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DecisionCommand } from '@xts/api-contracts';
 import { productionOpportunityService } from './OpportunityService';
-import { GET_OPPORTUNITY, TRANSITION_OPPORTUNITY, GET_HOLD_REASON_CODES, SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION } from './opportunity.queries';
+import { GET_OPPORTUNITY, TRANSITION_OPPORTUNITY, GET_HOLD_REASON_CODES, GET_NEGOTIATION_REASON_CODES, SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, GET_ESTIMATION_VERSION, GET_ESTIMATION_VERSIONS, SAVE_ESTIMATION_VERSION } from './opportunity.queries';
 
 const api = vi.hoisted(() => ({ query: vi.fn(), mutate: vi.fn() }));
 vi.mock('@xts/api-client', () => ({ getApolloClient: () => api }));
@@ -30,7 +30,7 @@ describe('production approval schema', () => {
   it('validates question answers against the actual opportunity schema', () => {
     const source = readFileSync(resolve(process.cwd(), '../backend/services/opportunity/src/graphql/typeDefs/opportunity.typeDefs.ts'), 'utf8');
     const schema = buildSchema(`type Query { _unused: Boolean } type Mutation { _unused: Boolean } ${source.match(/`([\s\S]*)`/)![1]}`);
-    expect(validate(schema, SAVE_OPPORTUNITY_ANSWER)).toEqual([]);
+    for (const operation of [SAVE_OPPORTUNITY_ANSWER, GET_ESTIMATION_VERSION, GET_ESTIMATION_VERSIONS, SAVE_ESTIMATION_VERSION]) expect(validate(schema, operation)).toEqual([]);
   });
   it('validates the decision mutation including reasonCodeId against the actual opportunity schema', () => {
     const source = readFileSync(resolve(process.cwd(), '../backend/services/opportunity/src/graphql/typeDefs/opportunity.typeDefs.ts'), 'utf8');
@@ -198,6 +198,7 @@ describe('production opportunity decisions', () => {
     ['SALES_REJECT', 'REJECT', 1, 1, 9, 15], ['GATE1_NO_GO', 'REJECT', 2, 4, 9, 16],
     ['ESTIMATE_REJECT', 'REJECT', 4, 8, 9, 17], ['ESTIMATE_HOLD', 'HOLD', 4, 8, 4, 9],
     ['ESTIMATE_APPROVE', 'APPROVE', 4, 9, 5, 10], ['SUBMIT_ESTIMATE', 'SUBMIT_ESTIMATE', 3, 7, 4, 8],
+    ['ESTIMATE_REVISION_APPROVE', 'APPROVE_ESTIMATE_REVISION', 4, 5, 3, 7], ['ESTIMATE_REVISION_DECLINE', 'DECLINE_ESTIMATE_REVISION', 4, 5, 6, 12],
     ['BID_SUBMITTED', 'BID_SUBMITTED', 5, 10, 5, 11], ['START_NEGOTIATION', 'START_NEGOTIATION', 5, 11, 6, 12],
     ['MARK_WON', 'MARK_WON', 6, 12, 7, 13], ['MARK_LOST', 'MARK_LOST', 6, 12, 8, 14],
     ['RESUME_NEGOTIATION', 'RESUME_NEGOTIATION', 10, 19, 6, 12],
@@ -210,7 +211,7 @@ describe('production opportunity decisions', () => {
     api.mutate.mockResolvedValueOnce({ data: { transitionOpportunity: { opportunityId: 10 } } });
     const saved = await productionOpportunityService.decide({ ...command, expectedStageId: stage, expectedSubStageId: substage, decision, reason: '  Decision description  ' });
     expect(api.mutate).toHaveBeenCalledWith(expect.objectContaining({ variables: {
-      opportunityId: 10, action, comment: 'Decision description', ...(['REJECT', 'HOLD', 'OPPORTUNITY_HOLD'].includes(action) ? { reasonCodeId: 3 } : {}),
+      opportunityId: 10, action, comment: 'Decision description', ...(['REJECT', 'HOLD', 'OPPORTUNITY_HOLD', 'START_NEGOTIATION'].includes(action) ? { reasonCodeId: 3 } : {}), ...(action === 'START_NEGOTIATION' ? { requiresRevisedEstimation: false } : {}),
     } }));
     expect(saved).toMatchObject({ stageId: nextStage, subStageId: nextSubstage });
   });
@@ -232,5 +233,51 @@ describe('production estimation persistence', () => {
     api.mutate.mockRejectedValueOnce(new Error('The estimation changed.'));
     await expect(productionOpportunityService.saveEstimation({ opportunityId: '10', expectedRevision: 0, idempotencyKey: 'save-matrix', estimation: { revision: 1, rows: [], assumptions: '', total: '' } })).rejects.toThrow('The estimation changed.');
     expect(api.query).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('master negotiation reasons', () => {
+  it('loads only active negotiation reasons from the master and keeps their descriptions', async () => {
+    api.query.mockResolvedValueOnce({ data: { reasonCodesList: [
+      { id: 8, reasonName: 'Pricing', description: 'Discuss price.', isActive: true, isNegotiationReason: true, displayOrder: 8 },
+      { id: 3, reasonName: 'Normal reason', isActive: true, isNegotiationReason: false },
+      { id: 9, reasonName: 'Inactive negotiation', isActive: false, isNegotiationReason: true },
+    ] } });
+    expect(await productionOpportunityService.negotiationReasons!()).toEqual([{ id: 8, name: 'Pricing', description: 'Discuss price.' }]);
+    expect(api.query).toHaveBeenCalledWith({ query: GET_NEGOTIATION_REASON_CODES, fetchPolicy: 'network-only', errorPolicy: 'none' });
+    api.query.mockResolvedValueOnce({ data: { reasonCodesList: [
+      { id: 8, reasonName: 'Pricing', isActive: true, isNegotiationReason: true },
+      { id: 3, reasonName: 'Normal reason', isActive: true, isNegotiationReason: false },
+    ] } });
+    expect(await productionOpportunityService.holdReasons!()).toEqual([{ id: 3, name: 'Normal reason', description: undefined }]);
+  });
+  it('sends the checked revision request and selected reason ID as structured mutation arguments', async () => {
+    api.query.mockResolvedValueOnce({ data: { opportunity: opportunity(5, 11) } })
+      .mockResolvedValueOnce({ data: { opportunity: opportunity(4, 5) } }).mockResolvedValueOnce(directory);
+    api.mutate.mockResolvedValueOnce({ data: { transitionOpportunity: { opportunityId: 10 } } });
+    const saved = await productionOpportunityService.decide({ ...command, expectedStageId: 5, expectedSubStageId: 11,
+      decision: 'START_NEGOTIATION', reason: 'Revise delivery costs', reasonCodeId: 8, requiresRevisedEstimation: true });
+    expect(api.mutate).toHaveBeenCalledWith(expect.objectContaining({ variables: {
+      opportunityId: 10, action: 'START_NEGOTIATION', comment: 'Revise delivery costs', reasonCodeId: 8, requiresRevisedEstimation: true,
+    } }));
+    expect(saved).toMatchObject({ stageId: 4, subStageId: 5 });
+  });
+});
+
+
+describe('canonical saved-estimation requests', () => {
+  const estimate = { revision: 5, assumptions: 'Saved rates', total: '1000.00', rows: [{ id: 'r', workItem: 'Engineering', hours: '40', people: 1, hourlyRate: '25' }] };
+  const saved = { id: '99', revision: 3, version: 1, name: 'Baseline', status: 'SAVED', currencyCode: 'USD', personWeeks: '1', createdBy: 7, createdAt: '2026-11-03T00:00:00Z', estimation: estimate };
+  it('fetches fresh saved data by opportunity and main-table estimation ID', async () => {
+    api.query.mockResolvedValueOnce({ data: { estimationVersion: saved } });
+    expect(await productionOpportunityService.estimationVersion!('10', '99')).toEqual(saved);
+    expect(api.query).toHaveBeenCalledWith({ query: GET_ESTIMATION_VERSION, variables: { opportunityId: 10, estimationId: '99' }, fetchPolicy: 'network-only', errorPolicy: 'none' });
+  });
+  it('updates the same saved estimate with its current change token', async () => {
+    api.mutate.mockResolvedValueOnce({ data: { saveEstimationVersion: saved } });
+    api.query.mockResolvedValueOnce({ data: { opportunity: { ...opportunity(3, 7, ['EDIT_ESTIMATION']), estimation: estimate } } }).mockResolvedValueOnce(directory);
+    await productionOpportunityService.saveEstimationVersion!({ opportunityId: '10', expectedRevision: 0, idempotencyKey: 'update-99', estimation: estimate, name: 'Updated', sourceVersionId: '99', sourceRevision: 2 });
+    expect(api.mutate).toHaveBeenCalledWith(expect.objectContaining({ mutation: SAVE_ESTIMATION_VERSION, variables: expect.objectContaining({ opportunityId: 10, sourceVersionId: '99', sourceRevision: 2, name: 'Updated', requestKey: 'update-99' }) }));
   });
 });

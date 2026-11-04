@@ -29,6 +29,7 @@ export interface ReasonCode {
   description: string | null;
   displayOrder: number | null;
   isActive: boolean;
+  isNegotiationReason?: boolean;
   createdDt: string;
   createdBy: number | null;
   updatedDt: string | null;
@@ -41,15 +42,17 @@ const SELECT_COLUMNS = `
   description,
   display_order AS "displayOrder",
   is_active AS "isActive",
+  COALESCE(is_negotiation_reason, FALSE) AS "isNegotiationReason",
   created_dt AS "createdDt",
   created_by AS "createdBy",
   updated_dt AS "updatedDt",
   updated_by AS "updatedBy"
 `;
 
-async function findAll(): Promise<ReasonCode[]> {
+async function findAll(isNegotiationReason?: boolean): Promise<ReasonCode[]> {
   const rows = await query<ReasonCode>(
-    `SELECT ${SELECT_COLUMNS} FROM tbl_reason_codes ORDER BY display_order NULLS LAST, reason_name`
+    `SELECT ${SELECT_COLUMNS} FROM tbl_reason_codes${isNegotiationReason === undefined ? '' : ' WHERE COALESCE(is_negotiation_reason, FALSE) = $1'} ORDER BY display_order NULLS LAST, reason_name`,
+    isNegotiationReason === undefined ? [] : [isNegotiationReason]
   );
   return rows;
 }
@@ -128,8 +131,8 @@ async function findHistory(reasonCodeId: number): Promise<ReasonCodeHistory[]> {
 async function create(input: ReasonCodeInput, userId: number | null): Promise<ReasonCode> {
   return transaction(async (client) => {
     const result = await client.query<ReasonCode>(
-      `INSERT INTO tbl_reason_codes (reason_name, description, display_order, is_active, created_by)
-       VALUES ($1, $2, $3, COALESCE($4, TRUE), $5)
+      `INSERT INTO tbl_reason_codes (reason_name, description, display_order, is_active, created_by, is_negotiation_reason)
+       VALUES ($1, $2, $3, COALESCE($4, TRUE), $5, FALSE)
        RETURNING ${SELECT_COLUMNS}`,
       [input.reasonName, input.description ?? null, input.displayOrder ?? null, input.isActive ?? null, userId]
     );

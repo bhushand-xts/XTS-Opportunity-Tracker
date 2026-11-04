@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2 } from 'lucide-react';
 import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, SegmentedProgress, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle } from '@xts/design-system';
@@ -81,6 +81,28 @@ function OpportunityBoard({ opportunities, savedId, showAllStages, stageIds }: {
     const board = boardRef.current;
     if (board) board.scrollBy({ left: direction * board.clientWidth * 0.8, behavior: 'auto' });
   };
+  // Fit the board below the current header and filters. Cards scroll inside
+  // each lane, keeping the board's native horizontal scrollbar in view.
+  useLayoutEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+    const container = board.parentElement!, page = container.parentElement!;
+    const measure = () => {
+      let footerHeight = 0;
+      for (let sibling = container.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+        const style = window.getComputedStyle(sibling);
+        footerHeight = Math.max(footerHeight, sibling.getBoundingClientRect().height + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0));
+      }
+      const top = board.getBoundingClientRect().top + window.scrollY;
+      const bottom = (parseFloat(window.getComputedStyle(page).paddingBottom) || 0) + footerHeight + 8;
+      board.style.setProperty('--opp-board-height', `${Math.max(120, window.innerHeight - top - bottom)}px`);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(page);
+    return () => { window.removeEventListener('resize', measure); observer?.disconnect(); };
+  }, []);
   type Lane = { key: string; label: string; state: OpportunityState; order: number; items: OpportunitySummary[] };
   const lanes = new Map<string, Lane>();
   const initialStages = stageIds ?? (showAllStages && opportunities.some(o => o.stageId != null) ? PIPELINE_STAGE_IDS : []);
@@ -140,7 +162,7 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
     {resource.loading ? <Loading label="Loading permitted opportunities…" /> : resource.error ? <Notice error={resource.error} retry={resource.reload} title="Pipeline unavailable" /> : resource.data && <>
       <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-3">{[
         { title: 'All opportunities', value: resource.data.totalCount, hint: 'Permitted opportunities', icon: Briefcase, tone: 'border-t-primary', iconTone: 'text-primary', wash: 'to-primary/5' },
-        { title: 'Pending approval', value: list.filter(o => o.stageId == null ? o.state === 'SALES_REVIEW' : o.stageId === 1 && o.subStageId === 1 || o.stageId === 2 && o.subStageId === 4 || o.stageId === 4 && o.subStageId === 8).length, hint: 'Awaiting a reviewer decision', icon: Clock, tone: 'border-t-progress-3', iconTone: 'text-progress-3', wash: 'to-progress-3/5' },
+        { title: 'Pending approval', value: list.filter(o => o.stageId == null ? o.state === 'SALES_REVIEW' : o.stageId === 1 && o.subStageId === 1 || o.stageId === 2 && o.subStageId === 4 || o.stageId === 4 && [5, 8].includes(o.subStageId ?? 0)).length, hint: 'Awaiting a reviewer decision', icon: Clock, tone: 'border-t-progress-3', iconTone: 'text-progress-3', wash: 'to-progress-3/5' },
         { title: 'Won opportunities', value: list.filter(o => o.stageId === 7 && o.subStageId === 13).length, hint: 'Closed — Won', icon: CheckCircle2, tone: 'border-t-progress-5', iconTone: 'text-progress-5', wash: 'to-progress-5/5' },
       ].map(stat => <Card key={stat.title} className={cn('min-w-0 border-t-[3px] bg-gradient-to-br from-card from-50% shadow-sm', stat.tone, stat.wash)}><section className="px-3 py-2.5"><div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">{stat.title}<stat.icon className={cn('size-4 shrink-0', stat.iconTone)} /></div><strong className="my-0.5 block break-words text-xl font-semibold">{stat.value}</strong><p className="text-xs text-muted-foreground">{stat.hint}</p></section></Card>)}</div>
     </>}

@@ -64,9 +64,13 @@ const trackers = {
     columns: 'qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, questionnaire_type_id, answertext, answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, is_current',
     values: 'qa_id, opportunity_id, opportunity_type_id, question_id, questiontext, question_category, questionnaire_type_id, answertext, answered_by, answered_dt, created_dt, created_by, updated_dt, updated_by, FALSE',
   },
+  tbl_opportunity_estimation: {
+    tracker: 'tbl_opportunity_estimation_tracker', id: 'estimation_id',
+    columns: 'estimation_id, opportunity_id, resource_allocation, rate_snapshot, person_weeks, person_weeks_cost, estimation_name, isselected, is_current, created_by, created_dt, updated_by, updated_dt',
+  },
 } satisfies Record<string, { tracker: string; id: string; columns: string; values?: string }>;
 
-export async function recordPreviousVersion(client: PoolClient, table: keyof typeof trackers, id: number): Promise<void> {
+export async function recordPreviousVersion(client: PoolClient, table: keyof typeof trackers, id: number | string): Promise<void> {
   const config = trackers[table];
   // Names come from the fixed configuration above. Lock the source row so
   // concurrent writers archive successive versions rather than the same row.
