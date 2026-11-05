@@ -6,7 +6,7 @@ import type { ReasonCodeInput } from '../repositories/reason-codes.repository';
 // Business rules and use-case logic for reason codes.
 
 async function list(args: Record<string, any>, ctx: unknown) {
-  return repository.findAll();
+  return repository.findAll(args.isNegotiationReason ?? undefined);
 }
 
 async function history(reasonCodeId: number) {

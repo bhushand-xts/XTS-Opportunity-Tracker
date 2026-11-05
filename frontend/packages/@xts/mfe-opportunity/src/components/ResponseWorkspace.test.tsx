@@ -39,7 +39,7 @@ function mount({ editable = true, readOnly = false, questionnaire = false, answe
 describe('opportunity question answers', () => {
   it('shows opportunity questions and free-text answers without any assignment or review controls', async () => {
     mount();
-    expect(screen.getByText('2 questions saved for this opportunity')).toBeVisible();
+    expect(screen.getByText('1 / 2 answered')).toBeVisible();
     expect(screen.queryByRole('region', { name: 'Technical questions' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Answer' })).not.toHaveAttribute('readonly');
     expect(screen.getByRole('button', { name: 'Save answer' })).toBeDisabled();
@@ -61,6 +61,7 @@ describe('opportunity question answers', () => {
     expect(screen.getByRole('textbox', { name: 'Answer' })).toHaveValue(text);
     expect(screen.getByRole('button', { name: 'Save answer' })).toBeDisabled();
     expect(screen.getAllByText('Answered')).toHaveLength(2);
+    expect(screen.getByText('2 / 2 answered')).toBeVisible();
   });
 
   it('groups extracted questionnaire questions by category and saves duplicate question text to its selected row', async () => {

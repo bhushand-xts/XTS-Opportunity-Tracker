@@ -8,13 +8,11 @@
    this app's wide content from dragging the sidebar off-screen, but this
    still clips anything that slips past that and would otherwise create a
    second, page-level horizontal scrollbar alongside .opp-board's own. */
-.opportunity-root { min-width: 0; overflow-x: hidden; color: hsl(var(--foreground)); background: #f5f5fc; min-height: calc(100dvh - 56px); display: flex; flex-direction: column; }
+.opportunity-root { min-width: 0; overflow-x: clip; color: hsl(var(--foreground)); background: #f5f5fc; min-height: calc(100dvh - 56px); display: flex; flex-direction: column; }
 .opportunity-root > .opp-page { flex: 1 1 auto; min-height: 0; }
 .opp-page { padding: 14px 20px; width: 100%; margin-inline: auto; min-width: 0; }
-/* The pipeline board fills whatever vertical space is actually left in the viewport (no fixed
-   px guess, so it adapts to any screen size/zoom) instead of being capped at a fixed height —
-   its own horizontal scrollbar then naturally sits right at the bottom of the page, reachable
-   without a separate page-level scroll, rather than stranded mid-page above empty space. */
+/* The board measures the space below the header and filters; each lane owns
+   its vertical scrolling so the horizontal scrollbar stays in view. */
 .opp-pipeline-page { display: flex; flex-direction: column; min-height: 0; }
 .opp-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .opp-heading h2 { font-size: 24px; line-height: 1.3; font-weight: 650; letter-spacing: -.65px; margin-bottom: 3px; overflow-wrap: anywhere; }
@@ -43,6 +41,12 @@
 .opp-panel-icon-emerald { background: #def6e6; color: #1f7a42; }
 .opp-panel-icon-neutral { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 :is(.opportunity-root, .opp-drawer, .opp-dialog) [aria-invalid="true"] { border-color: #dc2626; }
+.opp-dialog .opp-negotiation-input[aria-invalid="true"] {
+  --ring: 0 72% 51%;
+  border-color: #dc2626;
+  outline-color: #dc2626;
+  --tw-ring-color: #dc2626;
+}
 .opp-details { border: 1px solid #d2d8ec; border-radius: 8px; background: white; overflow: hidden; }
 .opp-details > summary { cursor: pointer; padding: 8px 10px; background: #f0f3fc; color: #40568a; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .opp-details > summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
@@ -118,12 +122,16 @@
 .opp-stat:nth-child(3) { border-color: #e8d9b8; border-top-color: #b08a33; background: linear-gradient(120deg,#fff 45%,#fff8e9); }
 .opp-stat:nth-child(4) { border-color: #bddfd3; border-top-color: #3e957e; background: linear-gradient(120deg,#fff 45%,#edf9f4); }
 .opp-stat > strong { display: block; font-size: 21px; font-weight: 650; margin: 3px 0; overflow-wrap: anywhere; }
-/* flex: 1 1 auto (inside .opp-pipeline-page's flex column) makes the board fill whatever height
-   is actually left in the viewport — not a fixed px guess — so its own horizontal scrollbar sits
-   right at the bottom of the page on any screen size, reachable without scrolling the page down
-   first. Each lane scrolls its own cards vertically instead of growing the board. */
-.opp-board { display: flex; flex-wrap: nowrap; gap: 12px; align-items: flex-start; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; flex: 1 1 auto; min-height: 280px; }
-.opp-lane { flex: 0 0 320px; min-width: 0; max-height: 100%; overflow-y: auto; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
+.opp-board-container { min-width: 0; }
+.opp-board { display: flex; flex-wrap: nowrap; gap: 12px; align-items: stretch; height: var(--opp-board-height, 55dvh); min-height: 120px; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; scrollbar-width: auto; scrollbar-color: #8e96a8 #e8eaf2; }
+.opp-board::-webkit-scrollbar { height: 12px; }
+.opp-board::-webkit-scrollbar-track { background: #e8eaf2; border-radius: 8px; }
+.opp-board::-webkit-scrollbar-thumb { background: #8e96a8; border: 2px solid #e8eaf2; border-radius: 8px; }
+.opp-board::-webkit-scrollbar-thumb:hover { background: #64708a; }
+.opp-lane { display: flex; flex-direction: column; flex: 0 0 320px; min-width: 0; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
+.opp-lane > h3 { flex-shrink: 0; }
+/* Contain positioned card labels within the lane so they cannot expand the outer page. */
+.opp-lane-cards { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: #a4adbf transparent; padding-right: 3px; }
 .opp-pipeline-card { border: 1px solid #e1e5ed; border-radius: 9px; background: white; margin-bottom: 8px; box-shadow: 0 2px 3px #14213d03; overflow: hidden; min-width: 0; }
 .opp-pipeline-card:hover { border-color: #aaa5ee; }.opp-card-main { display: block; padding: 10px 12px; overflow-wrap: anywhere; }.opp-card-main:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -3px; }
 .opp-highlight { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; animation: opp-saved 6s forwards; }
@@ -155,13 +163,19 @@
   .opp-assessment-counts { gap: 8px; }
   .opp-assessment-counts strong { font-size: 24px; }
 }
-/* The Estimate tab's own grid used a plain Tailwind `lg:grid-cols-[2fr_1fr]` (a *viewport*
-   breakpoint) while living inside a *container*-width-constrained workspace: at a wide-enough
-   viewport the two columns would appear even though the actual column had far less than 1024px
-   to work with, so the wide effort-matrix table forced the grid wider than its track and it
-   visually overlapped the page's own right-hand sidebar. A container query reacts to the
-   workspace's real width instead, matching how .opp-assessment-layout handles the same case. */
-@container (min-width: 1000px) { .opp-estimation-layout { grid-template-columns: minmax(0,2fr) minmax(260px,320px); } }
+.opp-estimation-workspace { min-width: 0; container: opp-estimate / inline-size; }
+.opp-estimation-workspace .opp-panel > :first-child { padding: 9px 12px; }
+.opp-estimation-workspace .opp-panel > :nth-child(2) { padding: 12px; }
+.opp-estimation-workspace .opp-estimation-rates-collapsed > :nth-child(2) { display: none; }
+.opp-estimation-workspace .opp-estimation-scroll table { border-collapse: collapse; border: 1px solid hsl(var(--border)); font-variant-numeric: tabular-nums; }
+.opp-estimation-workspace .opp-estimation-scroll :is(th, td) { padding: 6px 8px; border: 1px solid hsl(var(--border)); text-align: center; vertical-align: middle; }
+.opp-estimation-workspace .opp-estimation-scroll :is(th, td):first-child { text-align: left; }
+.opp-estimation-workspace .opp-estimation-scroll th { height: 32px; background: hsl(var(--muted) / .65); text-transform: none; letter-spacing: normal; }
+.opp-estimation-workspace .opp-estimation-scroll tbody tr.font-semibold { background: hsl(var(--muted) / .45); }
+.opp-estimation-workspace .opp-estimation-scroll input { display: block; width: 64px; max-width: 100%; height: 28px; margin-inline: auto; padding-inline: 4px; text-align: center; }
+@container opp-estimate (min-width: 720px) {
+  .opp-estimation-controls { grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; }
+}
 @container (max-width: 760px) { .opp-assessment-layout .opp-assessment-items { grid-template-columns: minmax(0,1fr); } }
 /* The "Assessment summary" aside becomes the full-width column once .opp-assessment-layout drops
    to one column on a narrower screen — at that point it has plenty of width to put the donut
@@ -202,18 +216,23 @@
   .opp-question-categories > button { min-height: 40px; }
 }
 .opp-detail-heading { display: grid; gap: 4px; margin-bottom: 8px; }
-.opp-record-details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px 20px; margin: 0; font-size: 14px; line-height: 20px; }
+.opp-workspace-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
+.opp-workspace-identity h2 { margin: 0; max-width: 100%; font-size: 18px; line-height: 26px; font-weight: 650; letter-spacing: -.25px; overflow-wrap: anywhere; }
+.opp-workspace-identity .opp-opportunity-number > strong { font-size: 12px; }
+.opp-record-panel > :first-child { padding: 8px 14px; }
+.opp-record-panel > :nth-child(2) { padding: 10px 14px; }
+.opp-record-details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 16px; margin: 0; font-size: 14px; line-height: 20px; }
 .opp-record-details > div { min-width: 0; }
 .opp-record-details .opp-record-wide { grid-column: 1 / -1; }
-.opp-record-details dt { margin-bottom: 4px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 16px; }
+.opp-record-details dt { margin-bottom: 2px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 16px; }
 .opp-record-details dd { margin: 0; overflow-wrap: anywhere; }
-.opp-record-details .opp-record-title { font-size: 18px; line-height: 26px; font-weight: 600; }
+.opp-record-details .opp-record-title { font-size: 16px; line-height: 22px; font-weight: 600; }
 .opp-record-details .opp-record-reference { margin-top: 2px; color: hsl(var(--muted-foreground)); font-size: 12px; }
 .opp-record-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .opp-record-badges > span { max-width: 100%; white-space: normal; }
 .opp-record-status { text-align: right; }
 .opp-record-status .opp-record-badges { justify-content: flex-end; }
-.opp-record-budget { border-top: 1px solid hsl(var(--border)); padding-top: 14px; font-variant-numeric: tabular-nums; }
+.opp-record-budget { border-top: 1px solid hsl(var(--border)); padding-top: 8px; font-variant-numeric: tabular-nums; }
 @media (max-width: 480px) { .opp-record-details { grid-template-columns: minmax(0,1fr); } }
 .opp-detail-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
 .opp-detail-toolbar > .opp-review-actions { flex: 0 1 auto; margin-left: auto; max-width: 100%; }
@@ -309,8 +328,12 @@
 .opp-review-panel > :first-child { padding: 10px 12px; }
 .opp-review-panel > :first-child p { font-size: 12px; line-height: 16px; }
 .opp-review-panel > :nth-child(2) { padding: 12px; }
-.opp-progress-panel > :first-child { padding: 10px 12px; }
-.opp-progress-panel > :nth-child(2) { padding: 12px; }
+.opp-progress-panel { display: flex; flex-direction: column; min-height: 0; max-height: min(calc(45dvh + 13.5rem),37.5rem); }
+.opp-progress-panel > :first-child { flex-shrink: 0; padding: 10px 12px; }
+.opp-saved-estimations-list { max-height: min(28dvh,13rem); min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.opp-progress-panel > :nth-child(2) { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; padding: 12px; }
+.opp-progress-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.opp-progress-scroll:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 4px; }
 .opp-stage-timeline { list-style: none; margin: 0; padding: 0; }
 .opp-timeline-stage { position: relative; display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 8px; padding-bottom: 10px; }
 .opp-timeline-stage::before { content: ''; position: absolute; top: 20px; bottom: 0; left: 9px; width: 2px; background: #e2e5ed; }
@@ -337,6 +360,21 @@
 .opp-progress-actor { color: #56657e; }
 .opp-progress-detail-label { color: #24816a; }
 .opp-stage-completion { margin-top: 4px; }
+.opp-revision-journey { margin-bottom: 14px; padding: 10px; border: 1px solid hsl(var(--primary) / .2); border-radius: 8px; background: hsl(var(--primary) / .04); }
+.opp-revision-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: hsl(var(--primary)); font-size: 12px; line-height: 18px; }
+.opp-revision-heading svg { flex-shrink: 0; }
+.opp-revision-journey summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none; color: hsl(var(--primary)); font-size: 11px; font-weight: 600; }
+.opp-revision-journey summary::-webkit-details-marker { display: none; }
+.opp-revision-journey summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; border-radius: 2px; }
+.opp-revision-journey details[open] summary > svg { transform: rotate(180deg); }
+.opp-revision-journey ol { display: grid; gap: 6px; max-height: 180px; overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 8px 0 0; padding: 0 4px 0 0; }
+.opp-revision-journey li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 6px; font-size: 10px; line-height: 15px; }
+.opp-revision-outcome { font-weight: 500; overflow-wrap: anywhere; }
+.opp-revision-journey time { color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.opp-revision-older { display: block; margin-top: 8px; color: hsl(var(--primary)); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
+.opp-journey-marker { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid hsl(var(--border)); border-radius: 50%; background: hsl(var(--background)); color: hsl(var(--muted-foreground)); font-size: 10px; }
+.opp-journey-return .opp-journey-marker { border-color: hsl(var(--primary) / .3); background: hsl(var(--primary) / .1); color: hsl(var(--primary)); }
+.opp-journey-return .opp-revision-outcome { color: hsl(var(--primary)); }
 .opp-stage-completion > strong { display: block; color: #24816a; font-size: 11px; line-height: 17px; font-weight: 500; }
 .opp-substage-history { list-style: none; display: grid; gap: 9px; margin: 7px 0 0; padding: 0; }
 .opp-substage-history > li, .opp-substage-current { padding-left: 9px; border-left: 2px solid #e5e8ef; }
@@ -346,6 +384,39 @@
 .opp-substage-history > li.active > strong, .opp-substage-current > strong { color: hsl(var(--primary)); }
 .opp-assignment { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,.9fr); gap: 12px; align-items: start; }.opp-task { white-space: normal; height: auto; width: 100%; text-align: left; justify-content: start; padding: 9px 10px; }
 .opp-estimation-scroll { overflow-x: auto; max-width: 100%; }.opp-estimation-scroll table { min-width: 720px; }.opp-estimation-scroll td:first-child { min-width: 200px; }.opp-estimation-scroll td { min-width: 110px; }
+/* The combined matrix has one scroll container so headers and phase identifiers
+   stay aligned without affecting the other estimation/version tables. */
+.opp-estimation-workspace .opp-estimation-matrix { max-height: min(65vh,640px); overflow: auto; isolation: isolate; border-radius: 6px; }
+.opp-estimation-workspace .opp-estimation-matrix > div { overflow: visible; }
+.opp-estimation-workspace .opp-estimation-matrix table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.opp-estimation-workspace .opp-estimation-matrix :is(th,td) { border-width: 0 1px 1px 0; min-width: 64px; padding: 4px 4px; font-size: 12px; }
+.opp-estimation-workspace .opp-estimation-matrix input { width: 46px; height: 24px; padding: 2px 3px; font-size: 12px; }
+.opp-estimation-workspace .opp-estimation-matrix thead th { position: sticky; top: 0; z-index: 3; height: 28px; font-size: 11px; background: hsl(var(--muted)); }
+.opp-estimation-workspace .opp-estimation-matrix thead tr:first-child th:not(.matrix-duration) { white-space: nowrap; }
+.opp-estimation-workspace .opp-estimation-matrix thead tr:nth-child(2) th { top: 28px; }
+.opp-estimation-workspace .opp-estimation-matrix thead tr:nth-child(2) > th { text-align: center; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-index { position: sticky; left: 0; z-index: 2; width: 32px; min-width: 32px; max-width: 32px; text-align: center; background: hsl(var(--card)); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-phase { position: sticky; left: 32px; z-index: 2; width: 160px; min-width: 160px; max-width: 160px; white-space: normal; text-align: left; background: hsl(var(--card)); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-duration { position: sticky; left: 192px; z-index: 2; width: 80px; min-width: 80px; max-width: 80px; background: hsl(var(--card)); box-shadow: 2px 0 3px hsl(var(--foreground) / .06); }
+.opp-estimation-workspace .opp-estimation-matrix thead :is(.matrix-index,.matrix-phase,.matrix-duration) { z-index: 5; background: hsl(var(--muted)); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-allocation { background: color-mix(in srgb,hsl(var(--card)) 95%,#6366f1); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-effort { background: color-mix(in srgb,hsl(var(--card)) 93%,#14b8a6); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-cost { min-width: 84px; background: color-mix(in srgb,hsl(var(--card)) 92%,#f59e0b); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-allocation { background: color-mix(in srgb,hsl(var(--card)) 84%,#6366f1); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-effort { background: color-mix(in srgb,hsl(var(--card)) 82%,#14b8a6); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-cost { background: color-mix(in srgb,hsl(var(--card)) 80%,#f59e0b); }
+/* Emphasize summary columns and grand totals without changing matrix sizing. */
+.opp-estimation-workspace .opp-estimation-matrix .matrix-effort.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 82%,#14b8a6); font-weight: 700; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-cost.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 76%,#f59e0b); font-weight: 700; }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-effort.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 68%,#14b8a6); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-cost.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 60%,#f59e0b); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-totals td { background: hsl(var(--muted)); box-shadow: inset 0 2px hsl(var(--border)); font-weight: 700; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-totals .matrix-effort.matrix-total { background: #0f766e; color: #fff; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-totals .matrix-cost.matrix-total { background: #b45309; color: #fff; }
+@media (max-width: 650px) {
+  .opp-estimation-workspace .opp-estimation-matrix .matrix-phase { width: 120px; min-width: 120px; max-width: 120px; }
+  .opp-estimation-workspace .opp-estimation-matrix .matrix-duration { left: 152px; width: 72px; min-width: 72px; max-width: 72px; }
+}
 /* Keep compact controls scoped to this MFE and its portalled drawers/dialogs. */
 :is(.opportunity-root, .opp-drawer, .opp-dialog) .opp-field > label { font-size: 14px; line-height: 20px; }
 :is(.opportunity-root, .opp-drawer, .opp-dialog) .opp-field :is(input, button[role="combobox"]) { height: 36px; min-height: 36px; padding-block: 6px; }
@@ -406,3 +477,30 @@
   .opp-save-actions button, .opp-card-actions a { min-height: 40px; }
 }
 @media (prefers-reduced-motion: reduce) { .opp-highlight { animation: none; } }
+
+/* Laptop estimation workspace: retain actions while the matrix/history scroll internally.
+   The available height is measured below the existing heading and tabs. */
+@media (min-width: 961px) and (max-width: 1536px) and (min-height: 640px) {
+  .opp-estimation-fit > .opp-detail-workspace { height: var(--opp-estimation-height, calc(100dvh - 184px)); min-height: 0; }
+  .opp-estimation-fit > .opp-detail-workspace > [role="tabpanel"] { height: 100%; }
+  .opp-estimation-fit .opp-estimation-workspace { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-ceo-workspace { overflow-y: auto; }
+  .opp-estimation-fit .opp-estimation-workspace > * { margin-top: 0; flex-shrink: 0; }
+  .opp-estimation-fit .opp-estimation-workspace > .opp-estimation-matrix-panel-group { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-ceo-workspace > .opp-estimation-matrix-panel-group { flex: 1 0 220px; min-height: 220px; }
+  .opp-estimation-fit .opp-estimation-matrix-panel-group > .opp-panel { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-matrix-panel-group > .opp-panel > :first-child { flex-shrink: 0; }
+  .opp-estimation-fit .opp-estimation-matrix-panel-group > .opp-panel > :nth-child(2) { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-matrix { flex: 1 1 0; min-height: 0; max-height: none; }
+}
+/* Reserve space for saved estimates at every desktop width, including wide monitors. */
+@media (min-width: 961px) and (min-height: 640px) {
+  .opp-estimation-fit > .opp-detail-sidebar { display: flex; flex-direction: column; max-height: var(--opp-estimation-height, calc(100dvh - 184px)); min-height: 0; }
+  .opp-estimation-fit .opp-progress-panel,
+  .opp-estimation-fit .opp-saved-estimations-panel { display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-detail-sidebar .opp-panel > :first-child { flex-shrink: 0; }
+  .opp-estimation-fit .opp-progress-panel { flex: 0 1 auto; }
+  .opp-estimation-fit .opp-detail-sidebar > div { flex-shrink: 0; min-height: 0; }
+  .opp-estimation-fit .opp-saved-estimations-panel > :nth-child(2) { display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-saved-estimations-panel ul + div { flex-shrink: 0; }
+}

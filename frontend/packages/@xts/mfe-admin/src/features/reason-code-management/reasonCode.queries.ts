@@ -14,7 +14,7 @@ const REASON_CODE_FIELDS = gql`
 
 export const GET_REASON_CODES = gql`
   query GetReasonCodes {
-    reasonCodesList {
+    reasonCodesList(isNegotiationReason: false) {
       ...ReasonCodeFields
     }
   }

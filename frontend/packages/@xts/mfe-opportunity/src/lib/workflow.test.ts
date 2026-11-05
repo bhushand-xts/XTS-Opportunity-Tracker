@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMasterQuestionTemplates, applicableDecisions, canAnswer, canReview, decisionError, estimateTotal, isPreparationLocked, newDraft, pendingSaveErrors, pendingSaveFieldErrors, readinessErrors, SECTION_CATALOG, validDate } from './workflow';
+import { addMasterQuestionTemplates, applicableDecisions, canAnswer, canReview, decisionError, estimateTotal, rowAmount, isPreparationLocked, newDraft, pendingSaveErrors, pendingSaveFieldErrors, readinessErrors, SECTION_CATALOG, validDate } from './workflow';
 import type { OpportunityDetail, ResponseCommand, RfpQuestion, VersionCommand } from '@xts/api-contracts';
 import { createLocalOpportunityService, createLocalOpportunityStore, createMockOpportunityService, createMockOpportunityStore, fixtureOpportunity, MOCK_STORAGE_KEY, type LocalWorkflowDirectory, type MockStorage } from '../testing/fixtures';
 
@@ -24,7 +24,7 @@ describe('workflow boundaries', () => {
     for (const [stageId, subStageId] of [[1, 1], [2, 4], [3, 7], [4, 8], [4, 9]]) {
       expect(isPreparationLocked(fixtureOpportunity({ stageId, subStageId }))).toBe(false);
     }
-    for (const [stageId, subStageId] of [[5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19], [10, 20]]) {
+    for (const [stageId, subStageId] of [[4, 5], [5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19], [10, 20]]) {
       expect(isPreparationLocked(fixtureOpportunity({ stageId, subStageId }))).toBe(true);
     }
     const approved = fixtureOpportunity({ stageId: 5, state: 'IN_PROGRESS' });
@@ -75,6 +75,15 @@ describe('workflow boundaries', () => {
   it('uses exact decimal calculations and rejects fractional people', () => {
     expect(estimateTotal([{ id: '1', workItem: 'Test', hours: '0.1', people: 3, hourlyRate: '0.2' }])).toBe('0.06');
     expect(() => estimateTotal([{ id: '1', workItem: 'Test', hours: '1', people: 1.5, hourlyRate: '1' }])).toThrow('whole number');
+  });
+  it('uses the monthly working-day formula without rounding an intermediate hourly rate', () => {
+    const row = { id: 'grid-1-PM', workItem: 'Project Manager', hours: '20', people: 1, hourlyRate: '25' };
+    const calculation = { rates: [{ roleCode: 'PM', rate: '4000', rateType: 'Monthly', currencyCode: 'USD' }],
+      grid: { phaseIds: [1], roleCodes: ['PM'], durations: [{ phaseId: 1, weeks: '2' }], allocations: [{ phaseId: 1, roleCode: 'PM', effort: '0.25' }] } };
+    expect(rowAmount(row, calculation)).toBe('500.00');
+    expect(estimateTotal([row], calculation)).toBe('500.00');
+    const precise = { ...calculation, rates: [{ ...calculation.rates[0], rate: '345465.03' }], grid: { ...calculation.grid, allocations: [{ phaseId: 1, roleCode: 'PM', effort: '1' }] } };
+    expect(rowAmount({ ...row, hours: '80', hourlyRate: '2159.1564' }, precise)).toBe('172732.52');
   });
   it('preserves date-only values and validates calendars without UTC conversions', () => {
     expect(validDate('2028-02-29')).toBe(true); expect(validDate('2026-02-29')).toBe(false);

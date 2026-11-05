@@ -28,3 +28,10 @@ export const CREATE_ESTIMATION_PHASE = gql`
     createEstimationPhase(input: $input) { id phaseName phaseCode displayOrder isActive }
   }
 `;
+
+// Creates a shared technical role through the same master-data API as Administration.
+export const CREATE_ESTIMATION_ROLE = gql`
+  mutation OpportunityCreateTechnicalRole($input: CreateRateMasterInput!) {
+    createRateMaster(input: $input) { ratemasterId roleName roleCode currencyId rateType defaultRate isActive }
+  }
+`;

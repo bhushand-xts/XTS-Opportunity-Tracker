@@ -1,10 +1,47 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import type { DirectoryUser, OpportunityStageHistory } from '@xts/api-contracts';
 import { fixtureOpportunity } from '../testing/fixtures';
 import { OpportunityProgress } from './OpportunityProgress';
 
 afterEach(cleanup);
+
+it('continues a revised estimation cycle after the original proposal in the main progress timeline', () => {
+  const history = [...approvedHistory, event(6, 5, 11, bidAt, sales),
+    event(7, 4, 5, negotiationAt, sales), event(8, 3, 7, outcomeAt, ceo)];
+  render(<OpportunityProgress opportunity={fixtureOpportunity({ stageId: 3, subStageId: 7, stageHistory: [...history].reverse() })} />);
+  expect(screen.queryByText('Returned for estimation')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Revision history/)).not.toBeInTheDocument();
+  const timeline = screen.getByRole('list', { name: 'Opportunity progress history' });
+  expect(Array.from(timeline.children).reverse().map(item => item.querySelector('h3')?.textContent)).toEqual([
+    'Identified', 'Qualifying (Go/No-Go)', 'Solution/Scoping Estimation (Engineering)',
+    'Estimate Review & Approval', 'Proposal / Bid Submission', 'Solution/Scoping Estimation (Engineering)',
+    'Estimate Review & Approval', 'Proposal / Bid Submission', 'Negotiation', 'Outcome (Won / Lost)',
+  ]);
+  expect(timeline.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
+  expect(stage('Solution/Scoping Estimation (Engineering)')).toHaveAttribute('aria-current', 'step');
+  expect(stage('Solution/Scoping Estimation (Engineering)').querySelector('.lucide-undo-2')).toBeNull();
+  expectResult('Solution/Scoping Estimation (Engineering)', 'Estimation submitted', submittedAt, estimator, 1);
+  expectResult('Estimate Review & Approval', 'Estimation approved', reviewedAt, ceo, 1);
+  expectResult('Proposal / Bid Submission', 'Bid Submitted', bidAt, sales, 1);
+});
+
+it('distinguishes pending and declined revision requests without claiming estimation was reopened', () => {
+  const history = [...approvedHistory, event(6, 5, 11, bidAt, sales), event(7, 4, 5, negotiationAt, sales)];
+  const record = fixtureOpportunity({ stageId: 4, subStageId: 5, stageHistory: history });
+  const { rerender } = render(<OpportunityProgress opportunity={record} />);
+  expect(screen.getByText('Revision approval pending')).toBeVisible();
+  expect(screen.queryByText('Returned for estimation')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('heading', { name: 'Solution/Scoping Estimation (Engineering)' })).toHaveLength(1);
+  rerender(<OpportunityProgress opportunity={{ ...record, stageId: 6, subStageId: 12,
+    stageHistory: [...history, event(8, 6, 12, outcomeAt, ceo)] }} />);
+  expect(screen.getByText('Revision request declined')).toBeVisible();
+  expect(screen.getAllByRole('heading', { name: 'Solution/Scoping Estimation (Engineering)' })).toHaveLength(1);
+  expect(stage('Negotiation')).toHaveAttribute('aria-current', 'step');
+  fireEvent.click(screen.getByText('Revision history (1)'));
+  expect(screen.getByText('Declined → Negotiation')).toBeVisible();
+  expect(screen.queryByText('Approved → Estimation')).not.toBeInTheDocument();
+});
 
 const creator: DirectoryUser = { id: '1', name: 'Original Creator', email: 'creator@example.test', roles: [], active: true };
 const sales = { ...creator, id: '2', name: 'Sales Head' };
@@ -21,13 +58,13 @@ const outcomeAt = '2026-10-20T04:35:00.000Z';
 function event(id: number, stageId: number, subStageId: number, reachedAt: string, actor: DirectoryUser): OpportunityStageHistory {
   return { id: String(id), stageId, subStageId, reachedAt, actor };
 }
-function stage(name: string) {
-  return screen.getByRole('heading', { name }).closest('li')!;
+function stage(name: string, index = 0) {
+  return screen.getAllByRole('heading', { name })[index].closest('li')!;
 }
-function expectResult(name: string, label: string, at: string, actor: DirectoryUser) {
-  const result = within(stage(name)).getByText(label).parentElement!;
+function expectResult(name: string, label: string, at: string, actor: DirectoryUser, index = 0) {
+  const result = within(stage(name, index)).getByText(label).parentElement!;
   expect(result.querySelector('time')).toHaveAttribute('datetime', at);
-  expect(result).toHaveTextContent('By ' + actor.name);
+  expect(result).toHaveTextContent((label === 'Opportunity created' ? 'Created by ' : 'By ') + actor.name);
 }
 const approvedHistory = [
   event(1, 1, 1, createdAt, creator),
@@ -201,5 +238,100 @@ it('retains creation details for opportunities without persisted stage IDs', () 
   render(<OpportunityProgress opportunity={fixtureOpportunity({ createdDt: createdAt, createdBy: creator, stageId: null })} />);
   const created = screen.getByText('Opportunity created').parentElement!;
   expect(created.querySelector('time')).toHaveAttribute('datetime', createdAt);
-  expect(created).toHaveTextContent('By Original Creator');
+  expect(created).toHaveTextContent('Created by Original Creator');
+});
+
+it('restarts estimation progress after CEO revision approval and uses the new cycle completion dates', () => {
+  const revisionAt = '2026-10-21T04:30:00.000Z';
+  const history = [...approvedHistory, event(6, 5, 11, bidAt, sales), event(7, 4, 5, negotiationAt, sales), event(8, 3, 7, revisionAt, ceo)];
+  const record = fixtureOpportunity({ createdDt: createdAt, createdBy: creator, stageId: 3, subStageId: 7, stageHistory: history });
+  const { rerender } = render(<OpportunityProgress opportunity={record} />);
+  expect(stage('Proposal / Bid Submission')).toHaveClass('upcoming');
+  expect(stage('Estimate Review & Approval')).toHaveClass('upcoming');
+  expect(within(stage('Estimate Review & Approval')).queryByText('Estimation approved')).not.toBeInTheDocument();
+  expect(within(stage('Solution/Scoping Estimation (Engineering)')).queryByText('Estimation submitted')).not.toBeInTheDocument();
+  expectResult('Estimate Review & Approval', 'Estimation approved', reviewedAt, ceo, 1);
+  expectResult('Solution/Scoping Estimation (Engineering)', 'Estimation submitted', submittedAt, estimator, 1);
+  expectResult('Qualifying (Go/No-Go)', 'Go approved', goAt, ceo);
+  const newSubmittedAt = '2026-10-21T05:00:00.000Z';
+  const newApprovedAt = '2026-10-21T05:30:00.000Z';
+  rerender(<OpportunityProgress opportunity={{ ...record, stageId: 5, subStageId: 10, stageHistory: [...history,
+    event(9, 4, 8, newSubmittedAt, estimator), event(10, 5, 10, newApprovedAt, ceo)] }} />);
+  expectResult('Solution/Scoping Estimation (Engineering)', 'Estimation submitted', newSubmittedAt, estimator);
+  expectResult('Estimate Review & Approval', 'Estimation approved', newApprovedAt, ceo);
+});
+
+
+it.each([[3, 7, 0], [4, 8, 1], [5, 10, 2], [5, 11, 3], [6, 12, 4], [7, 13, 5]])('preserves every completed estimation cycle while progressing through %i/%i', (stageId, subStageId, nextEvents) => {
+  const at = (day: number, minute: number) => new Date(Date.UTC(2026, 9, day, 4, minute)).toISOString();
+  const history = [...approvedHistory, event(6, 5, 11, bidAt, sales),
+    event(7, 4, 5, at(21, 0), sales), event(8, 3, 7, at(21, 5), ceo),
+    event(9, 4, 8, at(21, 10), estimator), event(10, 4, 9, at(21, 15), ceo),
+    event(11, 5, 10, at(21, 20), ceo), event(12, 5, 11, at(21, 25), sales),
+    event(13, 4, 5, at(22, 0), sales), event(14, 3, 7, at(22, 5), ceo)];
+  const finalCycle = [event(15, 4, 8, at(22, 10), estimator), event(16, 5, 10, at(22, 20), ceo),
+    event(17, 5, 11, at(22, 25), sales), event(18, 6, 12, at(22, 30), sales), event(19, 7, 13, at(22, 35), sales)];
+  const record = fixtureOpportunity({ createdDt: createdAt, createdBy: creator, stageId, subStageId,
+    stageHistory: [...history, ...finalCycle.slice(0, nextEvents)].reverse() });
+  const original = JSON.stringify(record);
+  render(<OpportunityProgress opportunity={record} />);
+  expect(JSON.stringify(record)).toBe(original);
+  for (const name of ['Solution/Scoping Estimation (Engineering)', 'Estimate Review & Approval', 'Proposal / Bid Submission']) {
+    expect(screen.getAllByRole('heading', { name })).toHaveLength(3);
+  }
+  const timeline = screen.getByRole('list', { name: 'Opportunity progress history' });
+  const names = Array.from(timeline.children).reverse().map(item => item.querySelector('h3')?.textContent);
+  expect(names).toEqual(['Identified', 'Qualifying (Go/No-Go)',
+    ...Array.from({ length: 3 }, () => ['Solution/Scoping Estimation (Engineering)', 'Estimate Review & Approval', 'Proposal / Bid Submission']).flat(),
+    'Negotiation', 'Outcome (Won / Lost)']);
+  expect(timeline.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
+  const currentNames: Record<number, string> = { 3: 'Solution/Scoping Estimation (Engineering)', 4: 'Estimate Review & Approval',
+    5: 'Proposal / Bid Submission', 6: 'Negotiation', 7: 'Outcome (Won / Lost)' };
+  expect(timeline.querySelector('[aria-current="step"] h3')).toHaveTextContent(currentNames[stageId]);
+  expect(screen.queryByText('Returned for estimation')).not.toBeInTheDocument();
+  expect(screen.getAllByText('Opportunity created')).toHaveLength(1);
+  expectResult('Qualifying (Go/No-Go)', 'Go approved', goAt, ceo);
+  expectResult('Solution/Scoping Estimation (Engineering)', 'Estimation submitted', submittedAt, estimator, 2);
+  expectResult('Estimate Review & Approval', 'Estimation approved', reviewedAt, ceo, 2);
+  expectResult('Proposal / Bid Submission', 'Bid Submitted', bidAt, sales, 2);
+  expectResult('Solution/Scoping Estimation (Engineering)', 'Estimation submitted', at(21, 10), estimator, 1);
+  expectResult('Estimate Review & Approval', 'Estimation approved', at(21, 20), ceo, 1);
+  expectResult('Proposal / Bid Submission', 'Bid Submitted', at(21, 25), sales, 1);
+  if (nextEvents >= 1) expectResult('Solution/Scoping Estimation (Engineering)', 'Estimation submitted', at(22, 10), estimator);
+  if (nextEvents >= 2) expectResult('Estimate Review & Approval', 'Estimation approved', at(22, 20), ceo);
+  if (nextEvents >= 3) expectResult('Proposal / Bid Submission', 'Bid Submitted', at(22, 25), sales);
+});
+
+it('keeps past follow-up holds out of the outcome position when a revised proposal is held again', () => {
+  const at = (minute: number) => new Date(Date.UTC(2026, 9, 21, 4, minute)).toISOString();
+  const history = [...approvedHistory, event(6, 5, 11, bidAt, sales),
+    event(7, 10, 20, at(0), sales), event(8, 5, 11, at(5), sales),
+    event(9, 4, 5, at(10), sales), event(10, 3, 7, at(15), ceo),
+    event(11, 4, 8, at(20), estimator), event(12, 5, 10, at(25), ceo),
+    event(13, 5, 11, at(30), sales), event(14, 10, 20, at(35), sales)];
+  render(<OpportunityProgress opportunity={fixtureOpportunity({ stageId: 10, subStageId: 20, stageHistory: history })} />);
+  expect(screen.getAllByRole('heading', { name: 'Outcome (Won / Lost)' })).toHaveLength(1);
+  expectResult('Outcome (Won / Lost)', 'On Hold', at(35), sales);
+  expectResult('Proposal / Bid Submission', 'Bid Submitted', at(30), sales);
+  expectResult('Proposal / Bid Submission', 'Bid Submitted', bidAt, sales, 1);
+  expect(screen.getAllByText('Current')).toHaveLength(1);
+});
+
+it('limits repeated pending and declined requests to the latest three and lets users reveal earlier requests', () => {
+  const history = [...approvedHistory];
+  for (let index = 0; index < 5; index++) {
+    const at = (minute: number) => new Date(Date.UTC(2026, 9, 21 + index, 4, minute)).toISOString();
+    history.push(event(20 + index * 3, 4, 5, at(0), sales));
+    if (index < 4) history.push(event(21 + index * 3, index === 1 ? 6 : 3, index === 1 ? 12 : 7, at(5), ceo));
+  }
+  render(<OpportunityProgress opportunity={fixtureOpportunity({ stageId: 4, subStageId: 5, stageHistory: history })} />);
+  fireEvent.click(screen.getByText('Revision history (5)'));
+  const list = screen.getByRole('list', { name: 'Estimation revision requests' });
+  expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+  expect(within(list).getAllByRole('listitem')[0]).toHaveTextContent('Pending CEO approval');
+  fireEvent.click(screen.getByRole('button', { name: 'Show 2 earlier requests' }));
+  expect(within(list).getAllByRole('listitem')).toHaveLength(5);
+  expect(within(list).getByText('Declined → Negotiation')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Show latest 3' }));
+  expect(within(list).getAllByRole('listitem')).toHaveLength(3);
 });

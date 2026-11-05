@@ -153,7 +153,7 @@ describe('persisted stage and substage display', () => {
     expect(within(container.querySelector('header')!).queryByLabelText(`${stage} — ${substage}`)).not.toBeInTheDocument();
     const overview = within(screen.getByRole('tabpanel', { name: 'Overview' }));
     expect(overview.getByText('OPP-TEST-401')).toBeVisible();
-    expect(within(container.querySelector('header')!).queryByText('OPP-TEST-401')).not.toBeInTheDocument();
+    expect(within(container.querySelector('header')!).getByLabelText('Opportunity number OPP-TEST-401')).toBeVisible();
     const progress = within(screen.getByText('Opportunity progress').closest('.opp-panel')!);
     const current = within(progress.getByRole('list', { name: 'Opportunity progress history' }).querySelector('[aria-current="step"]')!);
     expect(current.getByRole('heading', { name: String(stage) })).toBeVisible();

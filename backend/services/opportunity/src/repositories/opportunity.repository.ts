@@ -1,3 +1,4 @@
+import * as estimationRepository from './estimation.repository';
 import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import { query, transaction } from "../config/db";
 import type { PoolClient } from "pg";
@@ -796,7 +797,7 @@ async function finalizeRfpIntakeOpportunity(
   });
 }
 
-export type OpportunityWorkflowAction = 'REQUEST_CHANGES' | 'HOLD' | 'APPROVE' | 'REJECT' | 'RESUBMIT' | 'SUBMIT_ESTIMATE' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY';
+export type OpportunityWorkflowAction = 'APPROVE_ESTIMATE_REVISION' | 'DECLINE_ESTIMATE_REVISION' | 'REQUEST_CHANGES' | 'HOLD' | 'APPROVE' | 'REJECT' | 'RESUBMIT' | 'SUBMIT_ESTIMATE' | 'BID_SUBMITTED' | 'START_NEGOTIATION' | 'MARK_WON' | 'MARK_LOST' | 'OPPORTUNITY_HOLD' | 'RESUME_NEGOTIATION' | 'RESUME_PROPOSAL' | 'CLOSE_OPPORTUNITY';
 
 export interface WorkflowAudit {
   reasonCodeId?: number | null;
@@ -826,34 +827,25 @@ export async function findStageHistory(opportunityId: number): Promise<Opportuni
 
 export interface OpportunityEstimation {
   revision: number;
+  rates?: { roleCode: string; rate: string; rateType: string; currencyCode: string }[];
   rows: { id: string; workItem: string; hours: string; people: number; hourlyRate: string }[];
   assumptions: string;
   total: string;
+  status?: 'DRAFT' | 'SUBMITTED';
+  grid?: {
+    phaseIds: number[]; roleCodes: string[];
+    durations: { phaseId: number; weeks: string }[];
+    allocations: { phaseId: number; roleCode: string; effort: string }[];
+  } | null;
 }
 
-export async function findEstimation(opportunityId: number): Promise<OpportunityEstimation | null> {
-  const rows = await query<OpportunityEstimation>(
-    'SELECT revision, rows, assumptions, total::TEXT AS total FROM tbl_opportunity_estimation_matrix WHERE opportunity_id = $1', [opportunityId]);
-  return rows[0] ?? null;
-}
-
-export async function saveEstimation(opportunityId: number, estimation: OpportunityEstimation, userId: number) {
-  return transaction(async client => {
-    const opportunity = await client.query<{ stage_id: number; sub_stage_id: number }>(
-      'SELECT stage_id, sub_stage_id FROM tbl_opportunity WHERE opportunity_id = $1 AND is_active = TRUE FOR UPDATE', [opportunityId]);
-    if (opportunity.rows[0]?.stage_id !== 3 || opportunity.rows[0]?.sub_stage_id !== 7) throw new Error('The opportunity is no longer in estimation. Refresh before saving.');
-    const result = await client.query(
-      `INSERT INTO tbl_opportunity_estimation_matrix (opportunity_id, revision, rows, assumptions, total, updated_by)
-       SELECT $1, 1, $2::JSONB, $3, $4, $5 WHERE $6 = 0 OR EXISTS
-         (SELECT 1 FROM tbl_opportunity_estimation_matrix WHERE opportunity_id = $1)
-       ON CONFLICT (opportunity_id) DO UPDATE SET revision = tbl_opportunity_estimation_matrix.revision + 1,
-         rows = EXCLUDED.rows, assumptions = EXCLUDED.assumptions, total = EXCLUDED.total,
-         updated_by = EXCLUDED.updated_by, updated_dt = CURRENT_TIMESTAMP
-       WHERE tbl_opportunity_estimation_matrix.revision = $6 RETURNING revision`,
-      [opportunityId, JSON.stringify(estimation.rows), estimation.assumptions, estimation.total, userId, estimation.revision]);
-    if (!result.rows.length) throw new Error('The estimation changed. Refresh before saving.');
-  });
-}
+export const findEstimation = estimationRepository.findEstimation;
+export const saveEstimation = estimationRepository.saveEstimation;
+export const listEstimationVersions = estimationRepository.listEstimationVersions;
+export const findEstimationVersion = estimationRepository.findEstimationVersion;
+export const saveEstimationVersion = estimationRepository.saveEstimationVersion;
+export const updateEstimationRates = estimationRepository.updateEstimationRates;
+export type { EstimationVersion } from './estimation.repository';
 
 async function transitionWorkflow(
   opportunityId: number,
@@ -864,7 +856,7 @@ async function transitionWorkflow(
   comment: string | null,
   opportunityDescription?: string | null,
   audit: WorkflowAudit = {},
-  expected?: { stageId: number | null; subStageId: number | null }
+  expected?: { stageId: number | null; subStageId: number | null; estimationRevision?: number; selectedVersionId?: string; selectedRevision?: number }
 ): Promise<Opportunity | null> {
   return transaction(async (client) => {
     const current = await client.query<{ stageId: number; subStageId: number }>(
@@ -874,6 +866,14 @@ async function transitionWorkflow(
       return null;
     }
     if (expected && (current.rows[0].stageId !== expected.stageId || current.rows[0].subStageId !== expected.subStageId)) throw new Error('This opportunity changed while you were reviewing it. Refresh before making a decision.');
+    if (expected?.estimationRevision !== undefined) {
+      const estimate = await client.query<{ revision: number }>(`SELECT ${estimationRepository.ESTIMATION_REVISION_SQL} AS revision FROM (SELECT $1::INTEGER AS opportunity_id) e`, [opportunityId]);
+      if (estimate.rows[0]?.revision !== expected.estimationRevision) throw conflict('The estimate changed before submission. Refresh and review it before submitting.');
+    }
+    if (stageId === 4 && subStageId === 8) {
+      if (!expected?.selectedVersionId || expected.estimationRevision === undefined) throw conflict('Select a saved estimation before submitting.');
+      await estimationRepository.submitSelectedEstimation(client, opportunityId, expected.selectedVersionId, expected.estimationRevision, expected.selectedRevision, userId);
+    }
     await recordPreviousVersion(client, 'tbl_opportunity', opportunityId);
     const updated = await client.query<{ opportunityId: number }>(
       `UPDATE tbl_opportunity

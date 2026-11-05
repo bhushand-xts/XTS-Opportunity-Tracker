@@ -8,12 +8,9 @@ import { OpportunityDetailsPage } from "./components/OpportunityDetailsPage";
 import { OpportunityAccessProvider } from "./hooks/useOpportunityAccess";
 import { UnsavedProvider } from "./hooks/useUnsaved";
 import { OpportunityServiceContext, productionOpportunityService } from "./services/OpportunityService";
-import { createLocalWorkflowService } from "./services/localWorkflowService";
 import "./opportunity.css";
 
-// Estimation retains its existing preview adapter. Scope and assessment reads
-// and saves pass through to the production backend.
-const opportunityService = createLocalWorkflowService(productionOpportunityService);
+const opportunityService = productionOpportunityService;
 
 function OpportunityRoutes() {
   return (

@@ -22,7 +22,10 @@ export const opportunityResolvers = {
   OpportunityStageHistory: {
     reachedAt: (event: { reachedAt: Date | string }) => event.reachedAt instanceof Date ? event.reachedAt.toISOString() : event.reachedAt,
   },
+  OpportunityEstimationVersion: { createdAt: (version: { createdAt: Date | string }) => version.createdAt instanceof Date ? version.createdAt.toISOString() : version.createdAt },
   Query: {
+    estimationVersion: (_: unknown, args: { opportunityId: number; estimationId: string }, ctx: any) => service.getEstimationVersion(args.opportunityId, args.estimationId, ctx),
+    estimationVersions: (_: unknown, args: { opportunityId: number }, ctx: any) => service.listEstimationVersions(args.opportunityId, ctx),
     opportunityClientCreateAllowed: async (_: unknown, __: unknown, ctx: any) => service.canCreateClient(ctx),
     opportunityClientUpdateAllowed: async (_: unknown, __: unknown, ctx: any) => service.canUpdateClient(ctx),
     opportunityClients: async (_: unknown, __: unknown, ctx: any) => service.listClients(ctx),
@@ -36,6 +39,8 @@ export const opportunityResolvers = {
   },
 
   Mutation: {
+    saveEstimationVersion: (_: unknown, args: { opportunityId: number; estimation: Parameters<typeof service.saveEstimationVersion>[1]; name: string; requestKey: string; sourceVersionId?: string; sourceRevision?: number }, ctx: any) => service.saveEstimationVersion(args.opportunityId, args.estimation, args.name, args.requestKey, ctx, args.sourceVersionId, args.sourceRevision),
+    updateEstimationRates: (_: unknown, args: { opportunityId: number; estimationId: string; revision: number; rates: { roleCode: string; rate: string }[] }, ctx: any) => service.updateEstimationRates(args.opportunityId, args.estimationId, args.revision, args.rates, ctx),
     saveOpportunityScope: async (_: unknown, args: { opportunityId: number; scope: Parameters<typeof service.saveScope>[1]; section?: Parameters<typeof service.saveScope>[2] }, ctx: any) =>
       service.saveScope(args.opportunityId, args.scope, args.section ?? 'ALL', ctx),
     saveOpportunityAnswer: async (_: unknown, args: { opportunityId: number; responseId: number; revision: number; answer: string }, ctx: any) =>
@@ -57,8 +62,11 @@ export const opportunityResolvers = {
       comment?: string | null;
       opportunityDescription?: string | null;
       reasonCodeId?: number | null;
+      requiresRevisedEstimation?: boolean | null;
+      estimation?: import("../../repositories/opportunity.repository").OpportunityEstimation;
+      estimationVersionId?: string;
     }, ctx: any) => service.transitionWorkflow(
-      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx, args.reasonCodeId
+      args.opportunityId, args.action, args.comment ?? null, args.opportunityDescription ?? null, ctx, args.reasonCodeId, args.requiresRevisedEstimation ?? false, args.estimation, args.estimationVersionId
     ),
 
     createOpportunity: async (

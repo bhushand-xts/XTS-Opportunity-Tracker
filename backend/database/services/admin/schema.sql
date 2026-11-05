@@ -155,6 +155,7 @@ CREATE TABLE tbl_reason_codes (
   description TEXT,
   display_order INTEGER,
   is_active BOOLEAN DEFAULT TRUE,
+  is_negotiation_reason BOOLEAN NOT NULL DEFAULT FALSE,
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,

@@ -1,29 +1,30 @@
 import { QuestionViewer } from './QuestionViewer';
-import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Lock, Pencil } from 'lucide-react';
-import { useCallback } from 'react';
+import { CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Lock, Pencil } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Badge, type BadgeProps, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
-import type { OpportunityDetail, OpportunityState } from '@xts/api-contracts';
+import { Badge, type BadgeProps, Button, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
+import type { Estimation, EstimationVersion, OpportunityDetail, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource } from '../hooks/useResource';
 import { useUnsaved } from '../hooks/useUnsaved';
 import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
-import { CONTEXT_FIELDS, money, rowAmount, STATE_LABELS, userLabel } from '../lib/workflow';
+import { CONTEXT_FIELDS, money, STATE_LABELS, userLabel } from '../lib/workflow';
 import { LEAD_SOURCES } from '../lib/opportunityOptions';
 import { opportunityStatus } from '../lib/opportunityStatus';
-import { DetailDrawer, formatLocalDate, initials, Loading, Notice, Panel, Values } from './ui';
+import { DetailDrawer, formatLocalDate, initials, Loading, Notice, OpportunityNumber, Panel, Values } from './ui';
 import { ClientValues } from './ClientPicker';
 import { EstimationModule, ScopeModule, ScopeReadOnly } from './PreparationModules';
 import { ResponseWorkspace } from './ResponseWorkspace';
 import { ReviewActions } from './ReviewActions';
 import { DocumentDownload } from './DocumentDownload';
 import { OpportunityProgress } from './OpportunityProgress';
+import { SavedEstimationBreakdown } from './SavedEstimationBreakdown';
 
 const STATUS_BADGE_VARIANT: Record<OpportunityState, BadgeProps['variant']> = {
   PREPARATION_PENDING: 'muted', IN_PROGRESS: 'info', SALES_REVIEW: 'warning', GATE1_PENDING: 'warning', GATE1_GO: 'success', SALES_REJECTED: 'critical', GATE1_NO_GO: 'critical',
 };
 function Activity({ opportunity: o }: { opportunity: OpportunityDetail }) {
-  return <Panel title="Activity & decisions" description="Backend-recorded identity, timestamps and reviewed package revisions" tone="neutral"><div className="space-y-3">{o.activity?.map(event => <article key={event.id} className="border-b pb-3"><h3 className="text-sm font-semibold">{event.action}</h3><p className="mt-1 text-xs text-muted-foreground">{userLabel(event.actor)} · {new Date(event.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST{event.packageRevision !== null ? ` · package v${event.packageRevision}` : ''}</p>{event.note && <p className="mt-3 whitespace-pre-wrap break-words text-sm">{event.note}</p>}</article>)}{!o.activity?.length && <p className="text-sm text-muted-foreground">No activity returned.</p>}</div></Panel>;
+  return <Panel title="Activity & decisions" description="Recorded decisions, users and timestamps" tone="neutral"><div className="space-y-3">{o.activity?.map(event => <article key={event.id} className="border-b pb-3"><h3 className="text-sm font-semibold">{event.action}</h3><p className="mt-1 text-xs text-muted-foreground">{userLabel(event.actor)} · {new Date(event.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p>{event.note && <p className="mt-3 whitespace-pre-wrap break-words text-sm">{event.note}</p>}</article>)}{!o.activity?.length && <p className="text-sm text-muted-foreground">No activity returned.</p>}</div></Panel>;
 }
 function Documents({ opportunity: o }: { opportunity: OpportunityDetail }) {
   return <Panel title="Documents" description="Files attached to this opportunity" tone="neutral"><Values values={[
@@ -50,7 +51,6 @@ function SolicitationPanel({ opportunity: o }: { opportunity: OpportunityDetail 
 function ScopeSummaryPanel({ o }: { o: OpportunityDetail }) {
   const scope = o.scope;
   return <Panel title="Saved scope summary" tone="rose" accentIcon headerRight={<div className="flex shrink-0 items-center gap-2">
-    <Badge variant="muted" size="sm">Revision {scope?.revision ?? 0}</Badge>
     {scope && <DetailDrawer title="Scope & assessment" description="Full scope summary, alignment and risk items as saved.">
       <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon><p className="whitespace-pre-wrap break-words text-sm">{scope.summary || 'Not provided'}</p></Panel><div className="mt-4"><ScopeReadOnly scope={scope} /></div>
     </DetailDrawer>}
@@ -62,31 +62,18 @@ function splitMoney(formatted: string): [string, string] {
   const i = formatted.lastIndexOf('.');
   return i === -1 ? [formatted, ''] : [formatted.slice(0, i), formatted.slice(i)];
 }
-/** Compact estimation card; the full matrix row breakdown and assumptions live in the drawer. */
+/** Compact estimation card; the phase allocation, person-weeks and USD costs live in the drawer. */
 function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
   const estimation = o.estimation;
-  const [whole, cents] = estimation ? splitMoney(money(estimation.total, o.currencyCode)) : ['', ''];
-  return <Panel title="Saved estimation summary" tone="amber" accentIcon headerRight={<Badge variant="muted" size="sm" className="shrink-0">Revision {estimation?.revision ?? 0}</Badge>}>
+  const [whole, cents] = estimation ? splitMoney(money(estimation.total, 'USD')) : ['', ''];
+  return <Panel title="Saved estimation summary" tone="amber" accentIcon>
     {estimation ? <>
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">Estimate total<Badge variant="warning" size="sm">{o.currencyCode}</Badge></p>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">Estimate total<Badge variant="warning" size="sm">USD</Badge></div>
       <p className="mb-4 mt-1 text-lg font-semibold tabular-nums">{whole}{cents}</p>
       <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
         <span><strong className="text-base">{estimation.rows.length}</strong> <span className="text-muted-foreground">work items</span></span>
-        <DetailDrawer title="Estimation matrix" description="Saved matrix rows and assumptions." trigger={<button type="button" className="text-sm font-semibold text-amber-700 hover:underline dark:text-amber-400">View estimate →</button>}>
-          <Panel title="Matrix rows" tone="amber" icon={Calculator} accentIcon><div className="overflow-x-auto"><Table><TableHeader><TableRow>
-            <TableHead className="px-2 py-1.5 text-xs">Work item</TableHead>
-            <TableHead className="px-2 py-1.5 text-xs text-right">Hours</TableHead>
-            <TableHead className="px-2 py-1.5 text-xs text-right">People</TableHead>
-            <TableHead className="px-2 py-1.5 text-xs text-right">Rate / hr</TableHead>
-            <TableHead className="px-2 py-1.5 text-xs text-right">Amount</TableHead>
-          </TableRow></TableHeader><TableBody>{estimation.rows.map(row => { let amount = '—'; try { amount = money(rowAmount(row), o.currencyCode); } catch { /* shown as — */ } return <TableRow key={row.id}>
-            <TableCell className="px-2 py-1.5 text-sm">{row.workItem}</TableCell>
-            <TableCell className="px-2 py-1.5 text-right text-sm">{row.hours}</TableCell>
-            <TableCell className="px-2 py-1.5 text-right text-sm">{row.people}</TableCell>
-            <TableCell className="px-2 py-1.5 text-right text-sm">{money(row.hourlyRate, o.currencyCode)}</TableCell>
-            <TableCell className="px-2 py-1.5 text-right text-sm font-medium">{amount}</TableCell>
-          </TableRow>; })}</TableBody></Table></div></Panel>
-          <div className="mt-4"><Panel title="Assumptions" tone="indigo" accentIcon><p className="whitespace-pre-wrap break-words text-sm">{estimation.assumptions || 'Not provided'}</p></Panel></div>
+        <DetailDrawer title="Estimation matrix" description="Saved resource allocation, person-weeks and USD costs." trigger={<button type="button" className="text-sm font-semibold text-amber-700 hover:underline dark:text-amber-400">View estimate →</button>}>
+          <SavedEstimationBreakdown estimation={estimation} />
         </DetailDrawer>
       </div>
     </> : <p className="text-sm">Not provided</p>}
@@ -94,10 +81,8 @@ function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
 }
 function Overview({
   opportunity: o,
-  review = false,
 }: {
   opportunity: OpportunityDetail;
-  review?: boolean;
 }) {
   const f = o.form;
   const statusLabel = opportunityStatus(o).substage ?? opportunityStatus(o).stage ?? STATE_LABELS[o.state];
@@ -105,24 +90,23 @@ function Overview({
   return (
     <div className="opp-overview">
       <div className="space-y-3">
-        <Panel title="Opportunity details" tone="violet" accentIcon headerRight={<DetailDrawer title="Opportunity details" description="Full opportunity record.">
-          <Panel title="Opportunity details" tone="violet" accentIcon><Values values={[
-            ['Opportunity name', f.title], ['Client budget', money(o.estimatedValue, o.currencyCode)], ['Client budget (USD)', f.estimatedValueUsd ? money(f.estimatedValueUsd, 'USD') : ''], ['Currency', o.currencyCode], ['Service line', f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine], ['Lead source', LEAD_SOURCES.find(source => source.id === f.leadSource)?.label ?? f.leadSource], ['Owner', userLabel(o.owner)], ['Priority', f.priority], ['Description', f.description],
-          ]} /></Panel>
-        </DetailDrawer>}>
+        <Panel title="Opportunity details" tone="violet" accentIcon className="opp-record-panel">
           <dl className="opp-record-details">
             <div><dt>Opportunity</dt><dd className="opp-record-title">{o.title}</dd><dd className="opp-record-reference">{o.number}</dd></div>
-            <div className="opp-record-status"><dt>Status</dt><dd className="opp-record-badges"><Badge variant={STATUS_BADGE_VARIANT[o.state] ?? 'outline'} size="sm">{statusLabel}</Badge><Badge variant="muted" size="sm">{review ? `Submitted package revision ${o.packageRevision ?? 'not submitted'}` : `Revision ${o.revision}`}</Badge></dd></div>
+            <div className="opp-record-status"><dt>Status</dt><dd className="opp-record-badges"><Badge variant={STATUS_BADGE_VARIANT[o.state] ?? 'outline'} size="sm">{statusLabel}</Badge></dd></div>
             <div className="opp-record-wide opp-record-budget">
               <dt className="text-xs text-muted-foreground">Client budget</dt>
               <dd className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                <strong className="text-lg font-semibold">{money(o.estimatedValue, o.currencyCode)}</strong>
+                <strong className="text-base font-semibold">{money(o.estimatedValue, o.currencyCode)}</strong>
                 {f.estimatedValueUsd ? <span className="text-xs text-muted-foreground">USD equivalent · {money(f.estimatedValueUsd, 'USD')}</span> : null}
+                <span className="text-xs text-muted-foreground">Currency: {o.currencyCode || 'Not provided'}</span>
               </dd>
             </div>
-            <div className="opp-record-wide"><dt className="text-xs text-muted-foreground">Service line</dt><dd className="mt-0.5">{f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine}</dd></div>
-            <div><dt className="text-xs text-muted-foreground">Owner</dt><dd className="mt-0.5">{userLabel(o.owner)}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Service line</dt><dd className="mt-0.5">{f.serviceLine === 'Other' ? f.serviceLineOther : f.serviceLine}</dd></div>
             <div><dt className="text-xs text-muted-foreground">Lead source</dt><dd className="mt-0.5">{LEAD_SOURCES.find(source => source.id === f.leadSource)?.label ?? f.leadSource}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Owner</dt><dd className="mt-0.5">{userLabel(o.owner)}</dd></div>
+            <div><dt>Priority</dt><dd>{f.priority || 'Not provided'}</dd></div>
+            <div className="opp-record-wide"><dt>Description</dt><dd className="whitespace-pre-wrap">{f.description || 'Not provided'}</dd></div>
           </dl>
         </Panel>
 
@@ -166,7 +150,6 @@ function Overview({
             <Values
               values={[
                 ['Reviewed by', userLabel(o.salesRecommendation.actor)],
-                ['Package revision', o.salesRecommendation.packageRevision],
                 ['Recommendation', o.salesRecommendation.note],
               ]}
             />
@@ -178,7 +161,26 @@ function Overview({
 }
 type TabKey = 'overview' | 'qa' | 'scope' | 'estimation' | 'documents' | 'activity';
 export function OpportunityDetailsPage({ review = false }: { review?: boolean }) {
+  const [selectedVersion, setSelectedVersion] = useState<EstimationVersion | null>(null);
+  const [estimationSidebar, setEstimationSidebar] = useState<HTMLDivElement | null>(null);
+  const [estimationLayout, setEstimationLayout] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!estimationLayout) return;
+    const resize = () => {
+      const height = Math.max(280, Math.floor(window.innerHeight - Math.max(12, estimationLayout.getBoundingClientRect().top) - 16));
+      estimationLayout.style.setProperty('--opp-estimation-height', `${height}px`);
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    const page = estimationLayout.closest('.opp-page');
+    page?.querySelectorAll('.opp-detail-heading, .opp-detail-toolbar').forEach(element => observer.observe(element));
+    window.addEventListener('resize', resize);
+    return () => { observer.disconnect(); window.removeEventListener('resize', resize); estimationLayout.style.removeProperty('--opp-estimation-height'); };
+  }, [estimationLayout]);
+  const estimationDraft = useRef<(() => Estimation) | null>(null);
+  const registerDraft = useCallback((reader: (() => Estimation) | null) => { estimationDraft.current = reader; }, []);
   const { id } = useParams(), service = useOpportunityService(), access = useOpportunityAccess(), [params, setParams] = useSearchParams();
+  useEffect(() => { setSelectedVersion(null); }, [id]);
   const approvalView = review || access.approvals;
   const load = useCallback((signal: AbortSignal) => service.detail(id!, signal, approvalView ? 'REVIEW' : 'DETAILS'), [service, id, approvalView]);
   const resource = useResource(load, Boolean(id && access.view)), confirm = useUnsaved(false);
@@ -204,26 +206,32 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
   return <div className="opp-page">
     <header className="opp-detail-heading">
       <div className="flex flex-wrap items-center justify-between gap-4">
-      <Link to="/opportunity" className="opp-back">← Back to Pipeline</Link>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2">
+          <Link to="/opportunity" className="opp-back shrink-0">← Back to Pipeline</Link>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-primary/5 px-3 py-2" aria-label="Current opportunity">
+            <Badge variant="muted" className="shrink-0 border-primary/20 bg-primary/10 font-semibold text-primary">{o.number || o.id}</Badge>
+            <h1 className="min-w-0 break-words text-base font-semibold text-foreground">{o.title}</h1>
+          </div>
+        </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {access.edit && o.allowedActions.includes('EDIT') && <Button variant="outline" asChild><Link to={`/opportunity/${o.id}/edit`}><Pencil className="size-3.5" aria-hidden="true" />Edit opportunity</Link></Button>}
         </div>
       </div>
     </header>
-    <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}>
+    <Tabs value={active} onValueChange={async tab => { if (await confirm()) { if (tab !== active) setSelectedVersion(null); setParams(tab === 'overview' ? {} : { tab }); } }}>
       <div className="opp-detail-toolbar">
         <TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>)}</TabsList>
-        <ReviewActions opportunity={o} onSaved={resource.setData} variant="toolbar" />
+        <ReviewActions opportunity={active === 'estimation' ? { ...o, allowedActions: o.allowedActions.filter(action => action !== 'SUBMIT_ESTIMATE') } : o} onSaved={resource.setData} variant="toolbar" selectedVersion={selectedVersion} getEstimation={() => estimationDraft.current?.()} />
       </div>
-      <div className="opp-detail-layout mt-3">
+      <div ref={active === 'estimation' && !awaitingEstimation ? setEstimationLayout : undefined} className={`opp-detail-layout mt-3${active === 'estimation' && !awaitingEstimation ? ' opp-estimation-fit' : ''}`}>
       <div className="opp-detail-workspace">
       {tabs.map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-0">
         {tab.key !== 'overview' && awaitingEstimation ? <div role="status" className="flex flex-col items-center rounded-lg border border-dashed bg-background px-6 py-10 text-center">
           <span className="flex size-10 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300"><Lock className="size-5" aria-hidden="true" /></span>
           <h3 className="mt-3 text-sm font-semibold">Available after CEO approval</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">This opportunity is currently in {o.stageId === 1 ? 'Identified' : 'Qualifying (Go/No-Go)'}. {tab.label} will be available once the CEO approves this opportunity and it moves to the Solution/Scoping Estimation (Engineering) stage.</p>
-        </div> : tab.key === 'overview' ? <Overview opportunity={o} review={review} />
-          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={review} showActions={false} />
+        </div> : tab.key === 'overview' ? <Overview opportunity={o} />
+          : tab.key === 'estimation' ? <EstimationModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} registerDraft={registerDraft} sidebarTarget={estimationSidebar} selectedVersion={selectedVersion} onSelectVersion={setSelectedVersion} />
           : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} />
           : tab.key === 'documents' ? <Documents opportunity={o} />
           : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />
@@ -232,6 +240,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
       </div>
       <aside className="opp-detail-sidebar" aria-label="Opportunity progress">
         <OpportunityProgress opportunity={o} />
+        {active === 'estimation' && !awaitingEstimation && <div ref={setEstimationSidebar} className="min-w-0" />}
       </aside>
       </div>
     </Tabs>

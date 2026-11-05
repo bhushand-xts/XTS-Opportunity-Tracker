@@ -8,6 +8,7 @@ export default `
     description: String
     displayOrder: Int
     isActive: Boolean!
+    isNegotiationReason: Boolean!
     createdDt: String
     createdBy: Int
     updatedDt: String
@@ -46,7 +47,7 @@ export default `
   }
 
   extend type Query {
-    reasonCodesList: [ReasonCode]
+    reasonCodesList(isNegotiationReason: Boolean): [ReasonCode]
     reasonCode(id: Int!): ReasonCode
     reasonCodeHistory(reasonCodeId: Int!): [ReasonCodeHistory!]!
   }

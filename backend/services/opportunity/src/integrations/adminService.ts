@@ -29,13 +29,13 @@ export async function holdReasonCode(id: number) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query: `query OpportunityHoldReason($id: Int!) {
-      reasonCode(id: $id) { id reasonName description isActive }
+      reasonCode(id: $id) { id reasonName description isActive isNegotiationReason }
     }`, variables: { id } }),
     signal: AbortSignal.timeout(5000),
   });
   if (!response.ok) throw new Error('Unable to verify the hold reason. Please retry.');
   const result = await response.json() as {
-    data?: { reasonCode: { id: number; reasonName: string; description: string | null; isActive: boolean } | null };
+    data?: { reasonCode: { id: number; reasonName: string; description: string | null; isActive: boolean; isNegotiationReason: boolean } | null };
     errors?: { message?: string }[];
   };
   if (result.errors?.length || !result.data) throw new Error('Unable to verify the hold reason. Please retry.');

@@ -321,7 +321,7 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
       const record = checked(state, command); editable(record);
       if (command.estimation.revision !== (record.detail.estimation?.revision ?? 0)) throw new Error('Mock estimation revision conflict.');
       if (command.estimation.rows.some(row => !row.workItem.trim())) throw new Error('Enter estimation work items.');
-      record.detail.estimation = { ...mockCopy(command.estimation), revision: command.estimation.revision + 1, total: estimateTotal(command.estimation.rows) }; bump(record, 'Estimation saved'); pending(record, state); return project(record, state);
+      record.detail.estimation = { ...mockCopy(command.estimation), revision: command.estimation.revision + 1, total: estimateTotal(command.estimation.rows, command.estimation) }; bump(record, 'Estimation saved'); pending(record, state); return project(record, state);
     }),
     saveScope: command => mutate('scope', command, state => {
       const record = checked(state, command); editable(record);

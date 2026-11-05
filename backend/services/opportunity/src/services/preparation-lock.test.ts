@@ -25,7 +25,7 @@ test('post-approval and closed opportunities keep Q&A readable and block direct 
   t.mock.method(repository, 'findResponses', async () => [response]);
   const saveAnswer = t.mock.method(repository, 'saveAnswer', async () => {});
   const saveScope = t.mock.method(scopes, 'saveScope', async () => {});
-  for (const [stageId, subStageId] of [[5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19], [10, 20]]) {
+  for (const [stageId, subStageId] of [[4, 5], [5, 10], [5, 11], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19], [10, 20]]) {
     current = { ...current, stageId, subStageId };
     const ctx = () => ({ user: { id: 7 } });
     assert.deepEqual(await service.getResponses(10, ctx()), [{ ...response, allowedActions: [] }]);
@@ -37,7 +37,7 @@ test('post-approval and closed opportunities keep Q&A readable and block direct 
     assert.equal((await service.allowedActions(current as Opportunity, ctx())).includes('EDIT_SCOPE'), false);
   }
   assert.equal(saveAnswer.mock.calls.length + saveScope.mock.calls.length, 0);
-  for (const [stageId, subStageId] of [[1, 1], [1, 2], [2, 4], [2, 5], [3, 7], [4, 8], [4, 9], [9, 15], [9, 16], [9, 17]]) {
+  for (const [stageId, subStageId] of [[1, 1], [1, 2], [2, 4], [2, 5], [3, 7], [4, 8], [4, 9]]) {
     current = { ...current, stageId, subStageId };
     const ctx = () => ({ user: { id: 7 } });
     assert.deepEqual(await service.getResponses(10, ctx()), [{ ...response, allowedActions: ['SAVE_ANSWER'] }]);
@@ -48,12 +48,12 @@ test('post-approval and closed opportunities keep Q&A readable and block direct 
     }
     assert.equal((await service.allowedActions(current as Opportunity, ctx())).includes('EDIT_SCOPE'), true);
   }
-  assert.equal(saveAnswer.mock.calls.length, 10);
-  assert.equal(saveScope.mock.calls.length, 30);
+  assert.equal(saveAnswer.mock.calls.length, 7);
+  assert.equal(saveScope.mock.calls.length, 21);
 });
 
 test('an answer save racing CEO approval rechecks the locked parent before reading or archiving an answer', async t => {
-  for (const [stageId, subStageId] of [[5, 10], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19]]) {
+  for (const [stageId, subStageId] of [[4, 5], [5, 10], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19]]) {
     const calls: string[] = [];
     t.mock.method(db.pool, 'connect', async () => ({
       query: async (sql: string) => { calls.push(sql); return { rows: [{ stageId, subStageId }] }; },
@@ -75,7 +75,7 @@ const intake: RfpIntakeOpportunityUpdateInput = {
 
 test('both opportunity edit routes preserve unchanged approved questions and reject actual question or RFP type changes before writes', async t => {
   for (const intakePath of [false, true]) {
-    for (const [stageId, subStageId] of [[5, 10], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19]]) {
+    for (const [stageId, subStageId] of [[4, 5], [5, 10], [6, 12], [7, 13], [8, 14], [9, 15], [9, 16], [9, 17], [9, 18], [10, 19]]) {
       const current = { opportunityId: 10, clientId: 1, stageId, subStageId, opportunityTypeId: 1, createdBy: 7, assignedTo: null };
       const calls: string[] = [];
       t.mock.method(db.pool, 'connect', async () => ({

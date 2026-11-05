@@ -78,7 +78,7 @@ export const GET_OPPORTUNITY = gql`
       ...OpportunityFields
       responses { id title category answer revision allowedActions }
       stageHistory { id stageId subStageId reachedAt updatedBy comment }
-      estimation { revision rows { id workItem hours people hourlyRate } assumptions total }
+      estimation { revision status rows { id workItem hours people hourlyRate } rates { roleCode rate rateType currencyCode } assumptions total grid { phaseIds roleCodes durations { phaseId weeks } allocations { phaseId roleCode effort } } }
       scope { revision summary risks { id description severity } alignment { id text } }
     }
     currencies { currencyId currencyCode currencySymbol }
@@ -170,8 +170,8 @@ export const UPDATE_OPPORTUNITY = gql`
 `;
 
 export const TRANSITION_OPPORTUNITY = gql`
-  mutation TransitionOpportunity($opportunityId: Int!, $action: OpportunityWorkflowAction!, $comment: String, $reasonCodeId: Int) {
-    transitionOpportunity(opportunityId: $opportunityId, action: $action, comment: $comment, reasonCodeId: $reasonCodeId) {
+  mutation TransitionOpportunity($opportunityId: Int!, $action: OpportunityWorkflowAction!, $comment: String, $reasonCodeId: Int, $requiresRevisedEstimation: Boolean, $estimation: OpportunityEstimationInput, $estimationVersionId: ID) {
+    transitionOpportunity(opportunityId: $opportunityId, action: $action, comment: $comment, reasonCodeId: $reasonCodeId, requiresRevisedEstimation: $requiresRevisedEstimation, estimation: $estimation, estimationVersionId: $estimationVersionId) {
       opportunityId
       stageId
       subStageId
@@ -181,6 +181,24 @@ export const TRANSITION_OPPORTUNITY = gql`
 
 export const GET_HOLD_REASON_CODES = gql`
   query OpportunityHoldReasonCodes {
-    reasonCodesList { id reasonName description displayOrder isActive }
+    reasonCodesList(isNegotiationReason: false) { id reasonName description displayOrder isActive isNegotiationReason }
   }
 `;
+
+export const GET_NEGOTIATION_REASON_CODES = gql`
+  query OpportunityNegotiationReasonCodes {
+    reasonCodesList(isNegotiationReason: true) { id reasonName description displayOrder isActive isNegotiationReason }
+  }
+`;
+
+const ESTIMATION_VERSION_FIELDS = gql`fragment EstimationVersionFields on OpportunityEstimationVersion {
+  isSelected
+  id revision updatedBy updatedAt version name status currencyCode personWeeks createdBy createdAt
+  estimation { revision status assumptions total rows { id workItem hours people hourlyRate } rates { roleCode rate rateType currencyCode } grid { phaseIds roleCodes durations { phaseId weeks } allocations { phaseId roleCode effort } } }
+}`;
+export const GET_ESTIMATION_VERSION = gql`query EstimationVersion($opportunityId: Int!, $estimationId: ID!) { estimationVersion(opportunityId: $opportunityId, estimationId: $estimationId) { ...EstimationVersionFields } } ${ESTIMATION_VERSION_FIELDS}`;
+export const GET_ESTIMATION_VERSIONS = gql`query EstimationVersions($opportunityId: Int!) { estimationVersions(opportunityId: $opportunityId) { ...EstimationVersionFields } } ${ESTIMATION_VERSION_FIELDS}`;
+export const SAVE_ESTIMATION_VERSION = gql`mutation SaveEstimationVersion($opportunityId: Int!, $estimation: OpportunityEstimationInput!, $name: String!, $requestKey: String!, $sourceVersionId: ID, $sourceRevision: Int) { saveEstimationVersion(opportunityId: $opportunityId, estimation: $estimation, name: $name, requestKey: $requestKey, sourceVersionId: $sourceVersionId, sourceRevision: $sourceRevision) { ...EstimationVersionFields } } ${ESTIMATION_VERSION_FIELDS}`;
+
+
+export const UPDATE_ESTIMATION_RATES = gql`mutation UpdateEstimationRates($opportunityId: Int!, $estimationId: ID!, $revision: Int!, $rates: [OpportunityEstimationRateUpdateInput!]!) { updateEstimationRates(opportunityId: $opportunityId, estimationId: $estimationId, revision: $revision, rates: $rates) { ...EstimationVersionFields } } ${ESTIMATION_VERSION_FIELDS}`;
