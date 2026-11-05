@@ -20,8 +20,9 @@ function mount(opportunity: OpportunityDetail, tab: string, edit = true) {
   }));
   const saveScope = vi.fn<OpportunityService['saveScope']>(async command => ({ ...opportunity, scope: { ...command.scope, revision: command.scope.revision + 1 }, revision: opportunity.revision + 1 }));
   const answer = vi.fn<OpportunityService['answer']>(async command => ({ ...opportunity, responses: opportunity.responses!.map(response => response.id === command.responseId ? { ...response, answer: command.answer, revision: response.revision + 1 } : response), revision: opportunity.revision + 1 }));
+  const version = { id: '1', revision: 1, version: 1, name: 'Team estimate', status: 'SAVED' as const, isSelected: false, currencyCode: 'USD', personWeeks: '1', createdBy: 7, createdAt: '2026-11-04T00:00:00Z', estimation: opportunity.estimation! };
   const masters = { estimationPhasesList: [{ id: 1, phaseName: 'Discovery', phaseCode: 'DISC', displayOrder: 1, isActive: true }], rateMasters: [{ ratemasterId: 10, roleName: 'Engineer', roleCode: 'ENG', currencyId: 1, rateType: 'Monthly', defaultRate: 4000, isActive: true }], currencies: [{ currencyId: 1, currencyCode: 'USD', currencySymbol: '$', isActive: true }] };
-  render(<MockedProvider mocks={[{ request: { query: GET_ESTIMATION_MASTERS }, result: { data: masters }, maxUsageCount: 100 }]}><OpportunityServiceContext.Provider value={{ ...productionOpportunityService, detail, saveScope, answer, saveEstimationVersion, estimationVersions: vi.fn(async () => []), negotiationReasons: vi.fn(async () => []) }}>
+  render(<MockedProvider mocks={[{ request: { query: GET_ESTIMATION_MASTERS }, result: { data: masters }, maxUsageCount: 100 }]}><OpportunityServiceContext.Provider value={{ ...productionOpportunityService, detail, saveScope, answer, saveEstimationVersion, estimationVersions: vi.fn(async () => opportunity.estimation ? [version] : []), estimationVersion: vi.fn(async () => version), negotiationReasons: vi.fn(async () => []) }}>
     <OpportunityAccessContext.Provider value={{ userId: '101', view: true, pipeline: true, add: false, edit, work: false, approvals: true }}>
       <MemoryRouter initialEntries={[`/opportunity/401/review?tab=${tab}`]}><Routes>
         <Route path="/opportunity/:id/review" element={<OpportunityDetailsPage review />} />
@@ -35,11 +36,12 @@ it.each([[3, 7], [4, 8], [4, 9]])('allows Estimation Team with an estimation gra
   const grid = { phaseIds: [1], roleCodes: ['ENG'], durations: [{ phaseId: 1, weeks: '1' }], allocations: [{ phaseId: 1, roleCode: 'ENG', effort: '1' }] };
   const opportunity = fixtureOpportunity({ stageId, subStageId, currencyCode: 'USD', allowedActions: ['EDIT_ESTIMATION'], estimation: { revision: 1, rows: [], assumptions: '', total: '0', grid } });
   const { saveEstimationVersion } = mount(opportunity, 'estimation', false);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit Team estimate version 1' }));
   const duration = await screen.findByRole('spinbutton', { name: 'Discovery duration in weeks' });
   expect(duration).toBeEnabled();
   fireEvent.change(duration, { target: { value: '2' } });
   fireEvent.change(screen.getByRole('textbox', { name: 'Estimation name' }), { target: { value: 'Review update' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save Estimation' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Update' }));
   await waitFor(() => expect(saveEstimationVersion).toHaveBeenCalledWith(expect.objectContaining({ estimation: expect.objectContaining({ grid: expect.objectContaining({ durations: [{ phaseId: 1, weeks: '2' }] }) }) })));
 });
 

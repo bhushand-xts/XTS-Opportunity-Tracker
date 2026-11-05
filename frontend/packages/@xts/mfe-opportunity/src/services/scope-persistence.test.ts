@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { productionOpportunityService } from './OpportunityService';
 import { createLocalWorkflowService } from './localWorkflowService';
-import { GET_OPPORTUNITY, SAVE_OPPORTUNITY_SCOPE, SAVE_OPPORTUNITY_ESTIMATION, TRANSITION_OPPORTUNITY, GET_ESTIMATION_VERSIONS, SAVE_ESTIMATION_VERSION, DELETE_ESTIMATION_VERSION } from './opportunity.queries';
+import { GET_OPPORTUNITY, SAVE_OPPORTUNITY_SCOPE, SAVE_OPPORTUNITY_ESTIMATION, TRANSITION_OPPORTUNITY, GET_ESTIMATION_VERSIONS, SAVE_ESTIMATION_VERSION } from './opportunity.queries';
 import { fixtureOpportunity } from '../testing/fixtures';
 
 const api = vi.hoisted(() => ({ query: vi.fn(), mutate: vi.fn() }));
@@ -29,7 +29,7 @@ it('validates scope reading and saving against the real backend schema', () => {
   expect(validate(schema, TRANSITION_OPPORTUNITY)).toEqual([]);
   expect(validate(schema, GET_ESTIMATION_VERSIONS)).toEqual([]);
   expect(validate(schema, SAVE_ESTIMATION_VERSION)).toEqual([]);
-  expect(validate(schema, DELETE_ESTIMATION_VERSION)).toEqual([]);
+  expect(schema.getMutationType()?.getFields()).not.toHaveProperty('deleteEstimationVersion');
 });
 
 it('persists an incomplete draft grid through GraphQL and reloads its database status', async () => {
@@ -86,11 +86,4 @@ it('sends the edited saved version ID and waits for the persisted update', async
   const result = await productionOpportunityService.saveEstimationVersion!({ opportunityId: '10', expectedRevision: 3, idempotencyKey: 'update', name: 'Revised', estimation, sourceVersionId: '9' });
   expect(api.mutate).toHaveBeenCalledWith(expect.objectContaining({ mutation: SAVE_ESTIMATION_VERSION, variables: expect.objectContaining({ sourceVersionId: '9', name: 'Revised', requestKey: 'update' }) }));
   expect(result.version).toEqual(version);
-});
-it('deletes the scoped saved estimate and propagates server failures', async () => {
-  api.mutate.mockResolvedValueOnce({ data: { deleteEstimationVersion: true } });
-  await productionOpportunityService.deleteEstimationVersion!('10', '9');
-  expect(api.mutate).toHaveBeenCalledWith({ mutation: DELETE_ESTIMATION_VERSION, variables: { opportunityId: 10, versionId: '9' }, errorPolicy: 'none' });
-  api.mutate.mockRejectedValueOnce(new Error('Submitted estimates cannot be deleted'));
-  await expect(productionOpportunityService.deleteEstimationVersion!('10', '9')).rejects.toThrow('Submitted estimates cannot be deleted');
 });

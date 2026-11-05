@@ -103,8 +103,8 @@ function monthlyRate(role: RateMaster): number {
 }
 
 /** Searchable multi-select that keeps the existing menu and checkbox behavior. */
-function MultiSelectField({ label, options, selected, onToggle, onSelectAll, onClear, disabled, addControl }: {
-  label: string; options: { id: string; label: string; description?: string; searchText?: string }[]; selected: Set<string>;
+function MultiSelectField({ label, displayLabel = label, options, selected, onToggle, onSelectAll, onClear, disabled, addControl }: {
+  label: string; displayLabel?: string; options: { id: string; label: string; description?: string; searchText?: string }[]; selected: Set<string>;
   onToggle: (id: string) => void; onSelectAll: () => void; onClear: () => void; disabled?: boolean; addControl?: ReactNode;
 }) {
   const triggerId = useId();
@@ -115,7 +115,7 @@ function MultiSelectField({ label, options, selected, onToggle, onSelectAll, onC
   const visible = options.filter(option => `${option.label} ${option.description ?? ''} ${option.searchText ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()));
   const summary = !selected.size ? `Select ${label.toLowerCase()}…` : selected.size === options.length && options.length > 0 ? `All ${label.toLowerCase()} (${selected.size})` : `${selected.size} selected`;
   return <div className="opp-field min-w-0 space-y-1">
-    <Label htmlFor={triggerId}>{label}</Label>
+    <Label htmlFor={triggerId}>{displayLabel}</Label>
     <DropdownMenu open={open} onOpenChange={changeOpen}>
       <DropdownMenuTrigger asChild><Button id={triggerId} type="button" variant="outline" aria-label={summary} className="w-full justify-between bg-background font-normal" disabled={disabled}><span className="truncate">{summary}</span><ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden="true" /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="flex max-h-[min(420px,var(--radix-dropdown-menu-content-available-height))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-72 max-w-[calc(100vw-32px)] flex-col overflow-hidden p-1">
@@ -167,6 +167,7 @@ export function EstimationModule({
   function selectVersion(version: EstimationVersion | null) { setLocalVersion(version); onSelectVersion?.(version); }
   const mutation = useSave();
   const auth = useAuth();
+  const ceoRatesView = o.allowedActions.some(action => ['VIEW_ESTIMATION_RATES', 'EDIT_ESTIMATION_RATES', 'ESTIMATE_APPROVE', 'ESTIMATE_REVISION_APPROVE'].includes(action));
 
   const { data: masters } = useQuery<{
     estimationPhasesList: (EstimationPhase | null)[] | null;
@@ -177,7 +178,7 @@ export function EstimationModule({
   });
 
   const phases = (masters?.estimationPhasesList ?? [])
-    .filter((p): p is EstimationPhase => Boolean(p?.isActive))
+    .filter((p): p is EstimationPhase => Boolean(p && (p.isActive || ceoRatesView)))
     .sort(
       (a, b) =>
         (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) ||
@@ -185,7 +186,7 @@ export function EstimationModule({
     );
 
   const roles = (masters?.rateMasters ?? [])
-    .filter((r): r is RateMaster => Boolean(r?.isActive && masters?.currencies?.some(c => c?.isActive && c.currencyId === r.currencyId && c.currencyCode === ESTIMATION_CURRENCY_CODE)))
+    .filter((r): r is RateMaster => Boolean(r && (r.isActive || ceoRatesView) && masters?.currencies?.some(c => c && (c.isActive || ceoRatesView) && c.currencyId === r.currencyId && c.currencyCode === ESTIMATION_CURRENCY_CODE)))
     .sort((a, b) => a.roleName.localeCompare(b.roleName));
 
   const currencies = (masters?.currencies ?? []).filter(
@@ -205,13 +206,15 @@ export function EstimationModule({
   const [newPhaseName, setNewPhaseName] = useState('');
   const [addPhaseError, setAddPhaseError] = useState<string>();
 
-  const initialEstimation = o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' };
-  const [draft, setDraft] = useState<Estimation>(initialEstimation);
-  const [baseline, setBaseline] = useState<string | null>(null);
   const estimationStep = o.stageId == null ? isPreparing(o) :
     o.stageId === 3 && o.subStageId === 7 || o.stageId === 4 && [8, 9].includes(o.subStageId ?? 0);
   const editable = !readOnly && estimationStep && o.allowedActions.includes('EDIT_ESTIMATION');
-  const canEditRates = !readOnly && estimationStep && o.allowedActions.includes('EDIT_ESTIMATION_RATES');
+  const canEditRates = !readOnly && o.stageId === 4 && [8, 9].includes(o.subStageId ?? 0) && o.allowedActions.includes('EDIT_ESTIMATION_RATES');
+  const initialEstimation: Estimation = editable
+    ? { revision: o.estimation?.revision ?? 0, rows: [], assumptions: '', total: '0.00' }
+    : o.estimation ?? { revision: 0, rows: [], assumptions: '', total: '0.00' };
+  const [draft, setDraft] = useState<Estimation>(initialEstimation);
+  const [baseline, setBaseline] = useState<string | null>(null);
   const [rateTarget, setRateTarget] = useState<EstimationVersion | null>(null);
   const [rateOverrides, setRateOverrides] = useState<Record<string, string>>({});
   const [invalidRates, setInvalidRates] = useState(false);
@@ -229,11 +232,12 @@ export function EstimationModule({
   useEffect(() => {
     if (seededRef.current || !masters) return;
     seededRef.current = true;
-    const savedRows = o.estimation?.rows ?? [];
+    if (editable) selectVersion(null);
+    const savedRows = initialEstimation.rows;
     const nextPhaseIds = new Set<number>(), nextRoleCodes = new Set<string>();
     const nextDuration: Record<number, string> = {}, nextAllocation: Record<string, string> = {};
-    if (o.estimation?.grid) {
-      const grid = o.estimation.grid;
+    if (initialEstimation.grid) {
+      const grid = initialEstimation.grid;
       grid.phaseIds.forEach(id => nextPhaseIds.add(id));
       grid.roleCodes.forEach(code => nextRoleCodes.add(code));
       grid.durations.forEach(item => { nextDuration[item.phaseId] = item.weeks; });
@@ -252,6 +256,8 @@ export function EstimationModule({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally seeds once from the loaded masters, not on every draft/row change
   }, [masters, phases.length, roles.length]);
 
+  const grid = estimationGrid(selectedPhaseIds, selectedRoleCodes, duration, allocation);
+  const inputsUnchanged = baseline !== null && JSON.stringify({ assumptions: draft.assumptions, grid }) === baseline;
   const activePhases = phases.filter(p => selectedPhaseIds.has(p.id));
   const activeRoles = roles.filter(r => selectedRoleCodes.has(r.roleCode));
   const snapshotRates = activeRoles.map(role => {
@@ -266,7 +272,7 @@ export function EstimationModule({
     return rate ? { ...role, defaultRate: Number(rate.rate), rateType: rate.rateType } : role;
   });
   useEffect(() => {
-    if (!canEditRates || !masters || !service.estimationVersions) return;
+    if (!ceoRatesView || !masters || !service.estimationVersions) return;
     let cancelled = false;
     void service.estimationVersions(o.id).then(versions => {
       if (cancelled) return;
@@ -276,7 +282,7 @@ export function EstimationModule({
     return () => { cancelled = true; };
     // Initialize from the actual current estimate, never an arbitrary alternative.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canEditRates, masters, o.id, o.estimation?.revision, service]);
+  }, [ceoRatesView, canEditRates, masters, o.id, o.estimation?.revision, service]);
   const durationError = (phaseId: number) => {
     const value = duration[phaseId] ?? '';
     return submissionAttempted && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) <= 0) ? 'Enter weeks greater than 0.' : undefined;
@@ -329,7 +335,6 @@ export function EstimationModule({
     const role = activeRoles.find(role => activePhases.some(phase => row.id === gridRowId(phase.id, role.roleCode)));
     return role && rateOverrides[role.roleCode] !== undefined ? { ...row, hourlyRate: hourlyRate(0, role).toFixed(4) } : row;
   });
-  const grid = estimationGrid(selectedPhaseIds, selectedRoleCodes, duration, allocation);
   const calculation = { grid, rates: snapshotRates };
   let total = '0.00', calculationError: string | undefined;
   try { total = estimateTotal(rows, calculation); } catch (error) { calculationError = error instanceof Error ? error.message : 'Check numeric fields.'; }
@@ -342,13 +347,13 @@ export function EstimationModule({
     const matchesMaster = oldRow && role && (monthlyRate(role) / 160).toFixed(4) === Number(oldRow.hourlyRate).toFixed(4);
     return Number(rateOverrides[code]) !== Number(saved?.rate ?? (oldRow && !matchesMaster ? Number(oldRow.hourlyRate) * 160 : role?.defaultRate));
   });
-  const dirty = ratesDirty || editable && baseline !== null && JSON.stringify({ assumptions: draft.assumptions, grid }) !== baseline;
+  const dirty = ratesDirty || editable && baseline !== null && !inputsUnchanged;
   useEffect(() => {
     registerDraft?.(() => {
       setSubmissionAttempted(true);
       if (!masters || mutation.saving) throw new Error('Wait for the estimate to finish loading or saving before submitting.');
       if (calculationError) throw new Error(calculationError);
-      if (ratesDirty || invalidRates) throw new Error('Choose Update opportunity to save valid rates before continuing.');
+      if (ratesDirty || invalidRates) throw new Error('Choose Update estimate to save valid rates before continuing.');
       return { revision: draft.revision, rows, rates: snapshotRates, assumptions: draft.assumptions, total, grid };
     });
     return () => registerDraft?.(null);
@@ -402,33 +407,19 @@ export function EstimationModule({
         const clearedAllocation = Object.fromEntries([...selectedPhaseIds].flatMap(id => [...selectedRoleCodes].map(code => [cellKey(id, code), '0'])));
         const clearedGrid = estimationGrid(selectedPhaseIds, selectedRoleCodes, clearedDuration, clearedAllocation);
         setDuration(clearedDuration); setAllocation(clearedAllocation);
-        setDraft({ ...saved.opportunity.estimation, rows: [], total: '0', grid: clearedGrid });
+        setDraft({ ...saved.opportunity.estimation, rows: [], rates: [], total: '0', grid: clearedGrid });
         setBaseline(JSON.stringify({ assumptions: saved.opportunity.estimation.assumptions, grid: clearedGrid }));
         setSubmissionAttempted(false);
-        if (source && selectedVersion?.id === source.id) selectVersion(saved.version);
+        selectVersion(null);
       }
       onSaved(saved.opportunity);
       succeeded = true;
     }, source ? 'Estimation updated.' : 'Estimation saved.');
     return succeeded;
   }
-  async function deleteVersion(version: EstimationVersion) {
-    if (!editable || mutation.saving) return false;
-    let succeeded = false;
-    await mutation.run(`delete-estimate-${version.id}`, async () => {
-      if (!service.deleteEstimationVersion) throw new Error('Deleting saved estimates is not available.');
-      await service.deleteEstimationVersion(o.id, version.id);
-      const updated = await service.detail(o.id);
-      setDraft(previous => ({ ...previous, revision: updated.estimation?.revision ?? 0 }));
-      onSaved(updated);
-    }, () => {
-      if (selectedVersion?.id === version.id) selectVersion(null);
-      succeeded = true;
-    }, 'Saved estimate deleted.');
-    return succeeded;
-  }
   function loadVersion(version: EstimationVersion, quiet = false) {
-    if ((!editable && !canEditRates) || mutation.saving || ratesDirty) return false;
+    if ((!editable && !ceoRatesView) || mutation.saving || ratesDirty || !masters) return false;
+    if (editable && o.stageId === 4 && version.isSelected && version.status === 'SUBMITTED') { toast.info('Estimation already submitted.'); return false; }
     const restored = version.estimation.grid;
     if (!restored || restored.phaseIds.some(id => !phases.some(phase => phase.id === id)) || restored.roleCodes.some(code => !roles.some(role => role.roleCode === code))) {
       toast.error('This version contains phases or roles that are no longer active. You can still view its historical snapshot.'); return false;
@@ -438,7 +429,8 @@ export function EstimationModule({
     setDuration(Object.fromEntries(restored.durations.map(item => [item.phaseId, item.weeks])));
     setAllocation(Object.fromEntries(restored.allocations.map(item => [cellKey(item.phaseId, item.roleCode), item.effort])));
     setDraft(previous => ({ ...previous, rows: version.estimation.rows, rates: version.estimation.rates, assumptions: version.estimation.assumptions }));
-    setRateOverrides({}); setRateTarget(canEditRates ? version : null);
+    setBaseline(JSON.stringify({ assumptions: version.estimation.assumptions, grid: estimationGrid(new Set(restored.phaseIds), new Set(restored.roleCodes), Object.fromEntries(restored.durations.map(item => [item.phaseId, item.weeks])), Object.fromEntries(restored.allocations.map(item => [cellKey(item.phaseId, item.roleCode), item.effort]))) }));
+    setRateOverrides({}); setRateTarget(ceoRatesView ? version : null);
     setSubmissionAttempted(false);
     if (!quiet) toast.info('Estimate opened with its saved rates. Choose Update to save changes to this estimate.');
     return true;
@@ -457,34 +449,34 @@ export function EstimationModule({
   }
 
   function onSubmitted(saved: OpportunityDetail) {
-    const estimate = saved.estimation;
-    if (estimate?.grid) {
-      setDraft(estimate);
-      setSelectedPhaseIds(new Set(estimate.grid.phaseIds)); setSelectedRoleCodes(new Set(estimate.grid.roleCodes));
-      setDuration(Object.fromEntries(estimate.grid.durations.map(item => [item.phaseId, item.weeks])));
-      setAllocation(Object.fromEntries(estimate.grid.allocations.map(item => [cellKey(item.phaseId, item.roleCode), item.effort])));
-      setBaseline(JSON.stringify({ assumptions: estimate.assumptions, grid: estimate.grid }));
-    }
+    const grid = estimationGrid(new Set(), new Set(), {}, {});
+    setDraft({ revision: saved.estimation?.revision ?? draft.revision, rows: [], rates: [], assumptions: '', total: '0.00', grid });
+    setSelectedPhaseIds(new Set()); setSelectedRoleCodes(new Set()); setDuration({}); setAllocation({});
+    selectVersion(null); setSubmissionAttempted(false);
+    setBaseline(JSON.stringify({ assumptions: '', grid }));
     onSaved(saved);
   }
 
-  return <div className="opp-estimation-workspace space-y-3">
-    <Panel title="Select phases & technical roles" tone="indigo" icon={ClipboardList} accentIcon>
+  return <div className={`opp-estimation-workspace space-y-3${ceoRatesView ? ' opp-estimation-ceo-workspace' : ''}`}>
+    <Panel title={ceoRatesView ? 'Estimate rates' : 'Select phases & technical roles'} tone="indigo" icon={ClipboardList} accentIcon>
       <div className="opp-estimation-controls grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
-        <MultiSelectField label="Phases" options={phases.map(p => ({ id: String(p.id), label: p.phaseName }))} selected={new Set([...selectedPhaseIds].map(String))} onToggle={id => togglePhase(Number(id))} onSelectAll={selectAllPhases} onClear={clearPhases} disabled={!editable || mutation.saving}
+        {!ceoRatesView && <><MultiSelectField label="Phases" displayLabel="Select Phase" options={phases.map(p => ({ id: String(p.id), label: p.phaseName }))} selected={new Set([...selectedPhaseIds].map(String))} onToggle={id => togglePhase(Number(id))} onSelectAll={selectAllPhases} onClear={clearPhases} disabled={!editable || mutation.saving}
           addControl={editable ? <>
             <DropdownMenuItem className="gap-2 font-medium text-primary" disabled={!canAddPhase} onSelect={() => { setAddPhaseError(undefined); setPhaseDialogOpen(true); }}><Plus className="size-4" aria-hidden="true" />Add phase</DropdownMenuItem>
             {!canAddPhase && <p className="px-2 py-1 text-xs text-muted-foreground">Phase Master Add permission is required.</p>}
           </> : undefined} />
-        <MultiSelectField label="Technical roles" options={roles.map(role => ({ id: role.roleCode, label: role.roleCode, searchText: role.roleName, description: canViewRates ? `${money(trimDecimal(role.defaultRate), currencies.find(currency => currency.currencyId === role.currencyId)?.currencyCode ?? ESTIMATION_CURRENCY_CODE)} / ${role.rateType}` : role.roleCode }))} selected={selectedRoleCodes} onToggle={toggleRole} onSelectAll={selectAllRoles} onClear={clearRoles} disabled={!editable || mutation.saving}
-          addControl={editable && canAddRole ? <DropdownMenuItem className="gap-2 font-medium text-primary" onSelect={() => setAddingRole(true)}><Plus className="size-4" aria-hidden="true" />Add technical role</DropdownMenuItem> : undefined} />
-        {(canViewRates || canEditRates || editable) && <EstimationRateMaster roles={displayedRoles} currencies={currencies} currencyCode={ESTIMATION_CURRENCY_CODE} editableRoleCodes={canEditRates && rateTarget && !mutation.saving ? selectedRoleCodes : undefined} onRateChange={canEditRates && rateTarget ? (code, value) => setRateOverrides(previous => ({ ...previous, [code]: value })) : undefined} onValidationChange={setInvalidRates} />}
+        <MultiSelectField label="Technical roles" displayLabel="Select Technical Roles" options={roles.map(role => ({ id: role.roleCode, label: role.roleCode, searchText: role.roleName, description: canViewRates ? `${money(trimDecimal(role.defaultRate), currencies.find(currency => currency.currencyId === role.currencyId)?.currencyCode ?? ESTIMATION_CURRENCY_CODE)} / ${role.rateType}` : role.roleCode }))} selected={selectedRoleCodes} onToggle={toggleRole} onSelectAll={selectAllRoles} onClear={clearRoles} disabled={!editable || mutation.saving}
+          addControl={editable && canAddRole ? <DropdownMenuItem className="gap-2 font-medium text-primary" onSelect={() => setAddingRole(true)}><Plus className="size-4" aria-hidden="true" />Add technical role</DropdownMenuItem> : undefined} /></>}
+        {(canViewRates || ceoRatesView || editable) && <EstimationRateMaster inline={ceoRatesView} roles={ceoRatesView ? displayedRoles.filter(role => selectedRoleCodes.has(role.roleCode)) : displayedRoles} currencies={currencies} currencyCode={ESTIMATION_CURRENCY_CODE} editableRoleCodes={canEditRates && rateTarget && !mutation.saving ? selectedRoleCodes : undefined} onRateChange={canEditRates && rateTarget ? (code, value) => setRateOverrides(previous => ({ ...previous, [code]: value })) : undefined} onValidationChange={setInvalidRates} />}
 
       </div>
     </Panel>
-    {canEditRates && ratesDirty && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3"><p className="text-sm text-muted-foreground">Rates changed for {rateTarget?.name}.</p><Button type="button" disabled={!rateTarget || invalidRates || mutation.saving || Boolean(calculationError)} onClick={() => void updateRates()}>{mutation.saving ? 'Updating...' : 'Update opportunity'}</Button></div>}
-      <div className="space-y-3">
-        <Panel title="Estimation matrix" tone="indigo">
+    {canEditRates && ratesDirty && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3"><p className="text-sm text-muted-foreground">Rates changed for {rateTarget?.name}.</p><Button type="button" disabled={!rateTarget || invalidRates || mutation.saving || Boolean(calculationError)} onClick={() => void updateRates()}>{mutation.saving ? 'Updating...' : 'Update estimate'}</Button></div>}
+      <div className="opp-estimation-matrix-panel-group space-y-3">
+        <Panel title="Estimation matrix" tone="indigo" className="[&>div:first-child>div]:flex-wrap" headerRight={<div role="group" aria-label="Estimation totals" className="flex max-w-full flex-wrap items-center justify-end gap-2">
+          <Badge variant="muted" className="gap-1.5 rounded-md border-primary bg-primary px-2.5 py-1 text-primary-foreground shadow-sm">Total estimated value <strong className="font-semibold tabular-nums">{calculationError ? 'Check matrix values' : money(total, ESTIMATION_CURRENCY_CODE)}</strong></Badge>
+          <Badge variant="muted" className="gap-1.5 rounded-md border-primary/30 bg-accent px-2.5 py-1 text-accent-foreground shadow-sm">Total effort <strong className="font-semibold tabular-nums">{trimDecimal(effortTotal)} person-weeks</strong></Badge>
+        </div>}>
           <EstimationMatrix phases={activePhases} roles={activeRoles} editable={editable} saving={mutation.saving} validationId={validationId} currencyCode={ESTIMATION_CURRENCY_CODE}
             duration={id => duration[id] ?? (editable ? '' : '0')} allocation={(id, code) => allocation[cellKey(id, code)] ?? (editable ? '' : '0')}
             onDuration={(id, value) => setDuration(previous => ({ ...previous, [id]: value }))}
@@ -495,7 +487,7 @@ export function EstimationModule({
         {legacyRows.length > 0 && <p className="text-xs text-muted-foreground">{legacyRows.length} previously saved item{legacyRows.length === 1 ? '' : 's'} not tied to a phase/role {legacyRows.length === 1 ? 'is' : 'are'} preserved and included in the total, though no longer editable here.</p>}
         {calculationError && <Notice error={calculationError} />}{mutation.error && <Notice error={mutation.error} />}
       </div>
-    <SavedEstimationVersions sidebarTarget={sidebarTarget} opportunityId={o.id} revision={draft.revision} editable={editable} saving={mutation.saving} dirty={dirty} onSave={saveNamedVersion} onLoad={loadVersion} onDelete={o.allowedActions.includes('SUBMIT_ESTIMATE') ? deleteVersion : undefined} selectedVersion={selectedVersion} onSelectVersion={selectVersion} selectionLocked={o.stageId === 4 && [8, 9].includes(o.subStageId ?? 0)} submittedOnly={canEditRates || o.allowedActions.includes('ESTIMATE_APPROVE')}
+    <SavedEstimationVersions sidebarTarget={sidebarTarget} opportunityId={o.id} revision={draft.revision} editable={editable} saving={mutation.saving || !masters} dirty={dirty} onSave={saveNamedVersion} onLoad={loadVersion} selectedVersion={selectedVersion} onSelectVersion={selectVersion} selectionLocked={o.stageId === 4 && [8, 9].includes(o.subStageId ?? 0)} submittedOnly={ceoRatesView}
       submitAction={showActions && o.allowedActions.includes('SUBMIT_ESTIMATE') ? <div className={sidebarTarget ? 'w-full [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-full [&_button]:!whitespace-normal' : 'shrink-0 [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-auto [&_button]:!whitespace-nowrap'}><ReviewActions opportunity={o} onSaved={onSubmitted} variant="toolbar" selectedVersion={mutation.saving ? null : selectedVersion} getEstimation={() => {
         setSubmissionAttempted(true);
         if (!masters || mutation.saving) throw new Error('Wait for the estimate to finish loading or saving before submitting.');

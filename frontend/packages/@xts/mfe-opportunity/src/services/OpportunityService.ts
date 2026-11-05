@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE, GET_ESTIMATION_VERSIONS, GET_ESTIMATION_VERSION, SAVE_ESTIMATION_VERSION, DELETE_ESTIMATION_VERSION, UPDATE_ESTIMATION_RATES } from './opportunity.queries';
+import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE, GET_ESTIMATION_VERSIONS, GET_ESTIMATION_VERSION, SAVE_ESTIMATION_VERSION, UPDATE_ESTIMATION_RATES } from './opportunity.queries';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY, type OwnerDirectoryData } from './userDirectory.queries';
 import { mapOwnerDirectory } from './useOwnerDirectory';
 import { getApolloClient } from '@xts/api-client';
@@ -43,7 +43,6 @@ export interface OpportunityService {
   extractionStatus(opportunityId: string, jobId: string, signal?: AbortSignal): Promise<OpportunityDetail>;
   estimationVersion?(opportunityId: string, estimationId: string): Promise<EstimationVersion>;
   estimationVersions?(opportunityId: string): Promise<EstimationVersion[]>;
-  deleteEstimationVersion?(opportunityId: string, versionId: string): Promise<void>;
   saveEstimationVersion?(command: VersionCommand & { estimation: Estimation; name: string; sourceVersionId?: string; sourceRevision?: number }): Promise<{ version: EstimationVersion; opportunity: OpportunityDetail }>;
   updateEstimationRates?(command: { opportunityId: string; estimationId: string; revision: number; rates: { roleCode: string; rate: string }[] }): Promise<{ version: EstimationVersion; opportunity: OpportunityDetail }>;
   saveEstimation(command: VersionCommand & { estimation: Estimation }): Promise<OpportunityDetail>;
@@ -346,10 +345,6 @@ export const productionOpportunityService: OpportunityService = {
   async estimationVersions(opportunityId) {
     const { data } = await getApolloClient().query<{ estimationVersions: EstimationVersion[] }>({ query: GET_ESTIMATION_VERSIONS, variables: { opportunityId: Number(opportunityId) }, fetchPolicy: 'network-only', errorPolicy: 'none' });
     return data.estimationVersions;
-  },
-  async deleteEstimationVersion(opportunityId, versionId) {
-    const { data } = await getApolloClient().mutate<{ deleteEstimationVersion: boolean }>({ mutation: DELETE_ESTIMATION_VERSION, variables: { opportunityId: Number(opportunityId), versionId }, errorPolicy: 'none' });
-    if (!data?.deleteEstimationVersion) throw new Error('The estimate was not deleted. Please retry.');
   },
   async saveEstimationVersion(command) {
     const { revision, rows, assumptions, grid, rates } = command.estimation;

@@ -5,7 +5,7 @@ import * as validator from "../validators/opportunity.validator";
 import * as userService from "../integrations/userService";
 import { roleAccess, holdReasonCode } from '../integrations/adminService';
 import { opportunityAccess, type OpportunityAccess } from '../lib/opportunityAccess';
-import { assertEstimationWritable, estimationWritable, assertPreparationWritable, preparationModulesLocked } from '../lib/opportunityPreparation';
+import { assertEstimationWritable, estimationWritable, assertEstimationRatesWritable, estimationRatesWritable, assertPreparationWritable, preparationModulesLocked } from '../lib/opportunityPreparation';
 import { documentUploadAudit } from '../lib/documentStorage';
 import { transaction } from "../config/db";
 import { attachSource } from "../extraction/repository";
@@ -203,7 +203,8 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
     actions.push('GATE1_NO_GO');
   }
   if (estimationWritable(opportunity) && access.estimate && access.canView(opportunity)) actions.push('EDIT_ESTIMATION');
-  if (estimationWritable(opportunity) && access.gateReview && access.canView(opportunity)) actions.push('EDIT_ESTIMATION_RATES');
+  if ((opportunity.stageId ?? 0) >= 3 && access.gateReview && access.canView(opportunity)) actions.push('VIEW_ESTIMATION_RATES');
+  if (estimationRatesWritable(opportunity) && access.gateReview && access.canView(opportunity)) actions.push('EDIT_ESTIMATION_RATES');
   if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('SUBMIT_ESTIMATE');
   if (!preparationModulesLocked(opportunity) && access.canView(opportunity)) actions.push('EDIT_SCOPE');
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) {
@@ -938,18 +939,10 @@ export {
   assertExtractionEdit
 };
 
-export async function deleteEstimationVersion(opportunityId: number, versionId: string, ctx: any) {
-  const access = await accessFor(ctx);
-  await get(opportunityId, ctx);
-  if (!access.estimate) throw conflict('Only the Estimation Team can delete saved estimates.');
-  if (!/^[1-9]\d*$/.test(versionId)) throw validationFailed('Select a valid saved estimate.');
-  return repository.deleteEstimationVersion(opportunityId, versionId, access.userId);
-}
-
 export async function updateEstimationRates(opportunityId: number, estimationId: string, revision: number, rates: { roleCode: string; rate: string }[], ctx: any) {
   const access = await accessFor(ctx);
   if (!access.gateReview) throw conflict('Only the CEO can update opportunity estimation rates.');
-  assertEstimationWritable(await get(opportunityId, ctx));
+  assertEstimationRatesWritable(await get(opportunityId, ctx));
   if (!/^[1-9]\d{0,18}$/.test(estimationId) || BigInt(estimationId) > 9223372036854775807n || !Number.isSafeInteger(revision) || revision < 1) throw validationFailed('Select a saved estimation and its current revision.');
   if (!Array.isArray(rates) || !rates.length || rates.length > 500 || new Set(rates.map(rate => rate.roleCode)).size !== rates.length || rates.some(rate =>
     typeof rate?.roleCode !== 'string' || !rate.roleCode.trim() || typeof rate.rate !== 'string' || !/^\d{1,10}(\.\d{1,4})?$/.test(rate.rate) || Number(rate.rate) <= 0)) throw validationFailed('Enter positive rates with up to four decimal places for unique technical roles.');

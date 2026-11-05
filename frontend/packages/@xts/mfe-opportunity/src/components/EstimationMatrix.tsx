@@ -29,9 +29,9 @@ export function EstimationMatrix(p: Props) {
         <TableRow>
           {p.roles.map(role => <TableHead key={role.roleCode} scope="col" className="matrix-allocation" title={role.roleName}>{role.roleCode}{p.rateError(role) && <p role="alert" className="mt-1 text-xs font-normal text-destructive">Configure a positive rate.</p>}</TableHead>)}
           {p.roles.map(role => <TableHead key={role.roleCode} scope="col" className="matrix-effort" title={role.roleName}>{role.roleCode}</TableHead>)}
-          <TableHead scope="col" className="matrix-effort font-semibold">Total effort</TableHead>
+          <TableHead scope="col" className="matrix-effort matrix-total font-semibold">Total effort</TableHead>
           {p.roles.map(role => <TableHead key={role.roleCode} scope="col" className="matrix-cost" title={role.roleName}>{role.roleCode}</TableHead>)}
-          <TableHead scope="col" className="matrix-cost font-semibold">Total cost</TableHead>
+          <TableHead scope="col" className="matrix-cost matrix-total font-semibold">Total cost</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -47,19 +47,19 @@ export function EstimationMatrix(p: Props) {
             {p.editable && p.effortError(phase.id, role.roleCode) && <p id={`${p.validationId}-effort-${phase.id}-${role.roleCode}`} role="alert" className="mt-1 text-xs text-destructive">{p.effortError(phase.id, role.roleCode)}</p>}
           </TableCell>)}
           {p.roles.map(role => <TableCell key={role.roleCode} className="matrix-effort">{p.formatNumber(p.personWeek(phase.id, role.roleCode))}</TableCell>)}
-          <TableCell className="matrix-effort font-semibold">{p.formatNumber(p.roles.reduce((sum, role) => sum + p.personWeek(phase.id, role.roleCode), 0))}</TableCell>
+          <TableCell className="matrix-effort matrix-total font-semibold">{p.formatNumber(p.roles.reduce((sum, role) => sum + p.personWeek(phase.id, role.roleCode), 0))}</TableCell>
           {p.roles.map(role => <TableCell key={role.roleCode} className="matrix-cost whitespace-nowrap">{money(p.formatNumber(p.cellCost(phase.id, role.roleCode, role)), p.currencyCode)}</TableCell>)}
-          <TableCell className="matrix-cost whitespace-nowrap font-semibold">{money(p.formatNumber(p.roles.reduce((sum, role) => sum + p.cellCost(phase.id, role.roleCode, role), 0)), p.currencyCode)}</TableCell>
+          <TableCell className="matrix-cost matrix-total whitespace-nowrap font-semibold">{money(p.formatNumber(p.roles.reduce((sum, role) => sum + p.cellCost(phase.id, role.roleCode, role), 0)), p.currencyCode)}</TableCell>
         </TableRow>)}
-        <TableRow className="font-semibold">
+        <TableRow className="matrix-totals font-semibold">
           <TableCell className="matrix-index" />
           <TableCell className="matrix-phase">Total</TableCell>
           <TableCell className="matrix-duration" />
           {p.roles.map(role => <TableCell key={role.roleCode} className="matrix-allocation">—</TableCell>)}
           {p.roles.map(role => <TableCell key={role.roleCode} className="matrix-effort">{p.formatNumber(p.phases.reduce((sum, phase) => sum + p.personWeek(phase.id, role.roleCode), 0))}</TableCell>)}
-          <TableCell className="matrix-effort">{p.formatNumber(p.effortTotal)}</TableCell>
+          <TableCell className="matrix-effort matrix-total">{p.formatNumber(p.effortTotal)}</TableCell>
           {p.roles.map(role => <TableCell key={role.roleCode} className="matrix-cost whitespace-nowrap">{money(p.formatNumber(p.phases.reduce((sum, phase) => sum + p.cellCost(phase.id, role.roleCode, role), 0)), p.currencyCode)}</TableCell>)}
-          <TableCell className="matrix-cost whitespace-nowrap">{p.calculationError ? 'Check matrix values' : money(p.total, p.currencyCode)}</TableCell>
+          <TableCell className="matrix-cost matrix-total whitespace-nowrap">{p.calculationError ? 'Check matrix values' : money(p.total, p.currencyCode)}</TableCell>
         </TableRow>
       </TableBody>
     </Table>

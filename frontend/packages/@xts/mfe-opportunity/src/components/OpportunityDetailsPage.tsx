@@ -1,6 +1,6 @@
 import { QuestionViewer } from './QuestionViewer';
 import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Lock, Pencil } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Badge, type BadgeProps, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
 import type { Estimation, EstimationVersion, OpportunityDetail, OpportunityState } from '@xts/api-contracts';
@@ -175,6 +175,20 @@ type TabKey = 'overview' | 'qa' | 'scope' | 'estimation' | 'documents' | 'activi
 export function OpportunityDetailsPage({ review = false }: { review?: boolean }) {
   const [selectedVersion, setSelectedVersion] = useState<EstimationVersion | null>(null);
   const [estimationSidebar, setEstimationSidebar] = useState<HTMLDivElement | null>(null);
+  const [estimationLayout, setEstimationLayout] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!estimationLayout) return;
+    const resize = () => {
+      const height = Math.max(280, Math.floor(window.innerHeight - estimationLayout.getBoundingClientRect().top - 16));
+      estimationLayout.style.setProperty('--opp-estimation-height', `${height}px`);
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    const page = estimationLayout.closest('.opp-page');
+    page?.querySelectorAll('.opp-detail-heading, .opp-detail-toolbar').forEach(element => observer.observe(element));
+    window.addEventListener('resize', resize);
+    return () => { observer.disconnect(); window.removeEventListener('resize', resize); estimationLayout.style.removeProperty('--opp-estimation-height'); };
+  }, [estimationLayout]);
   const estimationDraft = useRef<(() => Estimation) | null>(null);
   const registerDraft = useCallback((reader: (() => Estimation) | null) => { estimationDraft.current = reader; }, []);
   const { id } = useParams(), service = useOpportunityService(), access = useOpportunityAccess(), [params, setParams] = useSearchParams();
@@ -216,12 +230,12 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
         </div>
       </div>
     </header>
-    <Tabs value={active} onValueChange={async tab => { if (await confirm()) setParams(tab === 'overview' ? {} : { tab }); }}>
+    <Tabs value={active} onValueChange={async tab => { if (await confirm()) { if (tab !== active) setSelectedVersion(null); setParams(tab === 'overview' ? {} : { tab }); } }}>
       <div className="opp-detail-toolbar">
         <TabsList className="opp-tabs">{tabs.map(tab => <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>)}</TabsList>
         <ReviewActions opportunity={active === 'estimation' ? { ...o, allowedActions: o.allowedActions.filter(action => action !== 'SUBMIT_ESTIMATE') } : o} onSaved={resource.setData} variant="toolbar" selectedVersion={selectedVersion} getEstimation={() => estimationDraft.current?.()} />
       </div>
-      <div className="opp-detail-layout mt-3">
+      <div ref={active === 'estimation' && !awaitingEstimation ? setEstimationLayout : undefined} className={`opp-detail-layout mt-3${active === 'estimation' && !awaitingEstimation ? ' opp-estimation-fit' : ''}`}>
       <div className="opp-detail-workspace">
       {tabs.map(tab => <TabsContent key={tab.key} value={tab.key} className="mt-0">
         {tab.key !== 'overview' && awaitingEstimation ? <div role="status" className="flex flex-col items-center rounded-lg border border-dashed bg-background px-6 py-10 text-center">
@@ -229,7 +243,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
           <h3 className="mt-3 text-sm font-semibold">Available after CEO approval</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">This opportunity is currently in {o.stageId === 1 ? 'Identified' : 'Qualifying (Go/No-Go)'}. {tab.label} will be available once the CEO approves this opportunity and it moves to the Solution/Scoping Estimation (Engineering) stage.</p>
         </div> : tab.key === 'overview' ? <Overview opportunity={o} />
-          : tab.key === 'estimation' ? <EstimationModule opportunity={o} onSaved={resource.setData} readOnly={false} registerDraft={registerDraft} sidebarTarget={estimationSidebar} selectedVersion={selectedVersion} onSelectVersion={setSelectedVersion} />
+          : tab.key === 'estimation' ? <EstimationModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} registerDraft={registerDraft} sidebarTarget={estimationSidebar} selectedVersion={selectedVersion} onSelectVersion={setSelectedVersion} />
           : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} />
           : tab.key === 'documents' ? <Documents opportunity={o} />
           : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />

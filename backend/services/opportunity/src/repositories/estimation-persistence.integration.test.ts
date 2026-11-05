@@ -10,7 +10,7 @@ import type { OpportunityEstimation } from './opportunity.repository';
 const db = require('../config/db');
 
 // All test writes are connection-local temporary tables, never application rows.
-test('two-table persistence creates, edits, submits and deletes with exact previous-row history', { skip: process.env.ESTIMATION_DB_TEST !== 'true' }, async t => {
+test('two-table persistence creates, edits and submits with exact previous-row history', { skip: process.env.ESTIMATION_DB_TEST !== 'true' }, async t => {
   const client = new Client({ ...env.db, connectionTimeoutMillis: 5000, statement_timeout: 10000 });
   await client.connect();
   try {
@@ -33,13 +33,17 @@ test('two-table persistence creates, edits, submits and deletes with exact previ
     assert.equal(first.currencyCode, 'USD');
     assert.equal(first.version, 1);
     assert.equal(first.revision, 1);
-    assert.equal((await estimates.findEstimation(10))!.revision, 2);
-    const second = await estimates.saveEstimationVersion(10, { ...initial, revision: 2 }, 'Alternative', 7, 'create-2');
+    assert.equal((await estimates.findEstimation(10))!.revision, 1);
+    assert.deepEqual((await client.query('SELECT isselected,is_current FROM tbl_opportunity_estimation')).rows, [{ isselected: false, is_current: true }]);
+    assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation')).rows[0].n, 1, 'First save creates exactly one row');
+    const second = await estimates.saveEstimationVersion(10, { ...initial, revision: 1 }, 'Alternative', 7, 'create-2');
     assert.equal(second.version, 2);
-    assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation WHERE is_current=TRUE')).rows[0].n, 0, 'No working copy or unselected estimate is current');
+    assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation')).rows[0].n, 2, 'Two saves create exactly two rows');
+    assert.equal((await client.query("SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation WHERE NOT (resource_allocation ? 'saved')")).rows[0].n, 0);
+    assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation WHERE is_current=TRUE')).rows[0].n, 2, 'Each saved estimate has its own current row');
     assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation_tracker')).rows[0].n, 0);
     const previous = (await client.query('SELECT to_jsonb(e) AS row FROM tbl_opportunity_estimation e WHERE estimation_id=$1', [first.id])).rows[0].row;
-    const edited = { ...initial, revision: 3, rows: [{ ...initial.rows[0], hours: '80' }], grid: { ...initial.grid!, durations: [{ phaseId: 1, weeks: '2' }] }, total: '2000.00' };
+    const edited = { ...initial, revision: 2, rows: [{ ...initial.rows[0], hours: '80' }], grid: { ...initial.grid!, durations: [{ phaseId: 1, weeks: '2' }] }, total: '2000.00' };
     const updated = await estimates.saveEstimationVersion(10, edited, 'Renamed', 8, 'edit-1', first.id, 1);
     assert.equal(updated.id, first.id);
     assert.equal(updated.version, 1);
@@ -48,55 +52,50 @@ test('two-table persistence creates, edits, submits and deletes with exact previ
     assert.equal(updated.estimation.total, '2000.00');
     assert.equal((await estimates.listEstimationVersions(10)).length, 2);
     assert.deepEqual((await client.query("SELECT to_jsonb(t)-'tracker_id' AS row FROM tbl_opportunity_estimation_tracker t")).rows, [{ row: previous }]);
-    assert.equal((await estimates.findEstimation(10))!.revision, 4);
+    assert.equal((await estimates.findEstimation(10))!.revision, 3);
     assert.deepEqual((await estimates.findEstimationVersion(10, first.id))!.estimation.grid, edited.grid);
     assert.equal(await estimates.findEstimationVersion(20, first.id), null);
     assert.equal((await estimates.saveEstimationVersion(10, edited, 'Renamed', 8, 'edit-1', first.id, 1)).id, first.id);
-    await assert.rejects(estimates.saveEstimationVersion(10, { ...edited, revision: 4 }, 'Stale', 8, 'stale-1', first.id, 1), /changed/);
+    await assert.rejects(estimates.saveEstimationVersion(10, { ...edited, revision: 3 }, 'Stale', 8, 'stale-1', first.id, 1), /changed/);
     await assert.rejects(estimates.saveEstimationVersion(10, edited, 'Stale working', 8, 'stale-2', first.id, 2), /changed/);
     await assert.rejects(estimates.saveEstimationVersion(10, { ...edited, revision: 4 }, 'Retry old create', 7, 'create-1'), /already been processed/);
     await client.query(`CREATE FUNCTION pg_temp.reject_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'History unavailable'; END $$;
       CREATE TRIGGER reject_history BEFORE INSERT ON tbl_opportunity_estimation_tracker FOR EACH ROW EXECUTE PROCEDURE pg_temp.reject_history()`);
     const beforeFailure = (await client.query('SELECT to_jsonb(e) AS row FROM tbl_opportunity_estimation e ORDER BY estimation_id')).rows;
-    await assert.rejects(estimates.saveEstimationVersion(10, { ...edited, revision: 4 }, 'Failed', 8, 'failed', first.id, 2), /History unavailable/);
+    await assert.rejects(estimates.saveEstimationVersion(10, { ...edited, revision: 3 }, 'Failed', 8, 'failed', first.id, 2), /History unavailable/);
     assert.deepEqual((await client.query('SELECT to_jsonb(e) AS row FROM tbl_opportunity_estimation e ORDER BY estimation_id')).rows, beforeFailure);
     await client.query('DROP TRIGGER reject_history ON tbl_opportunity_estimation_tracker');
-    await assert.rejects(db.transaction(async (c: any) => estimates.submitSelectedEstimation(c, 10, first.id, 4, 1, 7)), /changed/);
+    await assert.rejects(db.transaction(async (c: any) => estimates.submitSelectedEstimation(c, 10, first.id, 3, 1, 7)), /changed/);
     await db.transaction(async (c: any) => {
       await c.query('SELECT opportunity_id FROM tbl_opportunity WHERE opportunity_id=10 FOR UPDATE');
-      await estimates.submitSelectedEstimation(c, 10, first.id, 4, 2, 7);
+      await estimates.submitSelectedEstimation(c, 10, first.id, 3, 2, 7);
       await c.query('UPDATE tbl_opportunity SET stage_id=4,sub_stage_id=8 WHERE opportunity_id=10');
     });
     assert.equal((await estimates.listEstimationVersions(10)).length, 2, 'Submission must not create another named estimate');
     assert.equal((await estimates.findEstimationVersion(10, first.id))!.status, 'SUBMITTED');
     assert.equal((await estimates.findEstimation(10))!.status, 'SUBMITTED');
     assert.equal((await client.query('SELECT isselected FROM tbl_opportunity_estimation WHERE estimation_id=$1', [first.id])).rows[0].isselected, true);
-    assert.deepEqual((await client.query('SELECT estimation_id::TEXT AS id FROM tbl_opportunity_estimation WHERE is_current=TRUE')).rows, [{ id: first.id }]);
-    const reviewUpdate = await estimates.saveEstimationVersion(10, { ...edited, revision: 5 }, 'During review', 9, 'review-edit', first.id, 3);
-    assert.equal(reviewUpdate.id, first.id);
-    assert.equal(reviewUpdate.status, 'SUBMITTED');
-    assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation_tracker')).rows[0].n, 3);
-    await estimates.saveEstimationVersion(10, { ...edited, revision: 6, rows: [{ ...edited.rows[0], hours: '120' }], total: '3000.00' }, 'Another alternative during review', 9, 'review-alternative');
+    assert.deepEqual((await client.query('SELECT estimation_id::TEXT AS id FROM tbl_opportunity_estimation WHERE isselected=TRUE')).rows, [{ id: first.id }]);
+    const submittedRows = (await client.query('SELECT to_jsonb(e) AS row FROM tbl_opportunity_estimation e ORDER BY estimation_id')).rows;
+    await assert.rejects(estimates.saveEstimationVersion(10, { ...edited, revision: 4 }, 'During review', 9, 'review-edit', first.id, 3), /Estimation already submitted/);
+    await assert.rejects(estimates.saveEstimation(10, { ...edited, revision: 5 }, 9), /Estimation already submitted/);
+    assert.deepEqual((await client.query('SELECT to_jsonb(e) AS row FROM tbl_opportunity_estimation e ORDER BY estimation_id')).rows, submittedRows);
+    assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation_tracker')).rows[0].n, 2, 'Rejected team edits must not archive any row');
+    await estimates.saveEstimationVersion(10, { ...edited, revision: 4, rows: [{ ...edited.rows[0], hours: '120' }], total: '3000.00' }, 'Another alternative during review', 9, 'review-alternative');
     assert.equal((await estimates.findEstimation(10))!.total, '2000.00', 'An alternative must not replace the estimate selected for CEO review');
     assert.deepEqual((await estimates.listEstimationVersions(10, true)).map(row => row.id), [first.id], 'CEO sees only the selected submitted estimate, even after another alternative is saved');
-    assert.deepEqual((await client.query('SELECT estimation_id::TEXT AS id FROM tbl_opportunity_estimation WHERE is_current=TRUE')).rows, [{ id: first.id }], 'Saving an alternative keeps only the submitted estimate current');
+    assert.deepEqual((await client.query('SELECT estimation_id::TEXT AS id FROM tbl_opportunity_estimation WHERE isselected=TRUE')).rows, [{ id: first.id }], 'Saving an alternative preserves the submitted selection');
     await client.query('UPDATE tbl_opportunity SET stage_id=5,sub_stage_id=10 WHERE opportunity_id=10');
     await assert.rejects(estimates.saveEstimationVersion(10, { ...edited, revision: 6 }, 'Too late', 9, 'late', first.id, 4), /read-only/);
     await client.query('UPDATE tbl_opportunity SET stage_id=3,sub_stage_id=7 WHERE opportunity_id=10');
-    const beforeDelete = (await client.query('SELECT to_jsonb(e) AS row FROM tbl_opportunity_estimation e WHERE estimation_id=$1', [second.id])).rows[0].row;
-    await estimates.deleteEstimationVersion(10, second.id, 7);
-    assert.equal((await estimates.listEstimationVersions(10)).length, 2);
-    assert.equal(await estimates.findEstimationVersion(10, second.id), null);
-    assert.deepEqual((await client.query("SELECT to_jsonb(t)-'tracker_id' AS row FROM tbl_opportunity_estimation_tracker t WHERE estimation_id=$1", [second.id])).rows, [{ row: beforeDelete }]);
-    assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation WHERE estimation_id=$1', [second.id])).rows[0].n, 1, 'Deletion retains the audited record');
     const replacement = (await estimates.listEstimationVersions(10)).find(row => row.id !== first.id)!;
     const previousCurrent = (await client.query('SELECT to_jsonb(e) AS row FROM tbl_opportunity_estimation e WHERE estimation_id=$1', [first.id])).rows[0].row;
     await db.transaction(async (c: any) => {
       await c.query('SELECT opportunity_id FROM tbl_opportunity WHERE opportunity_id=10 FOR UPDATE');
       await estimates.submitSelectedEstimation(c, 10, replacement.id, (await estimates.findEstimation(10))!.revision, replacement.revision, 7);
     });
-    assert.deepEqual((await client.query('SELECT estimation_id::TEXT AS id FROM tbl_opportunity_estimation WHERE is_current=TRUE')).rows, [{ id: replacement.id }]);
-    assert.deepEqual((await client.query('SELECT isselected,is_current FROM tbl_opportunity_estimation WHERE estimation_id=$1', [first.id])).rows, [{ isselected: false, is_current: false }]);
+    assert.deepEqual((await client.query('SELECT estimation_id::TEXT AS id FROM tbl_opportunity_estimation WHERE isselected=TRUE')).rows, [{ id: replacement.id }]);
+    assert.deepEqual((await client.query('SELECT isselected,is_current FROM tbl_opportunity_estimation WHERE estimation_id=$1', [first.id])).rows, [{ isselected: false, is_current: true }]);
     assert.deepEqual((await client.query("SELECT to_jsonb(t)-'tracker_id' AS row FROM tbl_opportunity_estimation_tracker t WHERE estimation_id=$1 ORDER BY tracker_id DESC LIMIT 1", [first.id])).rows, [{ row: previousCurrent }]);
     const columns = (await client.query("SELECT attname FROM pg_attribute WHERE attrelid='tbl_opportunity_estimation'::REGCLASS AND attnum>0 AND NOT attisdropped")).rows.map(row => row.attname);
     assert.equal(columns.includes('revision'), false);
@@ -127,14 +126,14 @@ test('CEO repricing archives one exact previous row, preserves master rates, and
       rows: [{ id: 'grid-1-PM', workItem: 'Discovery', hours: '40', people: 1, hourlyRate: '1' }] };
     const saved = await estimates.saveEstimationVersion(10, input, 'Original', 7, 'create');
     assert.equal(saved.estimation.total, '1000.00', 'Team cannot override master rates on creation');
-    await assert.rejects(estimates.updateEstimationRates(10, saved.id, 1, [{ roleCode: 'PM', rate: '8000' }], 9), /selected, submitted/);
+    await assert.rejects(estimates.updateEstimationRates(10, saved.id, 1, [{ roleCode: 'PM', rate: '8000' }], 9), /read-only/);
     // Set up the submitted selection without including submission history in
     // this rate-update assertion; the previous test exercises real submission.
     await client.query(`UPDATE tbl_opportunity_estimation SET isselected=TRUE,is_current=TRUE,
       resource_allocation=jsonb_set(jsonb_set(resource_allocation,'{status}','"SUBMITTED"'::JSONB),'{saved,status}','"SUBMITTED"'::JSONB)
       WHERE estimation_id=$1`, [saved.id]);
     await client.query('UPDATE tbl_opportunity SET stage_id=4,sub_stage_id=8 WHERE opportunity_id=10');
-    const alternative = await estimates.saveEstimationVersion(10, { ...input, revision: 2 }, 'Alternative after submission', 7, 'alternative');
+    const alternative = await estimates.saveEstimationVersion(10, { ...input, revision: 1 }, 'Alternative after submission', 7, 'alternative');
     await assert.rejects(estimates.updateEstimationRates(10, alternative.id, 1, [{ roleCode: 'PM', rate: '8000' }], 9), /selected, submitted/);
     assert.deepEqual((await estimates.listEstimationVersions(10, true)).map(row => row.id), [saved.id]);
     const mainCount = (await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation')).rows[0].n;
@@ -146,7 +145,7 @@ test('CEO repricing archives one exact previous row, preserves master rates, and
     assert.equal(updated.estimation.total, '2000.00');
     assert.equal(updated.isSelected, true);
     assert.equal(updated.status, 'SUBMITTED');
-    assert.deepEqual((await client.query('SELECT estimation_id::TEXT AS id FROM tbl_opportunity_estimation WHERE is_current=TRUE')).rows, [{ id: saved.id }]);
+    assert.deepEqual((await client.query('SELECT estimation_id::TEXT AS id FROM tbl_opportunity_estimation WHERE isselected=TRUE')).rows, [{ id: saved.id }]);
     assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation')).rows[0].n, mainCount, 'CEO rate updates must not insert any main-table row');
     assert.deepEqual(updated.estimation.grid, input.grid);
     assert.equal((await estimates.findEstimation(10))!.total, '2000.00');
@@ -154,18 +153,20 @@ test('CEO repricing archives one exact previous row, preserves master rates, and
     assert.equal(Number((await client.query('SELECT default_rate FROM mst_rate')).rows[0].default_rate), 4000);
     assert.deepEqual((await client.query('SELECT rate_snapshot FROM tbl_opportunity_estimation WHERE estimation_id=$1', [saved.id])).rows[0].rate_snapshot.roles, { PM: { rate: '8000', rateType: 'Monthly', currencyCode: 'USD' } });
     await assert.rejects(estimates.updateEstimationRates(10, saved.id, 1, [{ roleCode: 'PM', rate: '9000' }], 9), /changed/);
-    await assert.rejects(estimates.updateEstimationRates(20, saved.id, 2, [{ roleCode: 'PM', rate: '9000' }], 9), /changed/);
+    await assert.rejects(estimates.updateEstimationRates(20, saved.id, 2, [{ roleCode: 'PM', rate: '9000' }], 9), /read-only/);
     await assert.rejects(estimates.updateEstimationRates(10, saved.id, 2, [{ roleCode: 'Unknown', rate: '9000' }], 9), /technical roles/);
     assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation_tracker')).rows[0].n, 1);
-    const teamEdit = await estimates.saveEstimationVersion(10, { ...input, revision: 4, rows: [{ ...input.rows[0], hours: '80' }], grid: { ...input.grid!, durations: [{ phaseId: 1, weeks: '2' }] } }, 'Original', 7, 'edit', saved.id, 2);
-    assert.equal(teamEdit.estimation.total, '4000.00', 'Resource edits preserve the CEO override instead of accepting a client rate');
+    await assert.rejects(estimates.saveEstimationVersion(10, { ...input, revision: 3 }, 'Original', 7, 'blocked-team-edit', saved.id, 2), /Estimation already submitted/);
     await client.query(`CREATE FUNCTION pg_temp.reject_rates_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'History unavailable'; END $$;
       CREATE TRIGGER reject_rates_history BEFORE INSERT ON tbl_opportunity_estimation_tracker FOR EACH ROW EXECUTE PROCEDURE pg_temp.reject_rates_history()`);
-    await assert.rejects(estimates.updateEstimationRates(10, saved.id, 3, [{ roleCode: 'PM', rate: '9000' }], 9), /History unavailable/);
-    assert.equal((await estimates.findEstimationVersion(10, saved.id))!.estimation.total, '4000.00');
+    await assert.rejects(estimates.updateEstimationRates(10, saved.id, 2, [{ roleCode: 'PM', rate: '9000' }], 9), /History unavailable/);
+    assert.equal((await estimates.findEstimationVersion(10, saved.id))!.estimation.total, '2000.00');
     await client.query('DROP TRIGGER reject_rates_history ON tbl_opportunity_estimation_tracker');
     await client.query('UPDATE tbl_opportunity SET stage_id=5,sub_stage_id=10 WHERE opportunity_id=10');
     await assert.rejects(estimates.updateEstimationRates(10, saved.id, 3, [{ roleCode: 'PM', rate: '9000' }], 9), /read-only/);
+    await client.query('UPDATE tbl_opportunity SET stage_id=3,sub_stage_id=7 WHERE opportunity_id=10');
+    const teamEdit = await estimates.saveEstimationVersion(10, { ...input, revision: 3, rows: [{ ...input.rows[0], hours: '80' }], grid: { ...input.grid!, durations: [{ phaseId: 1, weeks: '2' }] } }, 'Original', 7, 'edit', saved.id, 2);
+    assert.equal(teamEdit.estimation.total, '4000.00', 'Resource edits preserve the CEO override instead of accepting a client rate');
     // An older hourly-only snapshot should use the matching displayed monthly
     // master when first edited, preserving the exact original row in history.
     await client.query('UPDATE mst_rate SET default_rate=345465.03');
@@ -175,7 +176,7 @@ test('CEO repricing archives one exact previous row, preserves master rates, and
       person_weeks_cost=jsonb_set(person_weeks_cost,'{total}','"172732.51"'::JSONB) WHERE opportunity_id=20`,
     [JSON.stringify({ rows: [{ id: 'grid-1-PM', hourlyRate: '2159.1564' }] })]);
     const legacyPrevious = (await client.query('SELECT to_jsonb(e) AS row FROM tbl_opportunity_estimation e WHERE estimation_id=$1', [legacy.id])).rows[0].row;
-    const legacyUpdated = await estimates.saveEstimationVersion(20, { ...legacyInput, revision: 2 }, 'Old hourly estimate', 7, 'legacy-edit', legacy.id, 1);
+    const legacyUpdated = await estimates.saveEstimationVersion(20, { ...legacyInput, revision: 1 }, 'Old hourly estimate', 7, 'legacy-edit', legacy.id, 1);
     assert.equal(legacyUpdated.estimation.rates![0].rate, '345465.03');
     assert.equal(legacyUpdated.estimation.total, '172732.52');
     assert.deepEqual((await client.query("SELECT to_jsonb(t)-'tracker_id' AS row FROM tbl_opportunity_estimation_tracker t WHERE estimation_id=$1", [legacy.id])).rows, [{ row: legacyPrevious }]);
@@ -189,7 +190,7 @@ test('current-selection migration fixes old flags, preserves exact named history
   try {
     await client.query('SET search_path TO pg_temp; CREATE TEMP TABLE tbl_opportunity (opportunity_id INTEGER PRIMARY KEY); INSERT INTO tbl_opportunity VALUES (10)');
     await client.query(readFileSync(path.resolve(process.cwd(), '../../database/migrations/20261103_opportunity_estimation_persistence.sql'), 'utf8').replace(/CREATE TABLE IF NOT EXISTS/g, 'CREATE TEMP TABLE IF NOT EXISTS'));
-    await client.query('ALTER TABLE tbl_opportunity_estimation DROP CONSTRAINT chk_estimation_current_selection');
+    await client.query('ALTER TABLE tbl_opportunity_estimation DROP CONSTRAINT IF EXISTS chk_estimation_current_selection');
     for (const [name, selected, current, allocation] of [
       ['', false, true, { rows: [] }],
       ['Selected', true, false, { saved: { version: 1, status: 'SUBMITTED' }, rows: [] }],
@@ -212,5 +213,40 @@ test('current-selection migration fixes old flags, preserves exact named history
     assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation_tracker')).rows[0].n, 2);
     assert.deepEqual((await client.query('SELECT estimation_name FROM tbl_opportunity_estimation WHERE is_current=TRUE')).rows, [{ estimation_name: 'Selected' }]);
     await assert.rejects(client.query("UPDATE tbl_opportunity_estimation SET is_current=FALSE WHERE estimation_name='Selected'"), /chk_estimation_current_selection/);
+  } finally { await client.end(); }
+});
+
+
+test('single-row migration archives internal copies, recovers lone drafts and keeps current independent of selection', { skip: process.env.ESTIMATION_DB_TEST !== 'true' }, async () => {
+  const client = new Client({ ...env.db, connectionTimeoutMillis: 5000, statement_timeout: 10000 });
+  await client.connect();
+  try {
+    await client.query('SET search_path TO pg_temp; CREATE TEMP TABLE tbl_opportunity (opportunity_id INTEGER PRIMARY KEY); INSERT INTO tbl_opportunity VALUES (10),(20)');
+    await client.query(readFileSync(path.resolve(process.cwd(), '../../database/migrations/20261103_opportunity_estimation_persistence.sql'), 'utf8').replace(/CREATE TABLE IF NOT EXISTS/g, 'CREATE TEMP TABLE IF NOT EXISTS'));
+    for (const [opportunityId, name, selected, current, saved] of [
+      [10,'',false,true,null], [10,'Selected',true,false,{version:1,status:'SUBMITTED'}],
+      [10,'Alternative',false,false,{version:2,status:'SAVED'}], [20,'',false,false,null],
+    ] as const) await client.query(`INSERT INTO tbl_opportunity_estimation
+      (opportunity_id,estimation_name,isselected,is_current,resource_allocation,rate_snapshot,person_weeks,person_weeks_cost,created_by)
+      VALUES ($1,$2,$3,$4,$5::JSONB,'{}','{}','{}',7)`, [opportunityId,name,selected,current,JSON.stringify({rows:[],...(saved ? {saved} : {})})]);
+    await client.query('CREATE UNIQUE INDEX uq_opportunity_estimation_current ON tbl_opportunity_estimation(opportunity_id) WHERE is_current=TRUE');
+    await client.query('ALTER TABLE tbl_opportunity_estimation ADD CONSTRAINT chk_estimation_current_selection CHECK(is_current=isselected) NOT VALID');
+    const previous = (await client.query('SELECT to_jsonb(e) AS row FROM tbl_opportunity_estimation e ORDER BY estimation_id')).rows;
+    const migration = readFileSync(path.resolve(process.cwd(), '../../database/migrations/20261104_estimation_single_row.sql'), 'utf8');
+    await client.query(migration);
+    const main = (await client.query('SELECT estimation_name,isselected,is_current FROM tbl_opportunity_estimation ORDER BY estimation_id')).rows;
+    assert.deepEqual(main, [
+      {estimation_name:'Selected',isselected:true,is_current:true},
+      {estimation_name:'Alternative',isselected:false,is_current:true},
+      {estimation_name:'Recovered estimate 4',isselected:false,is_current:true},
+    ]);
+    assert.deepEqual((await client.query("SELECT to_jsonb(t)-'tracker_id' AS row FROM tbl_opportunity_estimation_tracker t ORDER BY estimation_id")).rows, previous);
+    await client.query(migration);
+    assert.equal((await client.query('SELECT COUNT(*)::INT AS n FROM tbl_opportunity_estimation_tracker')).rows[0].n, 4, 'Repeating cleanup adds no history');
+    await assert.rejects(client.query(`INSERT INTO tbl_opportunity_estimation(opportunity_id,resource_allocation,rate_snapshot,person_weeks,person_weeks_cost,created_by)
+      VALUES(10,'{}','{}','{}','{}',7)`), /chk_estimation_named_row/);
+    const columns = (await client.query("SELECT column_name,column_default FROM information_schema.columns WHERE table_schema LIKE 'pg_temp%' AND table_name='tbl_opportunity_estimation' AND column_name IN ('is_current','isselected')")).rows;
+    assert.equal(columns.find(row=>row.column_name==='is_current').column_default, 'true');
+    assert.equal(columns.find(row=>row.column_name==='isselected').column_default, 'false');
   } finally { await client.end(); }
 });

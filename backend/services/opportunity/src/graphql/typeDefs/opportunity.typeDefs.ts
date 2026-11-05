@@ -369,7 +369,6 @@ export const opportunityTypeDefs = `#graphql
 
   extend type Mutation {
     saveEstimationVersion(opportunityId: Int!, estimation: OpportunityEstimationInput!, name: String!, requestKey: String!, sourceVersionId: ID, sourceRevision: Int): OpportunityEstimationVersion!
-    deleteEstimationVersion(opportunityId: Int!, versionId: ID!): Boolean!
     updateEstimationRates(opportunityId: Int!, estimationId: ID!, revision: Int!, rates: [OpportunityEstimationRateUpdateInput!]!): OpportunityEstimationVersion!
     saveOpportunityScope(opportunityId: Int!, scope: OpportunityScopeInput!, section: OpportunityAssessmentSection = ALL): Opportunity!
     saveOpportunityAnswer(opportunityId: Int!, responseId: Int!, revision: Int!, answer: String!): Opportunity!

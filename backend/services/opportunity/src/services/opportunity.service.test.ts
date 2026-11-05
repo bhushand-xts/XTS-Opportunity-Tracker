@@ -292,8 +292,9 @@ test('projects review actions only for the matching role and active review step'
       const expected = scenario.expected.get(step) ?? [];
       const actual = await service.allowedActions({ ...record, stageId, subStageId }, ctx());
       assert.equal(actual.includes('EDIT_ESTIMATION'), false);
-      assert.equal(actual.includes('EDIT_ESTIMATION_RATES'), scenario.actorRole === 'approver_gate2' && (stageId === 3 || stageId === 4));
-      assert.deepEqual(actual.filter(action => action !== 'EDIT_SCOPE' && action !== 'EDIT_ESTIMATION' && action !== 'EDIT_ESTIMATION_RATES'), expected,
+      assert.equal(actual.includes('EDIT_ESTIMATION_RATES'), scenario.actorRole === 'approver_gate2' && stageId === 4);
+      assert.equal(actual.includes('VIEW_ESTIMATION_RATES'), scenario.actorRole === 'approver_gate2' && stageId >= 3);
+      assert.deepEqual(actual.filter(action => action !== 'VIEW_ESTIMATION_RATES' && action !== 'EDIT_SCOPE' && action !== 'EDIT_ESTIMATION' && action !== 'EDIT_ESTIMATION_RATES'), expected,
         `Unexpected actions at ${step} for ${JSON.stringify(grants)}`);
     }
   }
@@ -720,7 +721,7 @@ test('complete role-based flow saves estimation, reviews it, submits a bid, nego
   await step('SUBMIT_ESTIMATE', 4, 8);
   await service.saveEstimation(10, { ...estimation!, assumptions: 'Updated during review' }, ctx());
   actorRole = 'approver_gate2';
-  assert.deepEqual(await service.allowedActions(current, ctx()), ['EDIT_ESTIMATION_RATES', 'EDIT_SCOPE', 'ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT']);
+  assert.deepEqual(await service.allowedActions(current, ctx()), ['VIEW_ESTIMATION_RATES', 'EDIT_ESTIMATION_RATES', 'EDIT_SCOPE', 'ESTIMATE_APPROVE', 'ESTIMATE_HOLD', 'ESTIMATE_REJECT']);
   await step('HOLD', 4, 9, true);
   await step('APPROVE', 5, 10);
   actorRole = 'SH';
@@ -748,7 +749,7 @@ test('Sales Head can negotiate or record Won/Lost after bid submission and resum
   assert.deepEqual(await service.allowedActions(current, ctx()), [...actions, 'CLOSE_OPPORTUNITY']);
   for (const roleCode of ['estimation_team', 'approver_gate2', 'sales_representative']) {
     actorRole = roleCode;
-    assert.deepEqual(await service.allowedActions(current, ctx()), []);
+    assert.deepEqual(await service.allowedActions(current, ctx()), roleCode === 'approver_gate2' ? ['VIEW_ESTIMATION_RATES'] : []);
     for (const action of actions) await assert.rejects(service.transitionWorkflow(10, action, 'Client update', null, ctx(), 3), /Sales Head role/);
   }
   actorRole = 'SH';
@@ -901,7 +902,7 @@ test('negotiation revision approval repeats the estimation cycle and decline res
   await assert.rejects(service.saveEstimation(10, { revision: 0, rows: [], assumptions: '', total: '' }, ctx()), /read-only/);
   await assert.rejects(service.transitionWorkflow(10, 'SUBMIT_ESTIMATE', null, null, ctx()), /Estimation Team/);
   actorRole = 'approver_gate2';
-  assert.deepEqual(await service.allowedActions(current, ctx()), ['ESTIMATE_REVISION_APPROVE', 'ESTIMATE_REVISION_DECLINE']);
+  assert.deepEqual(await service.allowedActions(current, ctx()), ['VIEW_ESTIMATION_RATES', 'ESTIMATE_REVISION_APPROVE', 'ESTIMATE_REVISION_DECLINE']);
   await assert.rejects(service.transitionWorkflow(10, 'APPROVE', null, null, ctx()), /No workflow action/);
   await service.transitionWorkflow(10, 'APPROVE_ESTIMATE_REVISION', 'Approved', null, ctx());
   assert.deepEqual([current.stageId, current.subStageId], [3, 7]);
@@ -966,25 +967,29 @@ test('estimate resource writes are team-only and opportunity rate writes are CEO
     actorRole = code;
     const actions = await service.allowedActions(current, ctx());
     assert.equal(actions.includes('EDIT_ESTIMATION'), code === 'estimation_team');
-    assert.equal(actions.includes('EDIT_ESTIMATION_RATES'), code === 'approver_gate2');
+    assert.equal(actions.includes('VIEW_ESTIMATION_RATES'), code === 'approver_gate2');
+    assert.equal(actions.includes('EDIT_ESTIMATION_RATES'), false);
     if (code !== 'estimation_team') {
       await assert.rejects(service.saveEstimationVersion(10, estimate, 'Test', 'request', ctx()), /Only the Estimation Team/);
       await assert.rejects(service.saveEstimation(10, estimate, ctx()), /Only the Estimation Team/);
-      await assert.rejects(service.deleteEstimationVersion(10, '1', ctx()), /Only the Estimation Team/);
     }
     if (code !== 'approver_gate2') await assert.rejects(service.updateEstimationRates(10, '1', 1, [{ roleCode: 'PM', rate: '8000' }], ctx()), /Only the CEO/);
   }
   assert.equal(save.mock.callCount(), 0);
   assert.equal(updateRates.mock.callCount(), 0);
   actorRole = 'approver_gate2';
+  current = { ...current, stageId: 4, subStageId: 8 };
+  assert.equal((await service.allowedActions(current, ctx())).includes('EDIT_ESTIMATION_RATES'), true);
   for (const rate of ['-1', '0', 'NaN', '1.12345']) await assert.rejects(service.updateEstimationRates(10, '1', 1, [{ roleCode: 'PM', rate }], ctx()), /positive rates/);
   await assert.rejects(service.updateEstimationRates(10, '1', 1, [{ roleCode: 'PM', rate: '1' }, { roleCode: 'PM', rate: '2' }], ctx()), /unique technical roles/);
   await service.updateEstimationRates(10, '1', 1, [{ roleCode: 'PM', rate: '8000' }], ctx());
   assert.deepEqual(updateRates.mock.calls[0].arguments, [10, '1', 1, [{ roleCode: 'PM', rate: '8000' }], 7]);
-  for (const [stageId, subStageId] of [[4,5], [5,10], [9,17]]) {
+  for (const [stageId, subStageId] of [[3,7], [4,5], [5,10], [5,11], [6,12], [7,13], [8,14], [9,17], [10,19]]) {
     current = { ...current, stageId, subStageId };
     await assert.rejects(service.updateEstimationRates(10, '1', 1, [{ roleCode: 'PM', rate: '8000' }], ctx()), /read-only/);
-    assert.equal((await service.allowedActions(current, ctx())).includes('EDIT_ESTIMATION_RATES'), false);
+    const actions = await service.allowedActions(current, ctx());
+    assert.equal(actions.includes('VIEW_ESTIMATION_RATES'), true);
+    assert.equal(actions.includes('EDIT_ESTIMATION_RATES'), false);
   }
   assert.equal(updateRates.mock.callCount(), 1);
 });

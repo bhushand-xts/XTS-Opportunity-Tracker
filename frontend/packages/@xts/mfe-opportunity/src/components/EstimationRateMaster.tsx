@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ChevronDown, LockKeyhole, Wallet, X } from 'lucide-react';
 import type { Currency, RateMaster } from '@xts/api-contracts';
 import { Badge, Button, Input, Popover, PopoverContent, PopoverTrigger, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@xts/design-system';
@@ -19,8 +19,9 @@ function RateValue({ role, editable, onChange, onValidity }: { role: RateMaster;
   }} className="ml-auto w-36 text-right tabular-nums" />{error && <p role="alert" className="text-xs text-destructive">Enter a positive rate with up to four decimal places.</p>}</div> : <span>{Number(role.defaultRate).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>;
 }
 
-export function EstimationRateMaster({ roles, currencies, currencyCode, editableRoleCodes, onRateChange, onValidationChange }: { roles: RateMaster[]; currencies: Currency[]; currencyCode: string; editableRoleCodes?: Set<string>; onRateChange?: (code: string, value: string) => void; onValidationChange?: (invalid: boolean) => void }) {
+export function EstimationRateMaster({ roles, currencies, currencyCode, inline = false, editableRoleCodes, onRateChange, onValidationChange }: { roles: RateMaster[]; currencies: Currency[]; currencyCode: string; inline?: boolean; editableRoleCodes?: Set<string>; onRateChange?: (code: string, value: string) => void; onValidationChange?: (invalid: boolean) => void }) {
   const [open, setOpen] = useState(false);
+  const panelId = useId();
   const invalidRoles = useRef(new Set<string>());
   function changeOpen(next: boolean) {
     setOpen(next);
@@ -30,15 +31,14 @@ export function EstimationRateMaster({ roles, currencies, currencyCode, editable
     if (valid) invalidRoles.current.delete(code); else invalidRoles.current.add(code);
     onValidationChange?.(invalidRoles.current.size > 0);
   }
-  return <Popover open={open} onOpenChange={changeOpen}>
-    <PopoverTrigger asChild><Button type="button" variant="outline" className="gap-2 bg-background"><Wallet className="size-4" aria-hidden="true" />Rate master<ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" /></Button></PopoverTrigger>
-    <PopoverContent align="end" className="w-[min(620px,calc(100vw-32px))] overflow-hidden rounded-lg border-t-[3px] border-t-indigo-500 p-0">
+  const trigger = <Button type="button" variant="outline" aria-expanded={inline ? open : undefined} aria-controls={inline ? panelId : undefined} className="gap-2 bg-background" onClick={inline ? () => changeOpen(!open) : undefined}><Wallet className="size-4" aria-hidden="true" />Rate master<ChevronDown className={`size-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" /></Button>;
+  const content = <>
       <div className="flex items-start gap-3 border-b bg-indigo-50/70 px-4 py-3 dark:bg-indigo-950/30">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Wallet className="size-4" aria-hidden="true" /></span>
-        <div className="min-w-0 flex-1"><h3 className="text-sm font-semibold">Rate master <span className="ml-1 text-xs font-normal text-muted-foreground">{roles.length} active {roles.length === 1 ? 'role' : 'roles'}</span></h3><p className="mt-1 text-xs text-muted-foreground">Reference rates for active technical roles.</p></div>
+        <div className="min-w-0 flex-1"><h3 className="text-sm font-semibold">Rate master <span className="ml-1 text-xs font-normal text-muted-foreground">{roles.length} {roles.length === 1 ? 'role' : 'roles'}</span></h3>{(onRateChange || !inline) && <p className="mt-1 text-xs text-muted-foreground">{onRateChange ? 'Adjust rates for this estimate. Costs recalculate automatically.' : 'Reference rates for active technical roles.'}</p>}</div>
         <Button type="button" size="icon" variant="ghost" className="size-7 shrink-0" aria-label="Close rate master" onClick={() => changeOpen(false)}><X className="size-4" aria-hidden="true" /></Button>
       </div>
-      <div className="max-h-[min(55vh,360px)] overflow-auto">
+      <div className={inline ? 'max-h-[min(30vh,240px)] overflow-auto' : 'max-h-[min(55vh,360px)] overflow-auto'}>
         <Table className="min-w-[440px]"><TableHeader className="sticky top-0 z-10 bg-indigo-50 dark:bg-indigo-950"><TableRow><TableHead className="pl-4 text-xs">Technical role</TableHead><TableHead className="text-xs">Currency</TableHead><TableHead className="text-right text-xs">Rate</TableHead><TableHead className="pr-4 text-right text-xs">Billing period</TableHead></TableRow></TableHeader>
           <TableBody>{roles.map(role => <TableRow key={role.roleCode}>
             <TableCell className="py-3 pl-4 text-sm font-medium" title={role.roleName}>{role.roleCode}</TableCell>
@@ -48,7 +48,11 @@ export function EstimationRateMaster({ roles, currencies, currencyCode, editable
           </TableRow>)}{!roles.length && <TableRow><TableCell colSpan={4} className="px-4 py-8 text-center text-sm text-muted-foreground">No active rates configured.</TableCell></TableRow>}</TableBody>
         </Table>
       </div>
-      <div className="flex items-center gap-2 border-t bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground"><LockKeyhole className="size-3.5 shrink-0" aria-hidden="true" /><span>{onRateChange ? 'Edit the selected role rates for this opportunity. Choose Update opportunity to save.' : 'Saved opportunity rates are shown where available; other rates come from Administration.'}</span></div>
-    </PopoverContent>
+      {onRateChange && <div className="flex items-center gap-2 border-t bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground"><LockKeyhole className="size-3.5 shrink-0" aria-hidden="true" /><span>Choose Update estimate to save these rates for this opportunity.</span></div>}
+  </>;
+  if (inline) return <div className="col-span-full min-w-0 space-y-3">{trigger}{open && <section id={panelId} aria-label="Rate master" className="overflow-hidden rounded-lg border border-t-[3px] border-t-indigo-500 bg-card">{content}</section>}</div>;
+  return <Popover open={open} onOpenChange={changeOpen}>
+    <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+    <PopoverContent align="end" aria-label="Rate master" className="w-[min(620px,calc(100vw-32px))] overflow-hidden rounded-lg border-t-[3px] border-t-indigo-500 p-0">{content}</PopoverContent>
   </Popover>;
 }

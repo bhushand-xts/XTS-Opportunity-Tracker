@@ -2,7 +2,7 @@ import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { estimationPayload, restoreEstimation } from '../lib/estimationPersistence';
-import { estimationWritable } from '../lib/opportunityPreparation';
+import { estimationWritable, estimationRatesWritable } from '../lib/opportunityPreparation';
 import type { OpportunityEstimation } from './opportunity.repository';
 
 test('allocation, rates, effort and USD costs round-trip without losing precision', () => {
@@ -17,6 +17,13 @@ test('allocation, rates, effort and USD costs round-trip without losing precisio
 test('estimates remain writable through CEO review and lock after approval', () => {
   for (const [stageId, subStageId] of [[3,7],[4,8],[4,9]]) assert.equal(estimationWritable({ stageId, subStageId }), true);
   for (const [stageId, subStageId] of [[4,5],[5,10],[6,12],[7,13],[8,14],[9,17],[10,19]]) assert.equal(estimationWritable({ stageId, subStageId }), false);
+});
+
+test('CEO rates can be edited only during pending or held estimation review', () => {
+  for (const subStageId of [8, 9]) assert.equal(estimationRatesWritable({ stageId: 4, subStageId }), true);
+  for (const [stageId, subStageId] of [[3,7], [4,5], [5,10], [5,11], [6,12], [7,13], [8,14], [9,17], [10,19]]) {
+    assert.equal(estimationRatesWritable({ stageId, subStageId }), false);
+  }
 });
 
 test('snapshot stores displayed billing rates by role once and calculates costs from unrounded monthly rates for every phase', () => {

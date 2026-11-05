@@ -49,33 +49,39 @@ node --test dist/services/opportunity/src/lib/opportunityAccess.test.js dist/ser
 
 Estimation persistence uses only `tbl_opportunity_estimation` and
 `tbl_opportunity_estimation_tracker`. The saved sidebar, viewing, editing,
-deletion and CEO submission all read the main table. No legacy records are
+and CEO submission all read the main table. No legacy records are
 imported. Names use the existing `estimation_name` column (500 characters);
 allocation, saved rates, person-weeks and USD costs use the four JSONB columns.
 No revision column is required: concurrency tokens are derived from creations
 and tracker history.
 
-Creating a named estimate adds no tracker record. Editing updates that same ID
+Creating a named estimate inserts exactly one main-table row and adds no tracker record.
+There is no stored working copy or unnamed draft row. Editing updates that same ID
 and copies exactly one complete previous row into the tracker, with original
 rates, names, flags and audit timestamps preserved. Both writes commit together
-or roll back together. Deletion retains the named row with a deleted marker in
-its allocation JSON and archives the previous row before hiding it from lists.
+or roll back together. Estimates have no delete action or delete mutation.
+Previously removed records remain hidden for compatibility with existing data.
 CEO submission marks the selected main-table estimate with `isselected` and
 restores its saved inputs for review. It creates no additional named estimate.
-Only that selected estimate has `is_current = TRUE`. Alternatives and the
-unnamed working copy have `is_current = FALSE`; the working copy is identified
-by its allocation metadata instead of the current flag. A main-table constraint
-keeps `is_current` equal to `isselected`.
+Every active saved estimate has `is_current = TRUE`, including alternatives.
+`isselected` defaults to FALSE and becomes TRUE only when the chosen estimate is
+submitted to the CEO. Only one estimate per opportunity can be selected; current
+and selected are independent flags. Deleted estimates have `is_current = FALSE`.
 During pending or held CEO review, the team can save alternatives but cannot
-replace the submitted selection; attempts show "Estimation already submitted."
+replace or edit the submitted selection; attempts show "Estimation already submitted."
 The CEO list, matrix and direct saved-estimate lookup expose only the selected
 submitted estimate. Rate updates are limited to that same submitted main-table
 row and never insert another main record; its exact previous row is archived once.
 
 Only the Estimation Team can create or edit estimates in Engineering (3/7), pending
-CEO review (4/8) and held CEO review (4/9). Submission and deletion remain limited
-to the Estimation Team. The CEO can edit billing rates for a saved estimate with
-the rate-only mutation and Update opportunity button. The main row's
+CEO review (4/8) and held CEO review (4/9). Submission remains limited
+to the Estimation Team. The selected submitted estimate is locked to team edits
+through pending and held review; unsubmitted alternatives remain editable.
+The CEO can view submitted estimate rates in every later workflow stage. Phase and
+role selectors are hidden for the CEO. Rate editing is available only in pending or
+held CEO estimation review (4/8, 4/9); rates are read-only after approval.
+The CEO can edit billing rates for the selected submitted estimate with
+the rate-only mutation and Update estimate button. The main row's
 `rate_snapshot.roles` stores billing rates by technical role code, including rate,
 billing period and USD currency. Costs are recalculated on the server, and exactly
 one complete previous named row is archived. Neither this mutation nor resource
@@ -87,8 +93,10 @@ opportunity's client-budget currency; saved rates are preserved on edit.
 Fresh installations use
 `database/migrations/20261103_opportunity_estimation_persistence.sql` for the
 main/tracker tables and indexes. It neither imports nor deletes existing data.
-Existing installations apply `20261104_estimation_current_selection.sql` to
-correct old current flags. It archives each changed named row once and preserves
-existing tracker rows unchanged; rerunning it adds no duplicate history.
+Existing installations apply `20261104_estimation_single_row.sql` after earlier
+migrations. It archives and removes redundant internal copies, recovers a lone
+old draft as a named estimate, and sets the current flag independently of selection.
+It removes the old unique-current index and equality constraint, preserves existing
+tracker rows unchanged, and adds no duplicate history when rerun.
 The PostgreSQL integration test is opt-in via `ESTIMATION_DB_TEST=true` and uses
 connection-local temporary tables only.

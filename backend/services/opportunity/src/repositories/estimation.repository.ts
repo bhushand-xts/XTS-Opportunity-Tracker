@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import { recordPreviousVersion } from '../../../../shared/trackerHistory';
 import { query, transaction } from '../config/db';
 import { conflict, notFound } from '../../../../shared/errors/graphqlErrors';
-import { assertEstimationWritable } from '../lib/opportunityPreparation';
+import { assertEstimationWritable, assertEstimationRatesWritable } from '../lib/opportunityPreparation';
 import { ESTIMATION_CURRENCY_CODE, applyEstimationRates, estimationPayload, estimationRates, restoreEstimation } from '../lib/estimationPersistence';
 import type { OpportunityEstimation } from './opportunity.repository';
 
@@ -20,16 +20,23 @@ export interface EstimationVersion {
   currencyCode: string; personWeeks: string; createdBy: number; createdAt: string;
   updatedBy: number | null; updatedAt: string | null; estimation: OpportunityEstimation;
 }
-// The working copy counts named creations and edits, avoiding a duplicate history
-// row on each named save. The named record's token counts only its own history.
-export const ESTIMATION_REVISION_SQL = `(CASE WHEN NOT (e.resource_allocation ? 'saved') THEN
-  (SELECT COUNT(*)::INTEGER FROM tbl_opportunity_estimation_tracker h WHERE h.opportunity_id = e.opportunity_id)
-  + (SELECT COUNT(*)::INTEGER FROM tbl_opportunity_estimation saved WHERE saved.opportunity_id = e.opportunity_id
-      AND saved.resource_allocation ? 'saved') + 1
-  ELSE (SELECT COUNT(*)::INTEGER + 1 FROM tbl_opportunity_estimation_tracker h WHERE h.estimation_id = e.estimation_id) END)`;
+// Opportunity concurrency is derived from saved rows and their history, without
+// storing a duplicate working copy or a revision column.
+export const ESTIMATION_REVISION_SQL = `((SELECT COUNT(*)::INTEGER FROM tbl_opportunity_estimation_tracker h
+    WHERE h.opportunity_id = e.opportunity_id)
+  + (SELECT COUNT(*)::INTEGER FROM tbl_opportunity_estimation saved
+    WHERE saved.opportunity_id = e.opportunity_id AND saved.resource_allocation ? 'saved'))`;
 const FIELDS = `e.estimation_id::TEXT, e.opportunity_id, e.estimation_name, e.isselected, e.resource_allocation,
   e.rate_snapshot, e.person_weeks, e.person_weeks_cost, e.created_by, e.created_dt, e.updated_by, e.updated_dt,
-  ${ESTIMATION_REVISION_SQL} AS revision`;
+  (SELECT COUNT(*)::INTEGER + 1 FROM tbl_opportunity_estimation_tracker h WHERE h.estimation_id = e.estimation_id) AS revision`;
+export async function estimationRevision(client: Pick<PoolClient, 'query'>, opportunityId: number): Promise<number> {
+  const result = await client.query<{ revision: number }>(`SELECT ${ESTIMATION_REVISION_SQL} AS revision
+    FROM (SELECT $1::INTEGER AS opportunity_id) e`, [opportunityId]);
+  return result.rows[0].revision;
+}
+async function assertRevision(client: PoolClient, opportunityId: number, expected: number) {
+  if (await estimationRevision(client, opportunityId) !== expected) throw conflict('The estimation changed. Refresh before saving.');
+}
 const ACTIVE_NAMED = `e.resource_allocation ? 'saved'
   AND COALESCE(e.resource_allocation->'saved'->>'deleted', 'false') = 'false'`;
 function version(row: StoredEstimate): EstimationVersion {
@@ -47,38 +54,24 @@ async function lockOpportunity(client: PoolClient, opportunityId: number): Promi
   assertEstimationWritable(result.rows[0]);
   return result.rows[0];
 }
-async function findWorking(client: Pick<PoolClient, 'query'>, opportunityId: number) {
-  const result = await client.query<StoredEstimate>(`SELECT ${FIELDS} FROM tbl_opportunity_estimation e
-    WHERE e.opportunity_id = $1 AND NOT (e.resource_allocation ? 'saved') FOR UPDATE OF e`, [opportunityId]);
-  return result.rows[0];
-}
 export async function findEstimation(opportunityId: number): Promise<OpportunityEstimation | null> {
-  const rows = await query<StoredEstimate>(`SELECT ${FIELDS} FROM tbl_opportunity_estimation e WHERE e.opportunity_id = $1 AND NOT (e.resource_allocation ? 'saved')`, [opportunityId]);
-  return rows[0] ? restoreEstimation(rows[0]) : null;
+  // Read the chosen estimate and its opportunity token in one database snapshot.
+  const rows = await query<StoredEstimate & { opportunityRevision: number }>(`SELECT ${FIELDS},
+      ${ESTIMATION_REVISION_SQL.replace(/e\.opportunity_id/g, 'o.opportunity_id')} AS "opportunityRevision"
+    FROM (SELECT $1::INTEGER AS opportunity_id) o
+    LEFT JOIN LATERAL (SELECT * FROM tbl_opportunity_estimation e
+      WHERE e.opportunity_id = o.opportunity_id AND ${ACTIVE_NAMED}
+      ORDER BY e.isselected DESC, COALESCE(e.updated_dt, e.created_dt) DESC, e.estimation_id DESC LIMIT 1) e ON TRUE`, [opportunityId]);
+  const row = rows[0];
+  if (row?.estimation_id) return { ...restoreEstimation(row), revision: row.opportunityRevision };
+  // After deleting the last estimate, expose the token without storing an empty row.
+  return row?.opportunityRevision ? { revision: row.opportunityRevision, rows: [], assumptions: '', total: '0.00', grid: null } : null;
 }
-async function saveWorking(client: PoolClient, opportunityId: number, estimate: OpportunityEstimation, userId: number, workflow: Workflow, archivePrevious: boolean) {
-  const payload = estimationPayload({ ...estimate, status: workflow.stageId === 4 ? 'SUBMITTED' : 'DRAFT' });
-  const params = [opportunityId, JSON.stringify(payload.allocation), JSON.stringify(payload.rates), JSON.stringify(payload.effort), JSON.stringify(payload.cost), userId];
-  const previous = await findWorking(client, opportunityId);
-  if (!previous) {
-    if (estimate.revision !== 0) throw conflict('The estimation changed. Refresh before saving.');
-    await client.query(`INSERT INTO tbl_opportunity_estimation
-      (opportunity_id, resource_allocation, rate_snapshot, person_weeks, person_weeks_cost, is_current, created_by)
-      VALUES ($1, $2::JSONB, $3::JSONB, $4::JSONB, $5::JSONB, FALSE, $6)`, params);
-    return;
-  }
-  if (previous.revision !== estimate.revision) throw conflict('The estimation changed. Refresh before saving.');
-  if (archivePrevious) await recordPreviousVersion(client, 'tbl_opportunity_estimation', previous.estimation_id);
-  await client.query(`UPDATE tbl_opportunity_estimation SET resource_allocation = $2::JSONB,
-    rate_snapshot = $3::JSONB, person_weeks = $4::JSONB, person_weeks_cost = $5::JSONB,
-    is_current = FALSE, updated_by = $6, updated_dt = clock_timestamp() WHERE opportunity_id = $1 AND NOT (resource_allocation ? 'saved')`, params);
-}
-export async function saveEstimation(opportunityId: number, estimate: OpportunityEstimation, userId: number) {
+export async function saveEstimation(opportunityId: number, _estimate: OpportunityEstimation, _userId: number) {
   return transaction(async client => {
     const workflow = await lockOpportunity(client, opportunityId);
-    const previous = await findWorking(client, opportunityId);
-    const canonical = await teamEstimate(client, estimate, previous);
-    return saveWorking(client, opportunityId, canonical, userId, workflow, true);
+    if (workflow.stageId === 4) throw conflict('Estimation already submitted.');
+    throw conflict('Enter an estimation name and use Save Estimation.');
   });
 }
 async function teamEstimate(client: PoolClient, estimate: OpportunityEstimation, previous?: StoredEstimate): Promise<OpportunityEstimation> {
@@ -136,24 +129,20 @@ export async function saveEstimationVersion(opportunityId: number, estimate: Opp
     let target: StoredEstimate | undefined;
     if (estimationId) {
       target = await findNamed(client, opportunityId, estimationId);
+      if (workflow.stageId === 4 && target?.isselected && target.resource_allocation.saved?.status === 'SUBMITTED') {
+        throw conflict('Estimation already submitted.');
+      }
       if (!target || target.revision !== savedRevision) throw conflict('The saved estimation changed. Refresh before editing.');
     }
     estimate = await teamEstimate(client, estimate, target);
-    // During review only edits to the submitted selection replace the review
-    // matrix. Saving another alternative must not change what the CEO approves.
-    if (workflow.stageId === 3 || target?.isselected) {
-      await saveWorking(client, opportunityId, estimate, userId, workflow, false);
-    } else {
-      const current = await findWorking(client, opportunityId);
-      if (!current || current.revision !== estimate.revision) throw conflict('The estimation changed. Refresh before saving.');
-    }
+    await assertRevision(client, opportunityId, estimate.revision);
     const payload = estimationPayload({ ...estimate, status: workflow.stageId === 4 ? 'SUBMITTED' : 'DRAFT' });
     if (!target) {
       const result = await client.query<StoredEstimate>(`INSERT INTO tbl_opportunity_estimation AS e
-        (opportunity_id, resource_allocation, rate_snapshot, person_weeks, person_weeks_cost, estimation_name, is_current, created_by)
+        (opportunity_id, resource_allocation, rate_snapshot, person_weeks, person_weeks_cost, estimation_name, isselected, is_current, created_by)
         VALUES ($1, $5::JSONB || jsonb_build_object('saved', jsonb_build_object(
           'version', COALESCE((SELECT MAX((resource_allocation->'saved'->>'version')::INTEGER) FROM tbl_opportunity_estimation WHERE opportunity_id = $1), 0) + 1,
-          'status', 'SAVED', 'requestKey', $3::TEXT)), $6::JSONB, $7::JSONB, $8::JSONB, $2, FALSE, $4)
+          'status', 'SAVED', 'requestKey', $3::TEXT)), $6::JSONB, $7::JSONB, $8::JSONB, $2, FALSE, TRUE, $4)
         RETURNING ${FIELDS}`, [opportunityId, name, requestKey, userId, JSON.stringify(payload.allocation), JSON.stringify(payload.rates), JSON.stringify(payload.effort), JSON.stringify(payload.cost)]);
       if (!result.rows[0]) throw conflict('Save an estimate before creating a named estimate.');
       return version(result.rows[0]);
@@ -162,52 +151,34 @@ export async function saveEstimationVersion(opportunityId: number, estimate: Opp
     const result = await client.query<StoredEstimate>(`UPDATE tbl_opportunity_estimation e SET
       resource_allocation = $6::JSONB || jsonb_build_object('saved', (e.resource_allocation->'saved') || jsonb_build_object('requestKey', $4::TEXT, 'status', $10::TEXT)),
       rate_snapshot = $7::JSONB, person_weeks = $8::JSONB, person_weeks_cost = $9::JSONB,
-      estimation_name = $3, updated_by = $5, updated_dt = clock_timestamp()
+      estimation_name = $3, isselected = CASE WHEN $10 = 'SAVED' THEN FALSE ELSE isselected END,
+      is_current = TRUE, updated_by = $5, updated_dt = clock_timestamp()
       WHERE e.opportunity_id = $1 AND e.estimation_id = $2::BIGINT RETURNING ${FIELDS}`,
     [opportunityId, target.estimation_id, name, requestKey, userId, JSON.stringify(payload.allocation), JSON.stringify(payload.rates), JSON.stringify(payload.effort), JSON.stringify(payload.cost), workflow.stageId === 3 ? 'SAVED' : target.resource_allocation.saved!.status]);
     return version(result.rows[0]);
   });
 }
-export async function deleteEstimationVersion(opportunityId: number, estimationId: string, userId: number): Promise<boolean> {
-  return transaction(async client => {
-    const workflow = await lockOpportunity(client, opportunityId);
-    if (workflow.stageId !== 3 || workflow.subStageId !== 7) throw conflict('The opportunity is no longer in estimation.');
-    const target = await findNamed(client, opportunityId, estimationId);
-    if (!target || target.resource_allocation.saved!.status !== 'SAVED') throw conflict('This saved estimate is unavailable or submitted and cannot be deleted.');
-    await recordPreviousVersion(client, 'tbl_opportunity_estimation', target.estimation_id);
-    await client.query(`UPDATE tbl_opportunity_estimation SET
-      resource_allocation = jsonb_set(resource_allocation, '{saved,deleted}', 'true'::JSONB),
-      isselected = FALSE, is_current = FALSE, updated_by = $3, updated_dt = clock_timestamp()
-      WHERE opportunity_id = $1 AND estimation_id = $2::BIGINT`, [opportunityId, estimationId, userId]);
-    return true;
-  });
-}
 // Rate-only updates never accept resource inputs or touch mst_rate. Locking the
-// parent serializes this operation with edits, deletion and CEO approval.
+// parent serializes this operation with edits and CEO approval.
 export async function updateEstimationRates(opportunityId: number, estimationId: string, revision: number, rates: { roleCode: string; rate: string }[], userId: number): Promise<EstimationVersion> {
   return transaction(async client => {
     const workflow = await lockOpportunity(client, opportunityId);
+    assertEstimationRatesWritable(workflow);
     const target = await findNamed(client, opportunityId, estimationId);
     if (!target || target.revision !== revision) throw conflict('The saved estimation changed. Refresh before updating rates.');
     if (!target.isselected || target.resource_allocation.saved?.status !== 'SUBMITTED') throw conflict('Only the selected, submitted estimation can be updated by the CEO.');
-    const working = await findWorking(client, opportunityId);
-    if (!working) throw conflict('The submitted estimation is unavailable. Refresh before updating rates.');
     const estimate = await teamEstimate(client, restoreEstimation(target), target);
     const savedRates = estimationRates(estimate);
     if (rates.some(rate => !savedRates.some(saved => saved.roleCode === rate.roleCode))) throw conflict('Only technical roles in this saved estimate can be repriced.');
     const next = { ...estimate, rates: savedRates.map(saved => ({ ...saved, rate: rates.find(rate => rate.roleCode === saved.roleCode)?.rate ?? saved.rate })) };
     const payload = estimationPayload(next);
-    // Archive exactly the previous named estimate, with all flags and audit
-    // fields intact. The review working copy is synchronized without a second
-    // tracker entry for the same user action.
+    // Archive exactly one previous estimate, with all flags and audit fields intact.
     await recordPreviousVersion(client, 'tbl_opportunity_estimation', target.estimation_id);
     const result = await client.query<StoredEstimate>(`UPDATE tbl_opportunity_estimation e SET
-      rate_snapshot = $3::JSONB, person_weeks_cost = $4::JSONB,
+      rate_snapshot = $3::JSONB, person_weeks_cost = $4::JSONB, is_current = TRUE,
       updated_by = $5, updated_dt = clock_timestamp()
       WHERE opportunity_id = $1 AND estimation_id = $2::BIGINT RETURNING ${FIELDS}`,
     [opportunityId, estimationId, JSON.stringify(payload.rates), JSON.stringify(payload.cost), userId]);
-    const current = await findWorking(client, opportunityId);
-    await saveWorking(client, opportunityId, { ...next, revision: current!.revision }, userId, workflow, false);
     return version(result.rows[0]);
   });
 }
@@ -215,12 +186,12 @@ export async function updateEstimationRates(opportunityId: number, estimationId:
 export async function submitSelectedEstimation(client: PoolClient, opportunityId: number, estimationId: string, expectedRevision: number, selectedRevision: number | undefined, userId: number) {
   const target = await findNamed(client, opportunityId, estimationId);
   if (!target || target.revision !== selectedRevision || target.person_weeks_cost.currencyCode !== ESTIMATION_CURRENCY_CODE) throw conflict('The selected estimation changed. Refresh and review it before submitting.');
-  await saveWorking(client, opportunityId, { ...restoreEstimation(target), revision: expectedRevision }, userId, { stageId: 4, subStageId: 8 }, false);
+  await assertRevision(client, opportunityId, expectedRevision);
   const previousSelections = await client.query<{ estimation_id: string }>(`SELECT estimation_id::TEXT FROM tbl_opportunity_estimation
     WHERE opportunity_id = $1 AND isselected = TRUE AND estimation_id <> $2::BIGINT FOR UPDATE`, [opportunityId, estimationId]);
   for (const previous of previousSelections.rows) {
     await recordPreviousVersion(client, 'tbl_opportunity_estimation', previous.estimation_id);
-    await client.query('UPDATE tbl_opportunity_estimation SET isselected = FALSE, is_current = FALSE, updated_by = $2, updated_dt = clock_timestamp() WHERE estimation_id = $1::BIGINT', [previous.estimation_id, userId]);
+    await client.query('UPDATE tbl_opportunity_estimation SET isselected = FALSE, updated_by = $2, updated_dt = clock_timestamp() WHERE estimation_id = $1::BIGINT', [previous.estimation_id, userId]);
   }
   await recordPreviousVersion(client, 'tbl_opportunity_estimation', target.estimation_id);
   await client.query(`UPDATE tbl_opportunity_estimation SET isselected = TRUE, is_current = TRUE,

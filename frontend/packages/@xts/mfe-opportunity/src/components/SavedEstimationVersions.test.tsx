@@ -47,7 +47,7 @@ it('confirms before replacing unsaved inputs and keeps the stored version unchan
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
   expect(onLoad).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Edit version' }));
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Edit estimate' }));
   await waitFor(() => expect(onLoad).toHaveBeenCalledWith(version));
   expect(JSON.stringify(version)).toBe(before);
 });
@@ -63,6 +63,7 @@ it('places saved estimations before the action row and permits exactly one saved
   const firstRadio = await screen.findByRole('radio', { name: 'Select Baseline version 1 for CEO review' });
   expect(screen.getByRole('button', { name: 'Submit to CEO' })).toBeDisabled();
   const table = screen.getByRole('table');
+  expect(within(table).queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
   const actions = screen.getByRole('region', { name: 'Estimation actions' });
   expect(table.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(firstRadio);
@@ -83,36 +84,20 @@ it('opens Edit with the saved name and sends the source version through Update',
   await waitFor(() => expect(onSave).toHaveBeenCalledWith('Revised', version));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Save Estimation' })).toBeInTheDocument());
 });
-it('requires delete confirmation, retains the dialog on failure, and reloads on success', async () => {
-  const onDelete = vi.fn(async () => false);
-  const list = vi.fn(async () => [version]);
-  render(<OpportunityServiceContext.Provider value={{ ...productionOpportunityService, estimationVersions: list }}><SavedEstimationVersions opportunityId="10" revision={1} editable saving={false} dirty={false} onSave={vi.fn()} onLoad={vi.fn()} onDelete={onDelete} /></OpportunityServiceContext.Provider>);
-  fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
-  expect(onDelete).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-  expect(onDelete).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Delete estimate' }));
-  await waitFor(() => expect(onDelete).toHaveBeenCalledWith(version));
-  expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-  onDelete.mockResolvedValue(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Delete estimate' }));
-  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
-  expect(list).toHaveBeenCalledTimes(2);
-});
-
-it('keeps Save/Update under the editor while sidebar cards retain selection, edit and delete actions', async () => {
+it('keeps Save/Update under the editor while sidebar cards retain selection, view and edit actions', async () => {
   render(<aside aria-label="Estimation sidebar" />);
   const target = screen.getByRole('complementary', { name: 'Estimation sidebar' });
-  const onSave = vi.fn(async () => true), onLoad = vi.fn(), onDelete = vi.fn(async () => true);
+  const onSave = vi.fn(async () => true), onLoad = vi.fn();
   const service = { ...productionOpportunityService, estimationVersions: vi.fn(async () => [version]) };
   function Workspace() {
     const [selected, setSelected] = useState<EstimationVersion | null>(null);
-    return <OpportunityServiceContext.Provider value={service}><main><SavedEstimationVersions sidebarTarget={target} opportunityId="10" revision={1} editable saving={false} dirty={false} onSave={onSave} onLoad={onLoad} onDelete={onDelete} selectedVersion={selected} onSelectVersion={setSelected} submitAction={<button disabled={!selected}>Submit to CEO</button>} /></main></OpportunityServiceContext.Provider>;
+    return <OpportunityServiceContext.Provider value={service}><main><SavedEstimationVersions sidebarTarget={target} opportunityId="10" revision={1} editable saving={false} dirty={false} onSave={onSave} onLoad={onLoad} selectedVersion={selected} onSelectVersion={setSelected} submitAction={<button disabled={!selected}>Submit to CEO</button>} /></main></OpportunityServiceContext.Provider>;
   }
   render(<Workspace />);
   const sidebar = within(target), editor = within(screen.getByRole('main'));
   const radio = await sidebar.findByRole('radio', { name: 'Select Baseline version 1 for CEO review' });
+  expect(sidebar.queryByText('V1')).not.toBeInTheDocument();
+  expect(sidebar.getByText(new Date(version.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }))).toBeInTheDocument();
   expect(editor.getByRole('textbox', { name: 'Estimation name' })).toBeInTheDocument();
   expect(sidebar.queryByRole('textbox', { name: 'Estimation name' })).not.toBeInTheDocument();
   expect(editor.queryByRole('list')).not.toBeInTheDocument();
@@ -125,10 +110,7 @@ it('keeps Save/Update under the editor while sidebar cards retain selection, edi
   fireEvent.click(editor.getByRole('button', { name: 'Update' }));
   await waitFor(() => expect(onSave).toHaveBeenCalledWith('Baseline', version));
   await waitFor(() => expect(editor.getByRole('button', { name: 'Save Estimation' })).toBeInTheDocument());
-  fireEvent.click(await sidebar.findByRole('button', { name: 'Delete Baseline version 1' }));
-  expect(onDelete).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Delete estimate' }));
-  await waitFor(() => expect(onDelete).toHaveBeenCalledWith(version));
+  expect(sidebar.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
 });
 
 

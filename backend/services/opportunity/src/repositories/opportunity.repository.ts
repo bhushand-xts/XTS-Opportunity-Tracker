@@ -844,7 +844,6 @@ export const saveEstimation = estimationRepository.saveEstimation;
 export const listEstimationVersions = estimationRepository.listEstimationVersions;
 export const findEstimationVersion = estimationRepository.findEstimationVersion;
 export const saveEstimationVersion = estimationRepository.saveEstimationVersion;
-export const deleteEstimationVersion = estimationRepository.deleteEstimationVersion;
 export const updateEstimationRates = estimationRepository.updateEstimationRates;
 export type { EstimationVersion } from './estimation.repository';
 
@@ -868,7 +867,7 @@ async function transitionWorkflow(
     }
     if (expected && (current.rows[0].stageId !== expected.stageId || current.rows[0].subStageId !== expected.subStageId)) throw new Error('This opportunity changed while you were reviewing it. Refresh before making a decision.');
     if (expected?.estimationRevision !== undefined) {
-      const estimate = await client.query<{ revision: number }>(`SELECT ${estimationRepository.ESTIMATION_REVISION_SQL} AS revision FROM tbl_opportunity_estimation e WHERE e.opportunity_id = $1 AND NOT (e.resource_allocation ? 'saved') FOR UPDATE OF e`, [opportunityId]);
+      const estimate = await client.query<{ revision: number }>(`SELECT ${estimationRepository.ESTIMATION_REVISION_SQL} AS revision FROM (SELECT $1::INTEGER AS opportunity_id) e`, [opportunityId]);
       if (estimate.rows[0]?.revision !== expected.estimationRevision) throw conflict('The estimate changed before submission. Refresh and review it before submitting.');
     }
     if (stageId === 4 && subStageId === 8) {

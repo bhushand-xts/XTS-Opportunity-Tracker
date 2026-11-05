@@ -1,5 +1,5 @@
 import { ApolloClient, ApolloLink, InMemoryCache, Observable } from '@apollo/client';
-import { buildSchema, GraphQLError, validate } from 'graphql';
+import { buildSchema, execute, GraphQLError, validate } from 'graphql';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +36,18 @@ describe('production approval schema', () => {
     const source = readFileSync(resolve(process.cwd(), '../backend/services/opportunity/src/graphql/typeDefs/opportunity.typeDefs.ts'), 'utf8');
     const schema = buildSchema(`type Query { _unused: Boolean } type Mutation { _unused: Boolean } ${source.match(/`([\s\S]*)`/)![1]}`);
     expect(validate(schema, TRANSITION_OPPORTUNITY)).toEqual([]);
+  });
+
+  it.each([true, false])('passes the negotiation revision choice through GraphQL (%s)', async requiresRevisedEstimation => {
+    const source = readFileSync(resolve(process.cwd(), '../backend/services/opportunity/src/graphql/typeDefs/opportunity.typeDefs.ts'), 'utf8');
+    const schema = buildSchema(`type Query { _unused: Boolean } type Mutation { _unused: Boolean } ${source.match(/`([\s\S]*)`/)![1]}`);
+    const transitionOpportunity = vi.fn((_args: { requiresRevisedEstimation: boolean }) => ({ opportunityId: 10, stageId: 5, subStageId: 11 }));
+    const result = await execute({
+      schema, document: TRANSITION_OPPORTUNITY, rootValue: { transitionOpportunity },
+      variableValues: { opportunityId: 10, action: 'START_NEGOTIATION', reasonCodeId: 8, requiresRevisedEstimation },
+    });
+    expect(result.errors).toBeUndefined();
+    expect(transitionOpportunity.mock.calls[0]?.[0]).toMatchObject({ opportunityId: 10, action: 'START_NEGOTIATION', reasonCodeId: 8, requiresRevisedEstimation });
   });
 
   it('validates the active reason lookup against the actual master schema', () => {
