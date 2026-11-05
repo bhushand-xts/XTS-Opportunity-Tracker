@@ -1,0 +1,37 @@
+# Local-dev image shared by app-shell and mfe-admin. npm workspaces hoist
+# dependencies to frontend/node_modules, so the build context is the whole
+# frontend/ folder (see docker-compose.yml's `context: .`), not one
+# package's own directory.
+#
+# Not a production image — this runs the same `webpack serve --mode
+# development` each package already uses locally, so editing source on the
+# host (see the volume mounts in docker-compose.yml) hot-reloads inside the
+# container exactly like it does outside one.
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Installed before the rest of the source is copied in, so editing a .ts/.tsx
+# file doesn't invalidate this layer — only a package.json/lockfile change
+# does. Every workspace's package.json is needed for npm to resolve the
+# workspace graph, even packages this particular container won't run.
+COPY package.json package-lock.json ./
+COPY packages/@xts/app-shell/package.json packages/@xts/app-shell/package.json
+COPY packages/@xts/design-system/package.json packages/@xts/design-system/package.json
+COPY packages/@xts/api-contracts/package.json packages/@xts/api-contracts/package.json
+COPY packages/@xts/api-client/package.json packages/@xts/api-client/package.json
+COPY packages/@xts/mfe-admin/package.json packages/@xts/mfe-admin/package.json
+COPY packages/@xts/mfe-opportunity/package.json packages/@xts/mfe-opportunity/package.json
+COPY packages/@xts/mfe-solution/package.json packages/@xts/mfe-solution/package.json
+COPY packages/@xts/mfe-approval/package.json packages/@xts/mfe-approval/package.json
+COPY packages/@xts/mfe-dashboard/package.json packages/@xts/mfe-dashboard/package.json
+RUN npm ci
+
+COPY . .
+
+# Which package this container serves — set per-service in docker-compose.yml
+# (e.g. "packages/@xts/app-shell" or "packages/@xts/mfe-admin").
+ARG PACKAGE_PATH
+WORKDIR /app/${PACKAGE_PATH}
+
+CMD ["npm", "run", "dev"]

@@ -1,0 +1,506 @@
+.opportunity-root, .opp-drawer, .opp-dialog {
+  --primary: 249 50% 56%; --primary-foreground: 0 0% 100%; --ring: 249 50% 56%;
+  --accent: 252 100% 97%; --accent-foreground: 249 45% 36%;
+  --opp-violet: #d0c6ed; --opp-indigo: #b7cdf5; --opp-teal: #b9d8ce; --opp-amber: #e8cfa0;
+  --opp-rose: #eccdd9; --opp-cyan: #bfe0ea; --opp-emerald: #bfe4c9;
+}
+/* Backstop: SidebarInset's own min-w-0 (design-system/ui/sidebar.tsx) stops
+   this app's wide content from dragging the sidebar off-screen, but this
+   still clips anything that slips past that and would otherwise create a
+   second, page-level horizontal scrollbar alongside .opp-board's own. */
+.opportunity-root { min-width: 0; overflow-x: clip; color: hsl(var(--foreground)); background: #f5f5fc; min-height: calc(100dvh - 56px); display: flex; flex-direction: column; }
+.opportunity-root > .opp-page { flex: 1 1 auto; min-height: 0; }
+.opp-page { padding: 14px 20px; width: 100%; margin-inline: auto; min-width: 0; }
+/* The board measures the space below the header and filters; each lane owns
+   its vertical scrolling so the horizontal scrollbar stays in view. */
+.opp-pipeline-page { display: flex; flex-direction: column; min-height: 0; }
+.opp-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.opp-heading h2 { font-size: 24px; line-height: 1.3; font-weight: 650; letter-spacing: -.65px; margin-bottom: 3px; overflow-wrap: anywhere; }
+.opp-eyebrow { font-size: 11px; letter-spacing: 1.2px; color: hsl(var(--muted-foreground)); margin-bottom: 4px; }
+.opp-back { display: inline-block; font-size: 13px; color: hsl(var(--muted-foreground)); margin-bottom: 6px; }
+.opp-intake { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.15fr); gap: 16px; align-items: start; }
+.opp-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 16px; }
+.opp-panel { border-color: var(--opp-violet); overflow: hidden; box-shadow: 0 5px 20px #33336905; min-width: 0; }
+.opp-panel > :first-child { border-bottom: 1px solid var(--opp-violet); background: linear-gradient(110deg,#f2edff,#fbfaff); box-shadow: inset 0 3px #8e7bd2; padding: 12px 16px; }
+.opp-panel > :nth-child(2) { padding: 14px 16px; }
+.opp-indigo { border-color: var(--opp-indigo); }.opp-indigo > :first-child { background: linear-gradient(110deg,#e7f0fe,#f8fbff); border-bottom-color: var(--opp-indigo); box-shadow: inset 0 3px #3f72c9; }
+.opp-teal { border-color: var(--opp-teal); }.opp-teal > :first-child { background: linear-gradient(110deg,#eaf6f1,#fbfefd); border-bottom-color: var(--opp-teal); box-shadow: inset 0 3px #65a18c; }
+.opp-neutral { border-color: hsl(var(--border)); }.opp-neutral > :first-child { background: hsl(var(--card)); box-shadow: none; }
+.opp-amber { border-color: var(--opp-amber); }.opp-amber > :first-child { background: linear-gradient(110deg,#fdf3e3,#fffcf6); border-bottom-color: var(--opp-amber); box-shadow: inset 0 3px #c9922f; }
+.opp-rose { border-color: var(--opp-rose); }.opp-rose > :first-child { background: linear-gradient(110deg,#fdeef4,#fffafc); border-bottom-color: var(--opp-rose); box-shadow: inset 0 3px #c76690; }
+.opp-cyan { border-color: var(--opp-cyan); }.opp-cyan > :first-child { background: linear-gradient(110deg,#e9f7fb,#fafdfe); border-bottom-color: var(--opp-cyan); box-shadow: inset 0 3px #3f93ad; }
+.opp-emerald { border-color: var(--opp-emerald); }.opp-emerald > :first-child { background: linear-gradient(110deg,#e9f9ee,#fafefb); border-bottom-color: var(--opp-emerald); box-shadow: inset 0 3px #3f9d5f; }
+/* Opt-in colored icon badges (Panel's `accentIcon` prop) — distinct from the
+   neutral bg-accent badge every other Panel keeps by default. */
+.opp-panel-icon-violet { background: #ece5fb; color: #6248c4; }
+.opp-panel-icon-indigo { background: #dbeafe; color: #1d4ed8; }
+.opp-panel-icon-teal { background: #dff3ec; color: #1f8a6b; }
+.opp-panel-icon-amber { background: #fcecd1; color: #b06a12; }
+.opp-panel-icon-rose { background: #fce3ec; color: #be3d72; }
+.opp-panel-icon-cyan { background: #dcf1f7; color: #1c7490; }
+.opp-panel-icon-emerald { background: #def6e6; color: #1f7a42; }
+.opp-panel-icon-neutral { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+:is(.opportunity-root, .opp-drawer, .opp-dialog) [aria-invalid="true"] { border-color: #dc2626; }
+.opp-dialog .opp-negotiation-input[aria-invalid="true"] {
+  --ring: 0 72% 51%;
+  border-color: #dc2626;
+  outline-color: #dc2626;
+  --tw-ring-color: #dc2626;
+}
+.opp-details { border: 1px solid #d2d8ec; border-radius: 8px; background: white; overflow: hidden; }
+.opp-details > summary { cursor: pointer; padding: 8px 10px; background: #f0f3fc; color: #40568a; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.opp-details > summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.opp-type { height: auto; min-height: 58px; white-space: normal; padding: 10px; justify-content: start; gap: 12px; border-radius: 12px; border-color: #d5dcf2; background: #fff; cursor: pointer; }
+.opp-type:hover:not(:disabled) { border-color: #8b5cf6; background: #faf8ff; }
+.opp-type.opp-selected { border-color: #8054ec !important; background: #faf8ff !important; box-shadow: 0 0 0 3px #ede5ff; }
+.opp-type-icon { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 10px; background: #efe9fb; color: #7250c5; }
+.opp-type:first-child .opp-type-icon { background: #ebf0ff; color: #5278d7; }
+.opp-type-indicator { display: grid; place-items: center; align-self: flex-start; width: 18px; height: 18px; flex-shrink: 0; border: 1px solid #cbd5ed; border-radius: 50%; }
+.opp-type.opp-selected .opp-type-indicator { border-color: #7250c5; background: #7250c5; color: #fff; }
+.opp-selected { border-color: #8975cd !important; background: #f0edff !important; color: #513a89; }
+.opp-section { display: flex; align-items: start; gap: 12px; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 9px 10px; line-height: 1.4; cursor: pointer; }
+.opp-section button { margin-top: 3px; flex-shrink: 0; }
+.opp-notice { background: #f5f3ff; border: 1px solid #e0daf3; color: #5c527c; border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.45; }
+.opp-upload { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 12px; border: 1px dashed #c9c5ec; border-radius: 9px; padding: 8px 10px; background: #fbfaff; text-align: left; }
+/* Explicit column (rather than relying on auto-placement after the label) so the row still
+   lands in column 2 when the label is visually hidden (sr-only) for the questionnaire/extraction
+   flow. Wraps whenever the row is too narrow for its content — a narrow container the component
+   sits in (not just a narrow viewport), not just the width-based breakpoint below. Without this,
+   the file-picker (flex:1) stretches into dead space while the checkboxes/button get clipped
+   instead of dropping to their own line. */
+.opp-upload-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; grid-column: 2; }
+.opp-upload-controls input { flex: 1; min-width: 0; }
+.opp-file-picker { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; min-height: 34px; border: 1px solid #d5d7e2; border-radius: 6px; padding: 4px 10px; background: #fff; }
+/* Only the file-picker panel itself is themed (not the whole upload section around it): a light
+   tint of the module's primary color for the panel, and "Choose File" (styled via buttonVariants
+   in the component) in the full, darker primary shade — same hue, more saturated for the action. */
+.opp-file-picker-compact { padding: 5px 10px; gap: 8px; background: hsl(var(--primary) / 0.1); border-color: hsl(var(--primary) / 0.4); }
+.opp-file-picker-compact:focus-within { outline-color: hsl(var(--primary)); }
+.opp-file-picker-compact .opp-file-name { font-size: 12px; }
+.opp-file-choose { flex-shrink: 0; cursor: pointer; font-size: 13px; font-weight: 500; }
+.opp-file-choose[aria-disabled=true] { cursor: default; opacity: .5; }
+.opp-file-picker:focus-within { outline: 2px solid #8054ec; outline-offset: 2px; }
+.opp-file-name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.opp-upload-controls button { flex-shrink: 0; }
+/* The two mutually-exclusive extraction-mode checkboxes, shown inline with the (compact) file picker. */
+.opp-mode-options { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex-shrink: 0; }
+.opp-mode-option { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+/* The mode-checkbox tooltips use the app's light panel background (same #fbfaff as the upload
+   section) instead of the design system's default dark tooltip. */
+.opp-tooltip { background: #fbfaff !important; color: hsl(var(--foreground)) !important; border: 1px solid hsl(var(--primary)) !important; box-shadow: 0 2px 8px #00000014 !important; }
+.opp-tooltip strong { color: hsl(var(--accent-foreground)); }
+.opp-upload-status { grid-column: 2; min-width: 0; overflow-wrap: anywhere; font-size: 11px; color: #64748b; }
+/* Extraction status, instructions and progress span the full row so they don't widen the label column. */
+.opp-upload-extraction { grid-column: 1 / -1; min-width: 0; }
+@media (max-width: 640px) {
+  .opp-upload { grid-template-columns: minmax(0, 1fr); }
+  .opp-upload-controls { grid-column: 1; }
+  .opp-upload-status { grid-column: 1; }
+  .opp-upload-controls input { flex-basis: 160px; }
+}
+.opp-proposal-sections { min-width: 0; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 8px 12px 12px; }
+.opp-proposal-sections legend { padding-inline: 4px; }
+.opp-proposal-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px 16px; }
+.opp-proposal-option { display: flex; align-items: flex-start; gap: 8px; padding-block: 4px; font-size: 13px; font-weight: 400; line-height: 20px; cursor: pointer; min-width: 0; }
+.opp-proposal-option button { flex-shrink: 0; margin-top: 2px; }
+.opp-proposal-option span { overflow-wrap: anywhere; }
+@media (max-width: 1200px) { .opp-proposal-options { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 650px) { .opp-proposal-options { grid-template-columns: minmax(0,1fr); } }
+.opp-client-summary { border: 1px solid var(--opp-teal); border-left: 3px solid #65a18c; border-radius: 8px; padding: 10px 12px; background: #f8fcfa; }
+.opp-savebar { border: 1px solid var(--opp-violet); border-radius: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 14px; margin-top: 12px; background: #f7f5fd; }
+.opp-page.opp-form-page { --opp-form-gutter: 20px; min-height: calc(100dvh - 56px); display: flex; flex-direction: column; padding-bottom: 0; }
+.opp-form-page > .opp-savebar { position: sticky; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 10; flex-shrink: 0; margin: auto 0 8px; padding: 6px 14px; min-height: 46px; border: 1px solid #e0e6f2; border-radius: 10px; background: #fff; box-shadow: 0 3px 14px #20365f1a; }
+.opp-save-primary { background: linear-gradient(180deg, #5274ca, #385ab4); border: 1px solid #3656a6; color: #fff; box-shadow: 0 2px 4px #304f9b26; }
+.opp-save-primary:hover:not(:disabled) { background: linear-gradient(180deg, #4768bd, #304fa2); }
+.opp-form-page > .opp-intake { margin-bottom: 24px; }
+@media (max-width: 960px) { .opp-page.opp-form-page { --opp-form-gutter: 16px; } }
+@media (max-width: 650px) { .opp-page.opp-form-page { --opp-form-gutter: 12px; } }
+.opp-form-page input, .opp-form-page textarea, .opp-form-page button { scroll-margin-bottom: 90px; }
+.opp-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.opp-stat { border: 1px solid #d7cef3; border-top: 3px solid #6e59cc; background: linear-gradient(120deg,#fff 45%,#f4f0ff); border-radius: 11px; padding: 10px 12px; min-width: 0; }
+.opp-stat:nth-child(2) { border-color: #c9d7ef; border-top-color: #4e70b8; background: linear-gradient(120deg,#fff 45%,#edf3ff); }
+.opp-stat:nth-child(3) { border-color: #e8d9b8; border-top-color: #b08a33; background: linear-gradient(120deg,#fff 45%,#fff8e9); }
+.opp-stat:nth-child(4) { border-color: #bddfd3; border-top-color: #3e957e; background: linear-gradient(120deg,#fff 45%,#edf9f4); }
+.opp-stat > strong { display: block; font-size: 21px; font-weight: 650; margin: 3px 0; overflow-wrap: anywhere; }
+.opp-board-container { min-width: 0; }
+.opp-board { display: flex; flex-wrap: nowrap; gap: 12px; align-items: stretch; height: var(--opp-board-height, 55dvh); min-height: 120px; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; scrollbar-width: auto; scrollbar-color: #8e96a8 #e8eaf2; }
+.opp-board::-webkit-scrollbar { height: 12px; }
+.opp-board::-webkit-scrollbar-track { background: #e8eaf2; border-radius: 8px; }
+.opp-board::-webkit-scrollbar-thumb { background: #8e96a8; border: 2px solid #e8eaf2; border-radius: 8px; }
+.opp-board::-webkit-scrollbar-thumb:hover { background: #64708a; }
+.opp-lane { display: flex; flex-direction: column; flex: 0 0 320px; min-width: 0; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
+.opp-lane > h3 { flex-shrink: 0; }
+/* Contain positioned card labels within the lane so they cannot expand the outer page. */
+.opp-lane-cards { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: #a4adbf transparent; padding-right: 3px; }
+.opp-pipeline-card { border: 1px solid #e1e5ed; border-radius: 9px; background: white; margin-bottom: 8px; box-shadow: 0 2px 3px #14213d03; overflow: hidden; min-width: 0; }
+.opp-pipeline-card:hover { border-color: #aaa5ee; }.opp-card-main { display: block; padding: 10px 12px; overflow-wrap: anywhere; }.opp-card-main:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -3px; }
+.opp-highlight { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; animation: opp-saved 6s forwards; }
+@keyframes opp-saved { to { outline-color: transparent; } }
+.opp-empty { background: white; border: 1px dashed #d6dbe5; border-radius: 9px; padding: 18px 14px; text-align: center; color: hsl(var(--muted-foreground)); }
+.opp-status { background: #f0edff; color: #513a89; border: 1px solid #d0c6ed; }
+.opp-status.opp-status-pair { flex-direction: column; align-items: flex-start; gap: 1px; padding: 0 0 0 8px; max-width: 100%; border: 0; border-left: 2px solid #b4a5e5; border-radius: 0; line-height: 16px; text-align: left; overflow-wrap: anywhere; }
+.opp-status-name { max-width: 100%; font-size: 11px; font-weight: 600; color: hsl(var(--foreground)); }
+.opp-status-detail { max-width: 100%; font-size: 11px; font-weight: 400; }
+.opp-status.opp-state-PREPARATION_PENDING { background: #fff5df; color: #946512; border-color: #e8d9b8; }
+.opp-status.opp-state-GATE1_GO { background: #e7f6f0; color: #18745f; border-color: #bddfd3; }
+.opp-status.opp-state-SALES_REJECTED, .opp-status.opp-state-GATE1_NO_GO { background: #fff0ef; color: #a34242; border-color: #efcece; }
+.opp-status.opp-status-pair { background: transparent; box-shadow: none; }
+.opp-lane.opp-state-PREPARATION_PENDING { border-top-color: #b08a33; }.opp-lane.opp-state-IN_PROGRESS { border-top-color: #4e70b8; }.opp-lane.opp-state-SALES_REVIEW { border-top-color: #8e7bd2; }.opp-lane.opp-state-GATE1_PENDING { border-top-color: #6352cc; }.opp-lane.opp-state-GATE1_GO { border-top-color: #3e957e; }
+.opp-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(260px,330px); gap: 12px; align-items: start; }
+.opp-detail-workspace { min-width: 0; container-type: inline-size; }
+.opp-detail-sidebar { display: grid; gap: 8px; min-width: 0; align-self: start; position: sticky; top: 12px; }
+.opp-overview { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.3fr); gap: 12px; align-items: start; }
+/* Below this, the fixed-ish 260-300px sidebar column leaves the main workspace too narrow (its
+   own content, e.g. .opp-overview, has already dropped to one column well before this point) —
+   so the actions/progress sidebar moves below the tab content instead of squeezing beside it. */
+@media (max-width: 960px) { .opp-detail-layout { grid-template-columns: minmax(0,1fr); } .opp-detail-sidebar { position: static; } }
+.opp-assessment-editors { min-width: 0; container-type: inline-size; }
+.opp-assessment-layout .opp-panel > :first-child { padding: 9px 12px; }
+.opp-assessment-layout .opp-panel > :nth-child(2) { padding: 12px; }
+.opp-assessment-counts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+@container (min-width: 1000px) {
+  .opp-assessment-layout { grid-template-columns: minmax(0,1fr) minmax(260px,320px); }
+  .opp-assessment-counts { gap: 8px; }
+  .opp-assessment-counts strong { font-size: 24px; }
+}
+.opp-estimation-workspace { min-width: 0; container: opp-estimate / inline-size; }
+.opp-estimation-workspace .opp-panel > :first-child { padding: 9px 12px; }
+.opp-estimation-workspace .opp-panel > :nth-child(2) { padding: 12px; }
+.opp-estimation-workspace .opp-estimation-rates-collapsed > :nth-child(2) { display: none; }
+.opp-estimation-workspace .opp-estimation-scroll table { border-collapse: collapse; border: 1px solid hsl(var(--border)); font-variant-numeric: tabular-nums; }
+.opp-estimation-workspace .opp-estimation-scroll :is(th, td) { padding: 6px 8px; border: 1px solid hsl(var(--border)); text-align: center; vertical-align: middle; }
+.opp-estimation-workspace .opp-estimation-scroll :is(th, td):first-child { text-align: left; }
+.opp-estimation-workspace .opp-estimation-scroll th { height: 32px; background: hsl(var(--muted) / .65); text-transform: none; letter-spacing: normal; }
+.opp-estimation-workspace .opp-estimation-scroll tbody tr.font-semibold { background: hsl(var(--muted) / .45); }
+.opp-estimation-workspace .opp-estimation-scroll input { display: block; width: 64px; max-width: 100%; height: 28px; margin-inline: auto; padding-inline: 4px; text-align: center; }
+@container opp-estimate (min-width: 720px) {
+  .opp-estimation-controls { grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; }
+}
+@container (max-width: 760px) { .opp-assessment-layout .opp-assessment-items { grid-template-columns: minmax(0,1fr); } }
+/* The "Assessment summary" aside becomes the full-width column once .opp-assessment-layout drops
+   to one column on a narrower screen — at that point it has plenty of width to put the donut
+   chart beside the stat tiles instead of stacking everything vertically, which was pushing the
+   chart below the fold on laptop-width responsive views. */
+.opp-assessment-summary { container-type: inline-size; }
+.opp-assessment-summary-body { display: flex; flex-direction: column; gap: 16px; }
+.opp-assessment-chart { min-width: 0; }
+@container (min-width: 460px) {
+  .opp-assessment-summary-body { flex-direction: row; align-items: center; }
+  .opp-assessment-summary-body > * { flex: 1 1 0; min-width: 0; }
+  .opp-assessment-chart { border-top: 0; border-left: 1px solid hsl(var(--border)); padding-top: 0; padding-left: 16px; }
+}
+@container (max-width: 700px) { .opp-detail-workspace .opp-overview, .opp-detail-workspace .opp-assignment { grid-template-columns: minmax(0,1fr); } }
+.opp-values { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px 12px; margin-top: 8px; }.opp-values dt { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 2px; }.opp-values dd { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Use the panel's width, rather than the viewport, to keep the solicitation compact. */
+.opp-solicitation { container: opp-solicitation / inline-size; }
+.opp-panel.opp-solicitation > :first-child { padding: 8px 12px; }
+.opp-panel.opp-solicitation > :nth-child(2) { padding: 10px 12px; }
+.opp-solicitation .opp-values { grid-template-columns: minmax(0,1fr); gap: 6px 12px; margin-top: 4px; }
+.opp-solicitation .opp-values dt { margin-bottom: 0; line-height: 16px; }
+.opp-solicitation .opp-values dd { line-height: 20px; }
+.opp-solicitation > :nth-child(2) > section { margin-top: 10px; }
+.opp-question-viewer { container: opp-questions / inline-size; }
+@container opp-solicitation (min-width: 380px) {
+  .opp-solicitation .opp-values { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@container opp-solicitation (min-width: 620px) {
+  .opp-solicitation .opp-values { grid-template-columns: repeat(3,minmax(0,1fr)); }
+}
+@container opp-questions (min-width: 420px) {
+  .opp-question-viewer .opp-question-categories { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@container opp-questions (min-width: 620px) {
+  .opp-question-viewer .opp-question-categories { grid-template-columns: repeat(3,minmax(0,1fr)); }
+}
+@media (pointer: coarse) {
+  .opp-question-categories > button { min-height: 40px; }
+}
+.opp-detail-heading { display: grid; gap: 4px; margin-bottom: 8px; }
+.opp-workspace-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
+.opp-workspace-identity h2 { margin: 0; max-width: 100%; font-size: 18px; line-height: 26px; font-weight: 650; letter-spacing: -.25px; overflow-wrap: anywhere; }
+.opp-workspace-identity .opp-opportunity-number > strong { font-size: 12px; }
+.opp-record-panel > :first-child { padding: 8px 14px; }
+.opp-record-panel > :nth-child(2) { padding: 10px 14px; }
+.opp-record-details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 16px; margin: 0; font-size: 14px; line-height: 20px; }
+.opp-record-details > div { min-width: 0; }
+.opp-record-details .opp-record-wide { grid-column: 1 / -1; }
+.opp-record-details dt { margin-bottom: 2px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 16px; }
+.opp-record-details dd { margin: 0; overflow-wrap: anywhere; }
+.opp-record-details .opp-record-title { font-size: 16px; line-height: 22px; font-weight: 600; }
+.opp-record-details .opp-record-reference { margin-top: 2px; color: hsl(var(--muted-foreground)); font-size: 12px; }
+.opp-record-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.opp-record-badges > span { max-width: 100%; white-space: normal; }
+.opp-record-status { text-align: right; }
+.opp-record-status .opp-record-badges { justify-content: flex-end; }
+.opp-record-budget { border-top: 1px solid hsl(var(--border)); padding-top: 8px; font-variant-numeric: tabular-nums; }
+@media (max-width: 480px) { .opp-record-details { grid-template-columns: minmax(0,1fr); } }
+.opp-detail-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.opp-detail-toolbar > .opp-review-actions { flex: 0 1 auto; margin-left: auto; max-width: 100%; }
+.opp-detail-toolbar .opp-review-buttons-toolbar { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.opp-detail-toolbar .opp-review-buttons-toolbar > button { flex: 0 0 auto; width: auto; min-height: 36px; padding: 8px 12px; white-space: nowrap; }
+.opp-detail-toolbar .opp-review-button-label { flex: initial; overflow-wrap: normal; white-space: nowrap; }
+@media (max-width: 480px) {
+  .opp-detail-toolbar > .opp-review-actions { margin-left: 0; }
+  .opp-detail-toolbar .opp-review-buttons-toolbar { justify-content: flex-start; }
+}
+.opp-detail-heading .opp-heading { margin-bottom: 0; }
+.opp-opportunity-number { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; max-width: 100%; padding: 4px 7px; border: 1px solid #e1e5f1; border-radius: 6px; background: #f5f7fd; color: #52698d; overflow-wrap: anywhere; }
+.opp-opportunity-number > span { font-size: 9px; font-weight: 500; }
+.opp-opportunity-number > strong { font-size: 11px; font-weight: 650; letter-spacing: .02em; color: #41558b; }
+.opp-card-reference { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px; }
+.opp-card-reference > .opp-opportunity-number { flex: 0 1 auto; }
+.opp-card-reference > .opp-opportunity-number > span { font-size: 8px; }
+.opp-card-reference > .opp-opportunity-number > strong { font-size: 10px; }
+.opp-detail-title { margin: 6px 0 0; gap: 8px 12px; }
+.opp-detail-identity { display: flex; flex: 1 1 280px; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+.opp-detail-title h2 { font-size: 24px; line-height: 1.3; font-weight: 650; letter-spacing: -.65px; margin: 0; max-width: 100%; overflow-wrap: anywhere; }
+.opp-tabs { height: auto; display: flex; flex-wrap: wrap; justify-content: start; gap: 4px; width: fit-content; max-width: 100%; }.opp-tabs > button { padding: 7px 10px; }
+/* Source document panel: the chosen file name and the "Choose file" button stand out from the box. */
+.opp-upload .opp-upload-file { color: hsl(var(--primary)); font-weight: 600; }
+.opp-upload input[type=file] { padding-left: 4px; }
+.opp-upload input[type=file]::file-selector-button { margin-right: 12px; padding: 2px 12px; border: 0; border-radius: 6px; background: hsl(var(--primary) / 0.12); color: hsl(var(--primary)); font-weight: 600; cursor: pointer; }
+.opp-upload input[type=file]:not(:disabled)::file-selector-button:hover { background: hsl(var(--primary) / 0.2); }
+/* Underline tabs for extracted question categories: a single scrollable row (many categories no
+   longer wrap onto several lines), with optional arrow buttons alongside it. */
+.opp-question-tabs-row { display: flex; align-items: flex-end; gap: 4px; min-width: 0; }
+.opp-question-tabs { height: auto; width: 100%; display: flex; flex-wrap: nowrap; justify-content: flex-start; gap: 4px; padding: 0; border-radius: 0; background: transparent; border-bottom: 1px solid hsl(var(--border)); overflow-x: auto; scroll-behavior: smooth; scrollbar-width: none; }
+.opp-question-tabs::-webkit-scrollbar { display: none; }
+.opp-question-tabs > button { flex-shrink: 0; margin-bottom: -1px; padding: 6px 10px; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; box-shadow: none; color: hsl(var(--muted-foreground)); }
+.opp-question-tabs > button:hover { color: hsl(var(--foreground)); }
+.opp-question-tabs > button[data-state=active] { background: transparent; background-image: none; box-shadow: none; color: hsl(var(--primary)); border-bottom-color: hsl(var(--primary)); }
+.opp-tabs-arrow { flex-shrink: 0; margin-bottom: 5px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: #fff; color: hsl(var(--muted-foreground)); cursor: pointer; }
+.opp-tabs-arrow:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.opp-tabs-arrow:disabled { opacity: .35; cursor: default; }
+/* Question box with the section picker inside its bottom-right corner (manual questions). */
+.opp-question-input { position: relative; flex: 1; min-width: 0; }
+/* Auto-grows with content (see the Textarea ref in RfpPreparation.tsx) — no manual resize handle,
+   overriding the more specific .opp-field rule that would otherwise re-enable one. */
+.opp-question-input textarea { width: 100%; resize: none !important; }
+.opp-question-input textarea.opp-question-with-section { padding-bottom: 32px; }
+.opp-question-input .opp-question-section { position: absolute; right: 6px; bottom: 6px; width: auto; height: 24px; gap: 4px; padding: 0 8px; font-size: 11px; background: hsl(var(--muted)); border-color: transparent; }
+.opp-question-panel { max-height: 28rem; overflow-y: auto; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 8px; }
+.opp-review-actions { display: grid; gap: 8px; min-width: 0; }
+.opp-review-actions:empty { display: none; }
+.opp-review-notice { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border: 1px solid hsl(var(--primary) / .25); border-radius: 7px; background: hsl(var(--primary) / .06); color: hsl(var(--foreground)); font-size: 12px; line-height: 18px; }
+.opp-review-notice > svg { margin-top: 2px; color: hsl(var(--primary)); }
+.opp-review-notice strong { display: block; font-weight: 600; }
+.opp-review-notice span { display: block; color: hsl(var(--muted-foreground)); }
+.opp-review-buttons { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; }
+/* The "bare" variant — at the top of the sidebar, right above Opportunity progress — is a plain
+   stack of individually-shaped shadcn buttons (no shared Panel card/title/description wrapper
+   and no primary/secondary size hierarchy), each still a standard full-width Button like the
+   rest of the sidebar. Same tone-color rules below still apply, since this keeps the
+   .opp-review-buttons class too. */
+.opp-review-buttons-bare { display: flex; flex-direction: column; gap: 8px; }
+/* The "card" variant sits as a 3rd header stat-card (replacing a plain data card), so its
+   buttons need to fit a narrow ~250-300px card instead of a full sidebar column — compact,
+   auto-width, wrapping onto a second line rather than stretching full width. */
+.opp-review-buttons-card { flex-direction: row; flex-wrap: wrap; }
+.opp-review-buttons-card > button { width: auto; flex: 0 0 auto; min-height: 30px; padding: 6px 10px; font-size: 12px; gap: 5px; }
+.opp-review-buttons-card .opp-review-button-icon { width: 13px; height: 13px; }
+.opp-review-secondary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+/* Flat, tone-tinted decision buttons with a small leading icon — the primary action (Approve/Go)
+   is a solid fill, secondary actions (Hold/Reject/…) are a light tint, matching the rest of the
+   app's flatter card/badge look instead of the earlier gradient pill style. */
+.opp-review-buttons button { justify-content: center; gap: 7px; width: 100%; height: auto; min-width: 0; min-height: 37px; padding: 8px 10px; border: 1px solid; border-radius: 7px; white-space: normal; text-align: center; font-size: 13px; font-weight: 600; line-height: 1.3; box-shadow: none; }
+.opp-review-button-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.opp-review-button-icon { width: 15px; height: 15px; flex-shrink: 0; }
+.opp-review-buttons .opp-review-primary { background: #456fd1; border-color: #456fd1; color: #fff; box-shadow: 0 2px 3px #345fb51a; }
+.opp-review-buttons .opp-review-primary:hover:not(:disabled) { background: #3f64c2; border-color: #3f64c2; }
+.opp-review-buttons .opp-review-warning { background: #fff9eb; border-color: #eed8a4; color: #88621b; }
+.opp-review-buttons .opp-review-warning:hover:not(:disabled) { background: #fef1cf; }
+.opp-review-buttons .opp-review-error { background: #fff3f5; border-color: #ebc5cc; color: #af4054; }
+.opp-review-buttons .opp-review-error:hover:not(:disabled) { background: #ffe7eb; }
+.opp-review-buttons :is(.opp-review-success, .opp-review-info):not(.opp-review-primary) { background: #f3f4f8; border-color: #d9dde6; color: #4b5570; }
+.opp-review-buttons :is(.opp-review-success, .opp-review-info):not(.opp-review-primary):hover:not(:disabled) { background: #e9ebf2; }
+.opp-review-buttons button[aria-pressed=true] { opacity: 1; box-shadow: inset 0 0 0 2px #ffffffa0, 0 1px 3px #14213d26; }
+/* The decision dialog's confirm button stays a bolder solid fill — it's paired with an outline
+   Cancel button there and needs to read as the dialog's one primary action. */
+.opp-dialog :is(.opp-review-success, .opp-review-info, .opp-review-warning, .opp-review-error) { color: #fff; border-radius: 8px; padding-inline: 18px; }
+.opp-dialog :is(.opp-review-success, .opp-review-info) { background: #456fd1; border-color: #456fd1; }
+.opp-dialog .opp-review-warning { background: #a9761f; border-color: #a9761f; }
+.opp-dialog .opp-review-error { background: #c23a4f; border-color: #c23a4f; }
+.opp-detail-sidebar .opp-review-buttons, .opp-detail-sidebar .opp-review-secondary { gap: 6px; }
+.opp-detail-sidebar .opp-review-buttons button { min-height: 34px; padding: 7px 10px; font-size: 12px; gap: 6px; }
+.opp-detail-sidebar .opp-review-button-icon { width: 13px; height: 13px; }
+/* Same compact header/body padding as the Opportunity progress panel beside it, so the two
+   sidebar cards share one visual rhythm instead of the actions card looking under-dressed. */
+.opp-review-panel > :first-child { padding: 10px 12px; }
+.opp-review-panel > :first-child p { font-size: 12px; line-height: 16px; }
+.opp-review-panel > :nth-child(2) { padding: 12px; }
+.opp-progress-panel { display: flex; flex-direction: column; min-height: 0; max-height: min(calc(45dvh + 13.5rem),37.5rem); }
+.opp-progress-panel > :first-child { flex-shrink: 0; padding: 10px 12px; }
+.opp-saved-estimations-list { max-height: min(28dvh,13rem); min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.opp-progress-panel > :nth-child(2) { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; padding: 12px; }
+.opp-progress-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.opp-progress-scroll:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 4px; }
+.opp-stage-timeline { list-style: none; margin: 0; padding: 0; }
+.opp-timeline-stage { position: relative; display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 8px; padding-bottom: 10px; }
+.opp-timeline-stage::before { content: ''; position: absolute; top: 20px; bottom: 0; left: 9px; width: 2px; background: #e2e5ed; }
+.opp-timeline-stage:last-child { padding-bottom: 0; }
+.opp-timeline-stage:last-child::before { display: none; }
+.opp-timeline-marker { z-index: 1; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid #dce1eb; background: #f6f7fa; color: #7c8599; font-size: 10px; font-weight: 600; }
+.opp-timeline-stage.current > .opp-timeline-marker { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: white; box-shadow: 0 0 0 3px hsl(var(--primary) / .1); }
+.opp-timeline-stage.reached > .opp-timeline-marker { background: #eaf7f1; border-color: #c9e7db; color: #24816a; }
+.opp-timeline-stage.upcoming > .opp-timeline-marker { background: #fafbfc; border-color: #e8ebf1; color: #c3c9d5; }
+/* The line below "current" and "reached" stages traces the completed path, so it reads green all
+   the way down to (and including) the last reached stage; upcoming stages keep their existing
+   muted line untouched. */
+.opp-timeline-stage.current::before, .opp-timeline-stage.reached::before { background: #089b6a; }
+.opp-timeline-stage.upcoming::before { background: #eef0f5; }
+.opp-timeline-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.opp-timeline-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 6px; }
+.opp-timeline-state { flex-shrink: 0; color: #7c8599; font-size: 10px; }
+.opp-timeline-stage.current .opp-timeline-state { color: hsl(var(--primary)); font-weight: 600; }
+.opp-timeline-stage.reached .opp-timeline-state { color: #24816a; }
+.opp-timeline-heading > h3, .opp-timeline-body > h3 { margin: 0; font-size: 12px; font-weight: 650; line-height: 18px; overflow-wrap: anywhere; }
+.opp-timeline-stage.upcoming .opp-timeline-heading > h3 { color: #9ba4b5; font-weight: 400; }
+.opp-progress-time { display: block; font-size: 10px; line-height: 15px; color: #69758c; }
+.opp-progress-actor, .opp-progress-detail-label { display: block; font-size: 10px; line-height: 15px; overflow-wrap: anywhere; }
+.opp-progress-actor { color: #56657e; }
+.opp-progress-detail-label { color: #24816a; }
+.opp-stage-completion { margin-top: 4px; }
+.opp-revision-journey { margin-bottom: 14px; padding: 10px; border: 1px solid hsl(var(--primary) / .2); border-radius: 8px; background: hsl(var(--primary) / .04); }
+.opp-revision-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: hsl(var(--primary)); font-size: 12px; line-height: 18px; }
+.opp-revision-heading svg { flex-shrink: 0; }
+.opp-revision-journey summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none; color: hsl(var(--primary)); font-size: 11px; font-weight: 600; }
+.opp-revision-journey summary::-webkit-details-marker { display: none; }
+.opp-revision-journey summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; border-radius: 2px; }
+.opp-revision-journey details[open] summary > svg { transform: rotate(180deg); }
+.opp-revision-journey ol { display: grid; gap: 6px; max-height: 180px; overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 8px 0 0; padding: 0 4px 0 0; }
+.opp-revision-journey li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 6px; font-size: 10px; line-height: 15px; }
+.opp-revision-outcome { font-weight: 500; overflow-wrap: anywhere; }
+.opp-revision-journey time { color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.opp-revision-older { display: block; margin-top: 8px; color: hsl(var(--primary)); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
+.opp-journey-marker { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid hsl(var(--border)); border-radius: 50%; background: hsl(var(--background)); color: hsl(var(--muted-foreground)); font-size: 10px; }
+.opp-journey-return .opp-journey-marker { border-color: hsl(var(--primary) / .3); background: hsl(var(--primary) / .1); color: hsl(var(--primary)); }
+.opp-journey-return .opp-revision-outcome { color: hsl(var(--primary)); }
+.opp-stage-completion > strong { display: block; color: #24816a; font-size: 11px; line-height: 17px; font-weight: 500; }
+.opp-substage-history { list-style: none; display: grid; gap: 9px; margin: 7px 0 0; padding: 0; }
+.opp-substage-history > li, .opp-substage-current { padding-left: 9px; border-left: 2px solid #e5e8ef; }
+.opp-substage-history > li.active, .opp-substage-current { border-left-color: hsl(var(--primary)); }
+.opp-substage-current { margin-top: 7px; }
+.opp-substage-history strong, .opp-substage-current > strong { display: block; margin: 0 0 1px; font-size: 12px; font-weight: 500; line-height: 18px; }
+.opp-substage-history > li.active > strong, .opp-substage-current > strong { color: hsl(var(--primary)); }
+.opp-assignment { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,.9fr); gap: 12px; align-items: start; }.opp-task { white-space: normal; height: auto; width: 100%; text-align: left; justify-content: start; padding: 9px 10px; }
+.opp-estimation-scroll { overflow-x: auto; max-width: 100%; }.opp-estimation-scroll table { min-width: 720px; }.opp-estimation-scroll td:first-child { min-width: 200px; }.opp-estimation-scroll td { min-width: 110px; }
+/* The combined matrix has one scroll container so headers and phase identifiers
+   stay aligned without affecting the other estimation/version tables. */
+.opp-estimation-workspace .opp-estimation-matrix { max-height: min(65vh,640px); overflow: auto; isolation: isolate; border-radius: 6px; }
+.opp-estimation-workspace .opp-estimation-matrix > div { overflow: visible; }
+.opp-estimation-workspace .opp-estimation-matrix table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.opp-estimation-workspace .opp-estimation-matrix :is(th,td) { border-width: 0 1px 1px 0; min-width: 64px; padding: 4px 4px; font-size: 12px; }
+.opp-estimation-workspace .opp-estimation-matrix input { width: 46px; height: 24px; padding: 2px 3px; font-size: 12px; }
+.opp-estimation-workspace .opp-estimation-matrix thead th { position: sticky; top: 0; z-index: 3; height: 28px; font-size: 11px; background: hsl(var(--muted)); }
+.opp-estimation-workspace .opp-estimation-matrix thead tr:first-child th:not(.matrix-duration) { white-space: nowrap; }
+.opp-estimation-workspace .opp-estimation-matrix thead tr:nth-child(2) th { top: 28px; }
+.opp-estimation-workspace .opp-estimation-matrix thead tr:nth-child(2) > th { text-align: center; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-index { position: sticky; left: 0; z-index: 2; width: 32px; min-width: 32px; max-width: 32px; text-align: center; background: hsl(var(--card)); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-phase { position: sticky; left: 32px; z-index: 2; width: 160px; min-width: 160px; max-width: 160px; white-space: normal; text-align: left; background: hsl(var(--card)); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-duration { position: sticky; left: 192px; z-index: 2; width: 80px; min-width: 80px; max-width: 80px; background: hsl(var(--card)); box-shadow: 2px 0 3px hsl(var(--foreground) / .06); }
+.opp-estimation-workspace .opp-estimation-matrix thead :is(.matrix-index,.matrix-phase,.matrix-duration) { z-index: 5; background: hsl(var(--muted)); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-allocation { background: color-mix(in srgb,hsl(var(--card)) 95%,#6366f1); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-effort { background: color-mix(in srgb,hsl(var(--card)) 93%,#14b8a6); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-cost { min-width: 84px; background: color-mix(in srgb,hsl(var(--card)) 92%,#f59e0b); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-allocation { background: color-mix(in srgb,hsl(var(--card)) 84%,#6366f1); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-effort { background: color-mix(in srgb,hsl(var(--card)) 82%,#14b8a6); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-cost { background: color-mix(in srgb,hsl(var(--card)) 80%,#f59e0b); }
+/* Emphasize summary columns and grand totals without changing matrix sizing. */
+.opp-estimation-workspace .opp-estimation-matrix .matrix-effort.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 82%,#14b8a6); font-weight: 700; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-cost.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 76%,#f59e0b); font-weight: 700; }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-effort.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 68%,#14b8a6); }
+.opp-estimation-workspace .opp-estimation-matrix thead .matrix-cost.matrix-total { background: color-mix(in srgb,hsl(var(--card)) 60%,#f59e0b); }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-totals td { background: hsl(var(--muted)); box-shadow: inset 0 2px hsl(var(--border)); font-weight: 700; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-totals .matrix-effort.matrix-total { background: #0f766e; color: #fff; }
+.opp-estimation-workspace .opp-estimation-matrix .matrix-totals .matrix-cost.matrix-total { background: #b45309; color: #fff; }
+@media (max-width: 650px) {
+  .opp-estimation-workspace .opp-estimation-matrix .matrix-phase { width: 120px; min-width: 120px; max-width: 120px; }
+  .opp-estimation-workspace .opp-estimation-matrix .matrix-duration { left: 152px; width: 72px; min-width: 72px; max-width: 72px; }
+}
+/* Keep compact controls scoped to this MFE and its portalled drawers/dialogs. */
+:is(.opportunity-root, .opp-drawer, .opp-dialog) .opp-field > label { font-size: 14px; line-height: 20px; }
+:is(.opportunity-root, .opp-drawer, .opp-dialog) .opp-field :is(input, button[role="combobox"]) { height: 36px; min-height: 36px; padding-block: 6px; }
+:is(.opportunity-root, .opp-drawer, .opp-dialog) .opp-field textarea { min-height: 60px; padding-block: 6px; resize: vertical; }
+.opp-form-heading { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 4px 12px; margin-bottom: 12px; }
+.opp-form-heading .opp-back { margin: 0; justify-self: start; line-height: 20px; }
+.opp-form-heading .opp-back:hover { text-decoration: underline; }
+.opp-form-heading .opp-back:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; border-radius: 2px; }
+.opp-form-heading p { grid-column: 1 / -1; margin: 0; font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+.opp-field-full { grid-column: 1 / -1; }
+.opp-form-page .opp-panel { container-type: inline-size; }
+.opp-form-page .opp-panel > :first-child { padding: 9px 14px; }
+.opp-form-page .opp-panel > :nth-child(2) { padding: 10px 14px; }
+.opp-form-page .opp-fields { gap: 7px 12px; }
+.opp-form-page .opp-field > label { display: block; font-size: 12px; line-height: 16px; }
+.opp-form-page .opp-field > :not(:first-child) { margin-top: 3px; }
+.opp-form-page .opp-field :is(input, button[role="combobox"]) { height: 32px; min-height: 32px; padding-block: 4px; }
+.opp-form-page .opp-field textarea { min-height: 48px; padding-block: 5px; }
+.opp-form-page .opp-details > summary { padding: 6px 10px; font-size: 12px; }
+.opp-form-page .opp-details > .opp-fields { padding: 8px 10px; }
+@container (min-width: 620px) {
+  .opp-form-page .opp-primary-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (pointer: coarse) {
+  .opp-form-page .opp-field :is(input, button[role="combobox"]) { height: 40px; min-height: 40px; }
+}
+.opp-type strong + span { margin-top: 2px; }
+.opp-panel > :nth-child(2) > .opp-values:first-child { margin-top: 0; }
+.opp-client-search { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: start; }
+.opp-client-search > button { margin-top: 24px; }
+.opp-client-details { margin-top: 6px; font-size: 13px; }
+.opp-client-details > summary { cursor: pointer; color: hsl(var(--primary)); padding-block: 4px; }
+.opp-client-details > summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.opp-save-status { margin: 0; flex: 1 1 180px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.opp-save-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.opp-savebar > [role="alert"] { flex-basis: 100%; }
+.opp-progress li:last-child { padding-bottom: 0; }
+.opp-card-title { font-size: 14px; line-height: 1.4; margin: 6px 0 3px; }
+.opp-card-value { margin-top: 8px; font-size: 14px; }
+.opp-card-meta { margin-top: 8px; padding-top: 6px; }
+.opp-card-meta > span { min-width: 0; overflow-wrap: anywhere; }
+.opp-card-info { display: grid; gap: 3px; }
+.opp-card-info > div { display: grid; grid-template-columns: 64px minmax(0,1fr); gap: 6px; line-height: 16px; }
+.opp-card-info > div > span { min-width: 0; overflow-wrap: anywhere; }
+.opp-card-info > div > span:last-child { color: #56657e; }
+.opp-card-actions { padding: 6px 12px; }
+.opp-card-actions a { height: 28px; }
+.opp-pipeline-card:last-child { margin-bottom: 0; }
+.opp-lane-cards > .opp-empty { padding: 14px 10px; }
+.opportunity-root :is(th, td) { padding: 8px 10px; }
+.opp-drawer { padding: 16px; gap: 12px; }
+.opp-dialog { padding: 18px; gap: 12px; }
+@media (max-width: 1200px) { .opp-overview { grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); }.opp-overview > aside { grid-column: 1/-1; } }
+@media (max-width: 960px) { .opp-intake { grid-template-columns: minmax(0,1fr); }.opp-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }.opp-page { padding: 14px 16px; } }
+@media (max-width: 650px) { .opp-page { padding: 12px; }.opp-heading h2 { font-size: 22px; }.opp-overview,.opp-assignment,.opp-fields { grid-template-columns: minmax(0,1fr); }.opp-overview > aside { grid-column: auto; }.opp-lane { min-height: 0; }.opp-panel > :first-child { padding: 12px; }.opp-panel > :nth-child(2) { padding: 12px; }.opp-values { grid-template-columns: minmax(0,1fr); }.opp-stats { gap: 9px; }.opp-stat { padding: 12px; }.opp-stat > strong { font-size: 21px; } }
+@media (pointer: coarse) {
+  :is(.opportunity-root, .opp-drawer, .opp-dialog) .opp-field :is(input, button[role="combobox"]) { height: 40px; min-height: 40px; }
+  .opp-save-actions button, .opp-card-actions a { min-height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) { .opp-highlight { animation: none; } }
+
+/* Laptop estimation workspace: retain actions while the matrix/history scroll internally.
+   The available height is measured below the existing heading and tabs. */
+@media (min-width: 961px) and (max-width: 1536px) and (min-height: 640px) {
+  .opp-estimation-fit > .opp-detail-workspace { height: var(--opp-estimation-height, calc(100dvh - 184px)); min-height: 0; }
+  .opp-estimation-fit > .opp-detail-workspace > [role="tabpanel"] { height: 100%; }
+  .opp-estimation-fit .opp-estimation-workspace { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-ceo-workspace { overflow-y: auto; }
+  .opp-estimation-fit .opp-estimation-workspace > * { margin-top: 0; flex-shrink: 0; }
+  .opp-estimation-fit .opp-estimation-workspace > .opp-estimation-matrix-panel-group { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-ceo-workspace > .opp-estimation-matrix-panel-group { flex: 1 0 220px; min-height: 220px; }
+  .opp-estimation-fit .opp-estimation-matrix-panel-group > .opp-panel { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-matrix-panel-group > .opp-panel > :first-child { flex-shrink: 0; }
+  .opp-estimation-fit .opp-estimation-matrix-panel-group > .opp-panel > :nth-child(2) { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-estimation-matrix { flex: 1 1 0; min-height: 0; max-height: none; }
+}
+/* Reserve space for saved estimates at every desktop width, including wide monitors. */
+@media (min-width: 961px) and (min-height: 640px) {
+  .opp-estimation-fit > .opp-detail-sidebar { display: flex; flex-direction: column; max-height: var(--opp-estimation-height, calc(100dvh - 184px)); min-height: 0; }
+  .opp-estimation-fit .opp-progress-panel,
+  .opp-estimation-fit .opp-saved-estimations-panel { display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-detail-sidebar .opp-panel > :first-child { flex-shrink: 0; }
+  .opp-estimation-fit .opp-progress-panel { flex: 0 1 auto; }
+  .opp-estimation-fit .opp-detail-sidebar > div { flex-shrink: 0; min-height: 0; }
+  .opp-estimation-fit .opp-saved-estimations-panel > :nth-child(2) { display: flex; flex-direction: column; min-height: 0; }
+  .opp-estimation-fit .opp-saved-estimations-panel ul + div { flex-shrink: 0; }
+}

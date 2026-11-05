@@ -1,0 +1,15 @@
+# Local-dev Docker setup — keeps the build context small and never bakes
+# secrets into an image layer. Compose loads each service's real .env at
+# container start (env_file:), independent of what's in the image.
+node_modules
+**/node_modules
+dist
+**/dist
+.env
+**/.env
+.git
+npm-debug.log
+# Runtime document storage — can contain restrictively-permissioned (0700)
+# directories the build user can't read, and it's never needed in the image.
+storage
+**/storage
