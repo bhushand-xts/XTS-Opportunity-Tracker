@@ -29,11 +29,15 @@ it('views historical data without loading or changing the draft, including after
   const { onLoad } = mount(false);
   fireEvent.click(await screen.findByRole('button', { name: 'View' }));
   const dialog = within(await screen.findByRole('dialog'));
-  expect(dialog.getByText('Original phase — Original role')).toBeInTheDocument();
+  expect(dialog.getByRole('table', { name: 'Resource allocation' })).toBeInTheDocument();
+  expect(dialog.getByRole('table', { name: 'Person-weeks' })).toBeInTheDocument();
+  expect(dialog.getByRole('table', { name: 'Cost (USD)' })).toBeInTheDocument();
+  expect(dialog.queryByRole('columnheader', { name: /Hours|People|Hourly rate/i })).not.toBeInTheDocument();
   expect(dialog.getByText('Original assumptions')).toBeInTheDocument();
   expect(dialog.getAllByText(/1,000/).length).toBeGreaterThan(0);
-  expect(dialog.getByRole('cell', { name: 'Original phase' })).toBeInTheDocument();
-  expect(dialog.getByRole('columnheader', { name: 'Original role' })).toBeInTheDocument();
+  expect(dialog.getAllByRole('cell', { name: 'Original phase' })).toHaveLength(3);
+  expect(dialog.getAllByRole('columnheader', { name: 'PM' })).toHaveLength(3);
+  expect(dialog.getAllByRole('columnheader', { name: 'PM' })[0]).toHaveAttribute('title', 'Original role');
   expect(dialog.queryByText('Phase 1')).not.toBeInTheDocument();
   expect(dialog.getAllByRole('button', { name: 'Close' }).length).toBeGreaterThan(0);
   expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();

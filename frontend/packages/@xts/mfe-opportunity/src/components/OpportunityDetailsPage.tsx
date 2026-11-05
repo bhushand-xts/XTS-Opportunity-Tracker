@@ -1,14 +1,14 @@
 import { QuestionViewer } from './QuestionViewer';
-import { Calculator, CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Lock, Pencil } from 'lucide-react';
+import { CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Lock, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Badge, type BadgeProps, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
+import { Badge, type BadgeProps, Button, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
 import type { Estimation, EstimationVersion, OpportunityDetail, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource } from '../hooks/useResource';
 import { useUnsaved } from '../hooks/useUnsaved';
 import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
-import { CONTEXT_FIELDS, money, rowAmount, STATE_LABELS, userLabel } from '../lib/workflow';
+import { CONTEXT_FIELDS, money, STATE_LABELS, userLabel } from '../lib/workflow';
 import { LEAD_SOURCES } from '../lib/opportunityOptions';
 import { opportunityStatus } from '../lib/opportunityStatus';
 import { DetailDrawer, formatLocalDate, initials, Loading, Notice, OpportunityNumber, Panel, Values } from './ui';
@@ -18,6 +18,7 @@ import { ResponseWorkspace } from './ResponseWorkspace';
 import { ReviewActions } from './ReviewActions';
 import { DocumentDownload } from './DocumentDownload';
 import { OpportunityProgress } from './OpportunityProgress';
+import { SavedEstimationBreakdown } from './SavedEstimationBreakdown';
 
 const STATUS_BADGE_VARIANT: Record<OpportunityState, BadgeProps['variant']> = {
   PREPARATION_PENDING: 'muted', IN_PROGRESS: 'info', SALES_REVIEW: 'warning', GATE1_PENDING: 'warning', GATE1_GO: 'success', SALES_REJECTED: 'critical', GATE1_NO_GO: 'critical',
@@ -61,31 +62,18 @@ function splitMoney(formatted: string): [string, string] {
   const i = formatted.lastIndexOf('.');
   return i === -1 ? [formatted, ''] : [formatted.slice(0, i), formatted.slice(i)];
 }
-/** Compact estimation card; the full matrix row breakdown and assumptions live in the drawer. */
+/** Compact estimation card; the phase allocation, person-weeks and USD costs live in the drawer. */
 function EstimationSummaryPanel({ o }: { o: OpportunityDetail }) {
   const estimation = o.estimation;
-  const [whole, cents] = estimation ? splitMoney(money(estimation.total, o.currencyCode)) : ['', ''];
+  const [whole, cents] = estimation ? splitMoney(money(estimation.total, 'USD')) : ['', ''];
   return <Panel title="Saved estimation summary" tone="amber" accentIcon>
     {estimation ? <>
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">Estimate total<Badge variant="warning" size="sm">{o.currencyCode}</Badge></p>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">Estimate total<Badge variant="warning" size="sm">USD</Badge></div>
       <p className="mb-4 mt-1 text-lg font-semibold tabular-nums">{whole}{cents}</p>
       <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
         <span><strong className="text-base">{estimation.rows.length}</strong> <span className="text-muted-foreground">work items</span></span>
-        <DetailDrawer title="Estimation matrix" description="Saved matrix rows and assumptions." trigger={<button type="button" className="text-sm font-semibold text-amber-700 hover:underline dark:text-amber-400">View estimate →</button>}>
-          <Panel title="Matrix rows" tone="amber" icon={Calculator} accentIcon><div className="overflow-x-auto"><Table><TableHeader><TableRow>
-            <TableHead className="px-2 py-1.5 text-xs">Work item</TableHead>
-            <TableHead className="px-2 py-1.5 text-xs text-right">Hours</TableHead>
-            <TableHead className="px-2 py-1.5 text-xs text-right">People</TableHead>
-            <TableHead className="px-2 py-1.5 text-xs text-right">Rate / hr</TableHead>
-            <TableHead className="px-2 py-1.5 text-xs text-right">Amount</TableHead>
-          </TableRow></TableHeader><TableBody>{estimation.rows.map(row => { let amount = '—'; try { amount = money(rowAmount(row, estimation), o.currencyCode); } catch { /* shown as — */ } return <TableRow key={row.id}>
-            <TableCell className="px-2 py-1.5 text-sm">{row.workItem}</TableCell>
-            <TableCell className="px-2 py-1.5 text-right text-sm">{row.hours}</TableCell>
-            <TableCell className="px-2 py-1.5 text-right text-sm">{row.people}</TableCell>
-            <TableCell className="px-2 py-1.5 text-right text-sm">{money(row.hourlyRate, o.currencyCode)}</TableCell>
-            <TableCell className="px-2 py-1.5 text-right text-sm font-medium">{amount}</TableCell>
-          </TableRow>; })}</TableBody></Table></div></Panel>
-          <div className="mt-4"><Panel title="Assumptions" tone="indigo" accentIcon><p className="whitespace-pre-wrap break-words text-sm">{estimation.assumptions || 'Not provided'}</p></Panel></div>
+        <DetailDrawer title="Estimation matrix" description="Saved resource allocation, person-weeks and USD costs." trigger={<button type="button" className="text-sm font-semibold text-amber-700 hover:underline dark:text-amber-400">View estimate →</button>}>
+          <SavedEstimationBreakdown estimation={estimation} />
         </DetailDrawer>
       </div>
     </> : <p className="text-sm">Not provided</p>}
@@ -179,7 +167,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
   useLayoutEffect(() => {
     if (!estimationLayout) return;
     const resize = () => {
-      const height = Math.max(280, Math.floor(window.innerHeight - estimationLayout.getBoundingClientRect().top - 16));
+      const height = Math.max(280, Math.floor(window.innerHeight - Math.max(12, estimationLayout.getBoundingClientRect().top) - 16));
       estimationLayout.style.setProperty('--opp-estimation-height', `${height}px`);
     };
     resize();

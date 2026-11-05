@@ -457,8 +457,10 @@ export function EstimationModule({
     onSaved(saved);
   }
 
+  const rateMaster = (canViewRates || ceoRatesView || editable) && <EstimationRateMaster inline={ceoRatesView} roles={ceoRatesView ? displayedRoles.filter(role => selectedRoleCodes.has(role.roleCode)) : displayedRoles} currencies={currencies} currencyCode={ESTIMATION_CURRENCY_CODE} editableRoleCodes={canEditRates && rateTarget && !mutation.saving ? selectedRoleCodes : undefined} onRateChange={canEditRates && rateTarget ? (code, value) => setRateOverrides(previous => ({ ...previous, [code]: value })) : undefined} onValidationChange={setInvalidRates} />;
+
   return <div className={`opp-estimation-workspace space-y-3${ceoRatesView ? ' opp-estimation-ceo-workspace' : ''}`}>
-    <Panel title={ceoRatesView ? 'Estimate rates' : 'Select phases & technical roles'} tone="indigo" icon={ClipboardList} accentIcon>
+    {ceoRatesView ? rateMaster : <Panel title="Select phases & technical roles" tone="indigo" icon={ClipboardList} accentIcon>
       <div className="opp-estimation-controls grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
         {!ceoRatesView && <><MultiSelectField label="Phases" displayLabel="Select Phase" options={phases.map(p => ({ id: String(p.id), label: p.phaseName }))} selected={new Set([...selectedPhaseIds].map(String))} onToggle={id => togglePhase(Number(id))} onSelectAll={selectAllPhases} onClear={clearPhases} disabled={!editable || mutation.saving}
           addControl={editable ? <>
@@ -467,10 +469,10 @@ export function EstimationModule({
           </> : undefined} />
         <MultiSelectField label="Technical roles" displayLabel="Select Technical Roles" options={roles.map(role => ({ id: role.roleCode, label: role.roleCode, searchText: role.roleName, description: canViewRates ? `${money(trimDecimal(role.defaultRate), currencies.find(currency => currency.currencyId === role.currencyId)?.currencyCode ?? ESTIMATION_CURRENCY_CODE)} / ${role.rateType}` : role.roleCode }))} selected={selectedRoleCodes} onToggle={toggleRole} onSelectAll={selectAllRoles} onClear={clearRoles} disabled={!editable || mutation.saving}
           addControl={editable && canAddRole ? <DropdownMenuItem className="gap-2 font-medium text-primary" onSelect={() => setAddingRole(true)}><Plus className="size-4" aria-hidden="true" />Add technical role</DropdownMenuItem> : undefined} /></>}
-        {(canViewRates || ceoRatesView || editable) && <EstimationRateMaster inline={ceoRatesView} roles={ceoRatesView ? displayedRoles.filter(role => selectedRoleCodes.has(role.roleCode)) : displayedRoles} currencies={currencies} currencyCode={ESTIMATION_CURRENCY_CODE} editableRoleCodes={canEditRates && rateTarget && !mutation.saving ? selectedRoleCodes : undefined} onRateChange={canEditRates && rateTarget ? (code, value) => setRateOverrides(previous => ({ ...previous, [code]: value })) : undefined} onValidationChange={setInvalidRates} />}
+        {rateMaster}
 
       </div>
-    </Panel>
+    </Panel>}
     {canEditRates && ratesDirty && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3"><p className="text-sm text-muted-foreground">Rates changed for {rateTarget?.name}.</p><Button type="button" disabled={!rateTarget || invalidRates || mutation.saving || Boolean(calculationError)} onClick={() => void updateRates()}>{mutation.saving ? 'Updating...' : 'Update estimate'}</Button></div>}
       <div className="opp-estimation-matrix-panel-group space-y-3">
         <Panel title="Estimation matrix" tone="indigo" className="[&>div:first-child>div]:flex-wrap" headerRight={<div role="group" aria-label="Estimation totals" className="flex max-w-full flex-wrap items-center justify-end gap-2">

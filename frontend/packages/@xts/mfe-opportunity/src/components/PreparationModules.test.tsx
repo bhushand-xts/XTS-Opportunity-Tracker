@@ -269,6 +269,8 @@ it('lets the CEO reprice a saved estimate with a rate-only update and live cost 
   expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   expect(screen.queryByRole('spinbutton', { name: /duration in weeks/ })).not.toBeInTheDocument();
   await screen.findByText('Discovery & Design');
+  const ratesPanel = screen.getByText('Estimate rates').closest('.opp-panel')!;
+  expect(ratesPanel.firstElementChild).toContainElement(screen.getByRole('button', { name: 'Rate master' }));
   fireEvent.click(screen.getByRole('button', { name: 'Rate master' }));
   const input = await screen.findByLabelText('Rate for PM');
   expect(input).toHaveValue(8000);

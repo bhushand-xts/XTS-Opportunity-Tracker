@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { ChevronDown, LockKeyhole, Wallet, X } from 'lucide-react';
+import { ChevronDown, ClipboardList, LockKeyhole, Wallet, X } from 'lucide-react';
 import type { Currency, RateMaster } from '@xts/api-contracts';
 import { Badge, Button, Input, Popover, PopoverContent, PopoverTrigger, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@xts/design-system';
+import { Panel } from './ui';
 
 function RateValue({ role, editable, onChange, onValidity }: { role: RateMaster; editable: boolean; onChange?: (code: string, value: string) => void; onValidity: (code: string, valid: boolean) => void }) {
   const [value, setValue] = useState(String(role.defaultRate));
@@ -50,7 +51,9 @@ export function EstimationRateMaster({ roles, currencies, currencyCode, inline =
       </div>
       {onRateChange && <div className="flex items-center gap-2 border-t bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground"><LockKeyhole className="size-3.5 shrink-0" aria-hidden="true" /><span>Choose Update estimate to save these rates for this opportunity.</span></div>}
   </>;
-  if (inline) return <div className="col-span-full min-w-0 space-y-3">{trigger}{open && <section id={panelId} aria-label="Rate master" className="overflow-hidden rounded-lg border border-t-[3px] border-t-indigo-500 bg-card">{content}</section>}</div>;
+  if (inline) return <Panel title="Estimate rates" tone="indigo" icon={ClipboardList} accentIcon headerRight={trigger} className={open ? '' : 'opp-estimation-rates-collapsed'}>
+    {open && <section id={panelId} aria-label="Rate master" className="overflow-hidden rounded-lg border border-t-[3px] border-t-indigo-500 bg-card">{content}</section>}
+  </Panel>;
   return <Popover open={open} onOpenChange={changeOpen}>
     <PopoverTrigger asChild>{trigger}</PopoverTrigger>
     <PopoverContent align="end" aria-label="Rate master" className="w-[min(620px,calc(100vw-32px))] overflow-hidden rounded-lg border-t-[3px] border-t-indigo-500 p-0">{content}</PopoverContent>
