@@ -130,6 +130,10 @@
 .opp-board::-webkit-scrollbar-thumb:hover { background: #64708a; }
 .opp-lane { display: flex; flex-direction: column; flex: 0 0 280px; min-width: 0; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
 .opp-lane > h3 { flex-shrink: 0; }
+.opp-card-title { display: -webkit-box; min-width: 0; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.opp-card-client { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opp-card-number .opp-opportunity-number { gap: 2px 4px; padding: 2px 5px; }
+.opp-card-title { -webkit-line-clamp: 1; }
 /* Contain positioned card labels within the lane so they cannot expand the outer page. */
 .opp-lane-cards { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: #a4adbf transparent; padding-right: 3px; }
 .opp-pipeline-card { border: 1px solid #e1e5ed; border-radius: 9px; background: white; margin-bottom: 8px; box-shadow: 0 2px 3px #14213d03; overflow: hidden; min-width: 0; }

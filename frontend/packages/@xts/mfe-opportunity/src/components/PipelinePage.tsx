@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2, CircleX } from 'lucide-react';
+import { Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2 } from 'lucide-react';
 import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle } from '@xts/design-system';
 import type { ListFilter, OpportunitySummary, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
@@ -40,8 +40,9 @@ function localEstimate(o: OpportunitySummary) {
   return o.estimatedValue.trim() ? o.currencySymbol?.trim() ? `${o.currencySymbol.trim()} ${Number(o.estimatedValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : money(o.estimatedValue, o.currencyCode) : 'Not provided';
 }
 function OpportunityEstimates({ opportunity: o }: { opportunity: OpportunitySummary }) {
+  const estimate = localEstimate(o);
   const usd = o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'USD not provided';
-  return <div><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget</span><strong className="text-[12.5px]">{localEstimate(o)}</strong><span className="ml-1.5 text-[11px] text-muted-foreground">({usd})</span></div>;
+  return <div className="min-w-0"><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget</span><strong className="block truncate text-[12.5px]" title={estimate}>{estimate}</strong><span className="block truncate text-[11px] text-muted-foreground" title={usd}>({usd})</span></div>;
 }
 /** Compact attribution avatar; full identity stays available on hover and to assistive technology. */
 function PersonBadge({ person, label }: { person: OpportunitySummary['owner'] | undefined; label: 'Assigned' | 'Created by' }) {
@@ -50,21 +51,19 @@ function PersonBadge({ person, label }: { person: OpportunitySummary['owner'] | 
   const accessibleName = `${label} ${userLabel(person)}`;
   return <Tooltip><TooltipTrigger asChild><span className="inline-flex min-w-0 items-center"><Avatar className="size-[22px] shrink-0"><AvatarFallback className={cn('text-[10px] font-bold text-white', avatarAccent(name))}>{initials(name)}</AvatarFallback></Avatar><span className="sr-only">{accessibleName}</span></span></TooltipTrigger><TooltipContent>{accessibleName}</TooltipContent></Tooltip>;
 }
-function OpportunityPeople({ opportunity: o }: { opportunity: OpportunitySummary }) {
-  return <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" aria-label="Opportunity people">
-    <PersonBadge person={o.owner} label="Assigned" />
-    <PersonBadge person={o.createdBy} label="Created by" />
-  </div>;
-}
-function OutcomeBadge({ opportunity: o }: { opportunity: OpportunitySummary }) {
-  const outcome = o.stageId === 7 && o.subStageId === 13
-    ? { label: 'Won', variant: 'success' as const }
-    : o.stageId === 8 && o.subStageId === 14
-      ? { label: 'Lost', variant: 'critical' as const }
-      : null;
-  if (!outcome) return null;
-  const Icon = outcome.label === 'Won' ? CheckCircle2 : CircleX;
-  return <span className={cn('inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold', outcome.label === 'Won' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400')} aria-label={`Opportunity outcome: ${outcome.label}`}><Icon className="size-3.5" aria-hidden="true" />{outcome.label}</span>;
+function OpportunityCardStatus({ opportunity: o }: { opportunity: OpportunitySummary }) {
+  const status = opportunityStatus(o);
+  const label = status.substage ?? status.stage;
+  const won = o.stageId === 7 && o.subStageId === 13;
+  const lost = o.stageId === 8 && o.subStageId === 14;
+  const rejected = o.stageId === 9 || o.state === 'SALES_REJECTED' || o.state === 'GATE1_NO_GO';
+  const held = o.stageId === 10;
+  const tone = won ? 'text-emerald-700 dark:text-emerald-400' : lost || rejected ? 'text-red-700 dark:text-red-400' : held ? 'text-amber-700 dark:text-amber-400' : 'text-blue-700 dark:text-blue-400';
+  const dot = won ? 'bg-emerald-600' : lost || rejected ? 'bg-red-600' : held ? 'bg-amber-600' : 'bg-blue-600';
+  return <span role="status" aria-label={label} className={cn('inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold', tone)}>
+    <span className={cn('size-1.5 shrink-0 rounded-full', dot)} aria-hidden="true" />
+    {label}
+  </span>;
 }
 function StageProgress({ opportunity, className }: { opportunity: OpportunitySummary; className?: string }) {
   const step = progressPosition(opportunity);
@@ -90,7 +89,7 @@ function OpportunityRow({ opportunity: o, highlight }: { opportunity: Opportunit
   return <TableRow className={cn('hover:bg-accent/50', highlight && 'opp-highlight')}>
     <TableCell className={cn('min-w-[200px] border-l-[3px]', STAGE_TONE[o.state].edge)}><Link className="break-words text-[13px] font-semibold text-primary hover:underline" to={`/opportunity/${o.id}/details`}>{o.title}</Link><div className="mt-0.5 flex flex-wrap items-center gap-1.5"><OpportunityNumber number={o.number} /><OpportunityBadges opportunity={o} /></div></TableCell>
     <TableCell className="text-[12.5px]">{o.clientName || <span className="text-muted-foreground">Client not provided</span>}</TableCell>
-    <TableCell className="hidden lg:table-cell"><OpportunityPeople opportunity={o} /></TableCell>
+    <TableCell className="hidden lg:table-cell"><PersonBadge person={o.owner} label="Assigned" /></TableCell>
     <TableCell className="hidden whitespace-nowrap text-[12.5px] lg:table-cell">{o.submissionDeadline || <span className="text-muted-foreground">Not set</span>}</TableCell>
     <TableCell className="whitespace-nowrap text-right"><strong className="block text-[12.5px]">{localEstimate(o)}</strong><span className="block text-[11px] text-muted-foreground">{o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'USD not provided'}</span></TableCell>
     <TableCell className="w-[140px]"><Status {...o} size="sm" /><StageProgress opportunity={o} className="mt-1.5 max-w-[120px]" /></TableCell>
@@ -99,15 +98,15 @@ function OpportunityRow({ opportunity: o, highlight }: { opportunity: Opportunit
 function OpportunityCard({ opportunity: o, highlight }: { opportunity: OpportunitySummary; highlight: boolean }) {
   return <Card className={cn('mb-2.5 min-w-0 overflow-hidden border-t-[3px] shadow-sm transition-shadow hover:shadow-md last:mb-0', STAGE_TONE[o.state].top, highlight && 'opp-highlight')}>
     <Link className="block px-2.5 pb-2 pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" to={`/opportunity/${o.id}/details`} aria-label={`View ${o.title}`}>
-      <div className="flex flex-wrap items-start justify-between gap-1.5"><OpportunityNumber number={o.number} /><OutcomeBadge opportunity={o} /></div>
+      <div className="opp-card-number flex flex-wrap items-start gap-1.5"><OpportunityNumber number={o.number} /></div>
       <div className="mt-1 flex flex-wrap items-center gap-1"><OpportunityBadges opportunity={o} /></div>
-      <h3 className="mt-1 break-words text-[13px] font-semibold leading-snug">{o.title}</h3><p className="text-[11.5px] text-muted-foreground">{o.clientName || 'Client not provided'}</p>
+      <h3 title={o.title} className="opp-card-title mt-1 text-[13px] font-semibold leading-snug">{o.title}</h3><p title={o.clientName || 'Client not provided'} className="opp-card-client text-[11.5px] text-muted-foreground">{o.clientName || 'Client not provided'}</p>
       <div className="mt-1.5"><OpportunityEstimates opportunity={o} /></div>
       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-1.5 text-[11px] text-muted-foreground">
         <span>Due {o.submissionDeadline || 'Not set'}</span>
-        <OpportunityPeople opportunity={o} />
+        <PersonBadge person={o.createdBy} label="Created by" />
       </div>
-      <StageProgress opportunity={o} className="mt-1.5" /><div className="mt-1.5"><Status {...o} size="sm" hideStage /></div>
+      <StageProgress opportunity={o} className="mt-1.5" /><div className="mt-1.5"><OpportunityCardStatus opportunity={o} /></div>
     </Link>
   </Card>;
 }
