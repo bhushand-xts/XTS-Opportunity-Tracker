@@ -42,7 +42,7 @@ function localEstimate(o: OpportunitySummary) {
 function OpportunityEstimates({ opportunity: o }: { opportunity: OpportunitySummary }) {
   const estimate = localEstimate(o);
   const usd = o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'USD not provided';
-  return <div className="min-w-0"><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget</span><strong className="block truncate text-[12.5px]" title={estimate}>{estimate}</strong><span className="block truncate text-[11px] text-muted-foreground" title={usd}>({usd})</span></div>;
+  return <div className="min-w-0 flex-1"><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget</span><div className="flex min-w-0 items-baseline gap-1.5"><strong className="min-w-0 truncate text-[12.5px]" title={estimate}>{estimate}</strong><span className="min-w-0 truncate text-[11px] text-muted-foreground" title={usd}>({usd})</span></div></div>;
 }
 /** Compact attribution avatar; full identity stays available on hover and to assistive technology. */
 function PersonBadge({ person, label }: { person: OpportunitySummary['owner'] | undefined; label: 'Assigned' | 'Created by' }) {
@@ -60,10 +60,11 @@ function OpportunityCardStatus({ opportunity: o }: { opportunity: OpportunitySum
   const held = o.stageId === 10;
   const tone = won ? 'text-emerald-700 dark:text-emerald-400' : lost || rejected ? 'text-red-700 dark:text-red-400' : held ? 'text-amber-700 dark:text-amber-400' : 'text-blue-700 dark:text-blue-400';
   const dot = won ? 'bg-emerald-600' : lost || rejected ? 'bg-red-600' : held ? 'bg-amber-600' : 'bg-blue-600';
-  return <span role="status" aria-label={label} className={cn('inline-flex max-w-full items-center gap-1.5 text-[11px] font-semibold', tone)}>
+  const content = <span role="status" aria-label={label} className={cn('inline-flex min-w-0 max-w-full items-center gap-1.5 text-[11px] font-semibold', tone)}>
     <span className={cn('size-1.5 shrink-0 rounded-full', dot)} aria-hidden="true" />
-    {label}
+    <span className="truncate">{rejected ? 'Rejected' : label}</span>
   </span>;
+  return rejected ? <Tooltip><TooltipTrigger asChild>{content}</TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip> : content;
 }
 function StageProgress({ opportunity, className }: { opportunity: OpportunitySummary; className?: string }) {
   const step = progressPosition(opportunity);
@@ -96,17 +97,17 @@ function OpportunityRow({ opportunity: o, highlight }: { opportunity: Opportunit
   </TableRow>;
 }
 function OpportunityCard({ opportunity: o, highlight }: { opportunity: OpportunitySummary; highlight: boolean }) {
-  return <Card className={cn('mb-2.5 min-w-0 overflow-hidden border-t-[3px] shadow-sm transition-shadow hover:shadow-md last:mb-0', STAGE_TONE[o.state].top, highlight && 'opp-highlight')}>
+  return <Card className={cn('mb-2.5 w-full max-w-full min-w-0 overflow-hidden border-t-[3px] shadow-sm transition-shadow hover:shadow-md last:mb-0', STAGE_TONE[o.state].top, highlight && 'opp-highlight')}>
     <Link className="block px-2.5 pb-2 pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" to={`/opportunity/${o.id}/details`} aria-label={`View ${o.title}`}>
       <div className="opp-card-number flex flex-wrap items-start gap-1.5"><OpportunityNumber number={o.number} /></div>
       <div className="mt-1 flex flex-wrap items-center gap-1"><OpportunityBadges opportunity={o} /></div>
       <h3 title={o.title} className="opp-card-title mt-1 text-[13px] font-semibold leading-snug">{o.title}</h3><p title={o.clientName || 'Client not provided'} className="opp-card-client text-[11.5px] text-muted-foreground">{o.clientName || 'Client not provided'}</p>
-      <div className="mt-1.5"><OpportunityEstimates opportunity={o} /></div>
-      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-1.5 text-[11px] text-muted-foreground">
-        <span>Due {o.submissionDeadline || 'Not set'}</span>
-        <PersonBadge person={o.createdBy} label="Created by" />
+      <div className="mt-1 flex min-w-0 items-end justify-between gap-2"><OpportunityEstimates opportunity={o} /><PersonBadge person={o.createdBy} label="Created by" /></div>
+      <StageProgress opportunity={o} className="mt-1" />
+      <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className="min-w-0 truncate" title={`Due ${o.submissionDeadline || 'Not set'}`}>Due {o.submissionDeadline || 'Not set'}</span>
+        <OpportunityCardStatus opportunity={o} />
       </div>
-      <StageProgress opportunity={o} className="mt-1.5" /><div className="mt-1.5"><OpportunityCardStatus opportunity={o} /></div>
     </Link>
   </Card>;
 }

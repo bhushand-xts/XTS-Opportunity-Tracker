@@ -1,5 +1,5 @@
 import { QuestionViewer } from './QuestionViewer';
-import { CalendarClock, Check, ClipboardList, FileText, HelpCircle, History, LayoutGrid, Lock, Pencil } from 'lucide-react';
+import { CalendarClock, Check, ClipboardList, FileText, HelpCircle, LayoutGrid, Lock, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Badge, type BadgeProps, Button, Tabs, TabsContent, TabsList, TabsTrigger, useSetPageTitle } from '@xts/design-system';
@@ -23,9 +23,6 @@ import { SavedEstimationBreakdown } from './SavedEstimationBreakdown';
 const STATUS_BADGE_VARIANT: Record<OpportunityState, BadgeProps['variant']> = {
   PREPARATION_PENDING: 'muted', IN_PROGRESS: 'info', SALES_REVIEW: 'warning', GATE1_PENDING: 'warning', GATE1_GO: 'success', SALES_REJECTED: 'critical', GATE1_NO_GO: 'critical',
 };
-function Activity({ opportunity: o }: { opportunity: OpportunityDetail }) {
-  return <Panel title="Activity & decisions" description="Recorded decisions, users and timestamps" tone="neutral"><div className="space-y-3">{o.activity?.map(event => <article key={event.id} className="border-b pb-3"><h3 className="text-sm font-semibold">{event.action}</h3><p className="mt-1 text-xs text-muted-foreground">{userLabel(event.actor)} · {new Date(event.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p>{event.note && <p className="mt-3 whitespace-pre-wrap break-words text-sm">{event.note}</p>}</article>)}{!o.activity?.length && <p className="text-sm text-muted-foreground">No activity returned.</p>}</div></Panel>;
-}
 function Documents({ opportunity: o }: { opportunity: OpportunityDetail }) {
   return <Panel title="Documents" description="Files attached to this opportunity" tone="neutral"><Values values={[
     ['Source document', o.form.rfp.source ? <DocumentDownload document={o.form.rfp.source} opportunityId={o.id} /> : undefined],
@@ -159,7 +156,7 @@ function Overview({
     </div>
   );
 }
-type TabKey = 'overview' | 'qa' | 'scope' | 'estimation' | 'documents' | 'activity';
+type TabKey = 'overview' | 'qa' | 'scope' | 'estimation' | 'documents';
 export function OpportunityDetailsPage({ review = false }: { review?: boolean }) {
   const [selectedVersion, setSelectedVersion] = useState<EstimationVersion | null>(null);
   const [estimationSidebar, setEstimationSidebar] = useState<HTMLDivElement | null>(null);
@@ -198,7 +195,6 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
     { key: 'scope', label: 'Scope & Assessment' },
     { key: 'estimation', label: 'Estimate' },
     { key: 'documents', label: 'Documents' },
-    { key: 'activity', label: 'Activity' },
   ];
   const requested = params.get('tab') ?? 'overview', active = tabs.find(tab => tab.key === requested)?.key ?? tabs[0]?.key;
   if (!active) return <Notice title="Access restricted" error="No workspace modules are visible to your user." />;
@@ -234,8 +230,7 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
           : tab.key === 'estimation' ? <EstimationModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} registerDraft={registerDraft} sidebarTarget={estimationSidebar} selectedVersion={selectedVersion} onSelectVersion={setSelectedVersion} />
           : tab.key === 'scope' ? <ScopeModule key={o.id} opportunity={o} onSaved={resource.setData} readOnly={false} />
           : tab.key === 'documents' ? <Documents opportunity={o} />
-          : tab.key === 'qa' ? <ResponseWorkspace opportunity={o} onSaved={resource.setData} />
-          : <Activity opportunity={o} />}
+          : <ResponseWorkspace opportunity={o} onSaved={resource.setData} />}
       </TabsContent>)}
       </div>
       <aside className="opp-detail-sidebar" aria-label="Opportunity progress">

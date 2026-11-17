@@ -69,7 +69,10 @@ export function chunks(blocks: Block[], maxBytes = 2200): Block[][] {
 
 export function tokenChunks(blocks: Block[], instructions?: string | null): Block[][] {
   const tokens = (group: Block[]) => inputTokens(group, instructions);
-  const budget = env.extraction.tokensPerMinute - completionBudget - 200;
+  // Keep each request within the configured per-request reservation as well as
+  // the provider's rolling minute/day limits. This yields more, smaller chunks
+  // and makes section progress visible sooner on large documents.
+  const budget = Math.min(env.extraction.requestTokens, env.extraction.tokensPerMinute, env.extraction.tokensPerDay) - completionBudget - 200;
   if (budget <= tokens([])) throw new ExtractionError('EXTRACTION_QUOTA_TOO_SMALL');
   const result: Block[][] = [];
   let current: Block[] = [];
