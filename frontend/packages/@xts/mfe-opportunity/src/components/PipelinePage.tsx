@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2 } from 'lucide-react';
-import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, SegmentedProgress, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle } from '@xts/design-system';
+import { Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2, CircleX } from 'lucide-react';
+import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle } from '@xts/design-system';
 import type { ListFilter, OpportunitySummary, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
 import { useResource, useDebounce } from '../hooks/useResource';
@@ -9,22 +9,32 @@ import { useOpportunityAccess } from '../hooks/useOpportunityAccess';
 import { avatarAccent, initials, Loading, Notice, OpportunityNumber, PRIORITY_BADGE, Status } from './ui';
 import { money, STATE_LABELS, userLabel } from '../lib/workflow';
 import { AccessUnavailable } from './AccessUnavailable';
-import { isOpportunityOutcome, OPPORTUNITY_OUTCOME_LABEL, PIPELINE_STAGE_IDS, STAGE_LABELS } from '../lib/opportunityStatus';
+import { isOpportunityOutcome, OPPORTUNITY_OUTCOME_LABEL, opportunityStatus, PIPELINE_STAGE_IDS, STAGE_LABELS } from '../lib/opportunityStatus';
 
 const STAGES: OpportunityState[] = ['PREPARATION_PENDING', 'IN_PROGRESS', 'SALES_REVIEW', 'GATE1_PENDING', 'GATE1_GO', 'SALES_REJECTED', 'GATE1_NO_GO'];
-// Workflow progress, coloured with the design system's --progress-* ramp (later steps read greener).
-// Rejected / No-Go stop at the step where the decision was taken and use the destructive colour.
-const PROGRESS_STEPS: OpportunityState[] = ['PREPARATION_PENDING', 'IN_PROGRESS', 'SALES_REVIEW', 'GATE1_PENDING', 'GATE1_GO'];
-function progressStep(state: OpportunityState) { return state === 'SALES_REJECTED' ? 3 : state === 'GATE1_NO_GO' ? 4 : PROGRESS_STEPS.indexOf(state) + 1; }
+// Seven persisted workflow positions; holds remain at the stage they paused in.
+const PROGRESS_STAGE_LABELS = ['Identified', 'Qualification', 'Engineering', 'Estimate review', 'Proposal', 'Negotiation', 'Outcome'];
+function progressPosition(o: OpportunitySummary): number {
+  if (o.stageId === 1) return 1;
+  if (o.stageId === 2) return 2;
+  if (o.stageId === 3) return 3;
+  if (o.stageId === 4) return 4;
+  if (o.stageId === 5) return 5;
+  if (o.stageId === 6) return 6;
+  if (o.stageId === 7 || o.stageId === 8) return 7;
+  if (o.stageId === 9) return ({ 15: 1, 16: 2, 17: 4, 18: 7 } as Record<number, number>)[o.subStageId ?? 0] ?? 7;
+  if (o.stageId === 10) return o.subStageId === 19 ? 6 : 5;
+  return ({ PREPARATION_PENDING: 1, SALES_REVIEW: 1, GATE1_PENDING: 2, IN_PROGRESS: 3, GATE1_GO: 3, SALES_REJECTED: 1, GATE1_NO_GO: 2 } as Record<OpportunityState, number>)[o.state];
+}
 // Full class names (not built from strings) so Tailwind can see them.
-const STAGE_TONE: Record<OpportunityState, { top: string; edge: string; fill: string }> = {
-  PREPARATION_PENDING: { top: 'border-t-progress-1', edge: 'border-l-progress-1', fill: 'bg-progress-1' },
-  IN_PROGRESS: { top: 'border-t-progress-2', edge: 'border-l-progress-2', fill: 'bg-progress-2' },
-  SALES_REVIEW: { top: 'border-t-progress-3', edge: 'border-l-progress-3', fill: 'bg-progress-3' },
-  GATE1_PENDING: { top: 'border-t-progress-4', edge: 'border-l-progress-4', fill: 'bg-progress-4' },
-  GATE1_GO: { top: 'border-t-progress-5', edge: 'border-l-progress-5', fill: 'bg-progress-5' },
-  SALES_REJECTED: { top: 'border-t-destructive', edge: 'border-l-destructive', fill: 'bg-destructive' },
-  GATE1_NO_GO: { top: 'border-t-destructive', edge: 'border-l-destructive', fill: 'bg-destructive' },
+const STAGE_TONE: Record<OpportunityState, { top: string; edge: string }> = {
+  PREPARATION_PENDING: { top: 'border-t-progress-1', edge: 'border-l-progress-1' },
+  IN_PROGRESS: { top: 'border-t-progress-2', edge: 'border-l-progress-2' },
+  SALES_REVIEW: { top: 'border-t-progress-3', edge: 'border-l-progress-3' },
+  GATE1_PENDING: { top: 'border-t-progress-4', edge: 'border-l-progress-4' },
+  GATE1_GO: { top: 'border-t-progress-5', edge: 'border-l-progress-5' },
+  SALES_REJECTED: { top: 'border-t-destructive', edge: 'border-l-destructive' },
+  GATE1_NO_GO: { top: 'border-t-destructive', edge: 'border-l-destructive' },
 };
 function localEstimate(o: OpportunitySummary) {
   return o.estimatedValue.trim() ? o.currencySymbol?.trim() ? `${o.currencySymbol.trim()} ${Number(o.estimatedValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : money(o.estimatedValue, o.currencyCode) : 'Not provided';
@@ -33,15 +43,41 @@ function OpportunityEstimates({ opportunity: o }: { opportunity: OpportunitySumm
   const usd = o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'USD not provided';
   return <div><span className="block text-[10.5px] leading-tight text-muted-foreground">Client budget</span><strong className="text-[12.5px]">{localEstimate(o)}</strong><span className="ml-1.5 text-[11px] text-muted-foreground">({usd})</span></div>;
 }
-/** Owner shown as an initials badge only; the full name appears on hover (and to screen readers). */
-function OwnerBadge({ opportunity: o }: { opportunity: OpportunitySummary }) {
-  const ownerName = o.owner ? (o.owner.name || o.owner.email) : '';
-  if (!ownerName) return <span>Unassigned</span>;
-  return <Tooltip><TooltipTrigger asChild><span className="flex items-center"><Avatar className="size-[22px]"><AvatarFallback className={cn('text-[10px] font-bold text-white', avatarAccent(ownerName))}>{initials(ownerName)}</AvatarFallback></Avatar><span className="sr-only">Assigned to {userLabel(o.owner)}</span></span></TooltipTrigger><TooltipContent>Assigned to {userLabel(o.owner)}</TooltipContent></Tooltip>;
+/** Compact attribution avatar; full identity stays available on hover and to assistive technology. */
+function PersonBadge({ person, label }: { person: OpportunitySummary['owner'] | undefined; label: 'Assigned' | 'Created by' }) {
+  const name = person ? person.name || person.email : '';
+  if (!person || !name) return null;
+  const accessibleName = `${label} ${userLabel(person)}`;
+  return <Tooltip><TooltipTrigger asChild><span className="inline-flex min-w-0 items-center"><Avatar className="size-[22px] shrink-0"><AvatarFallback className={cn('text-[10px] font-bold text-white', avatarAccent(name))}>{initials(name)}</AvatarFallback></Avatar><span className="sr-only">{accessibleName}</span></span></TooltipTrigger><TooltipContent>{accessibleName}</TooltipContent></Tooltip>;
 }
-function StageProgress({ state, className }: { state: OpportunityState; className?: string }) {
-  const step = progressStep(state);
-  return <SegmentedProgress value={step} max={PROGRESS_STEPS.length} indicatorClassName={STAGE_TONE[state].fill} aria-label={`Stage ${step} of ${PROGRESS_STEPS.length}`} className={className} />;
+function OpportunityPeople({ opportunity: o }: { opportunity: OpportunitySummary }) {
+  return <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" aria-label="Opportunity people">
+    <PersonBadge person={o.owner} label="Assigned" />
+    <PersonBadge person={o.createdBy} label="Created by" />
+  </div>;
+}
+function OutcomeBadge({ opportunity: o }: { opportunity: OpportunitySummary }) {
+  const outcome = o.stageId === 7 && o.subStageId === 13
+    ? { label: 'Won', variant: 'success' as const }
+    : o.stageId === 8 && o.subStageId === 14
+      ? { label: 'Lost', variant: 'critical' as const }
+      : null;
+  if (!outcome) return null;
+  const Icon = outcome.label === 'Won' ? CheckCircle2 : CircleX;
+  return <span className={cn('inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold', outcome.label === 'Won' ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400')} aria-label={`Opportunity outcome: ${outcome.label}`}><Icon className="size-3.5" aria-hidden="true" />{outcome.label}</span>;
+}
+function StageProgress({ opportunity, className }: { opportunity: OpportunitySummary; className?: string }) {
+  const step = progressPosition(opportunity);
+  const rejected = opportunity.stageId === 9 || opportunity.state === 'SALES_REJECTED' || opportunity.state === 'GATE1_NO_GO';
+  const won = opportunity.stageId === 7 && opportunity.subStageId === 13;
+  const lost = opportunity.stageId === 8 && opportunity.subStageId === 14;
+  const held = opportunity.stageId === 10;
+  const activeColor = rejected || lost ? 'bg-destructive' : won ? 'bg-progress-5' : held ? 'bg-amber-500' : 'bg-progress-3';
+  const status = opportunityStatus(opportunity);
+  const currentLabel = status.substage ?? status.stage;
+  return <div role="progressbar" aria-valuemin={0} aria-valuemax={PROGRESS_STAGE_LABELS.length} aria-valuenow={step} aria-valuetext={`${currentLabel}; ${PROGRESS_STAGE_LABELS[step - 1]} step ${step} of ${PROGRESS_STAGE_LABELS.length}`} className={cn('grid gap-0.5', className)} style={{ gridTemplateColumns: `repeat(${PROGRESS_STAGE_LABELS.length}, minmax(0, 1fr))` }}>
+    {PROGRESS_STAGE_LABELS.map((label, index) => <span key={label} title={`${label}${index + 1 === step ? ' (current)' : ''}`} className={cn('h-[3px] rounded-full', index < step - 1 ? 'bg-progress-5' : index === step - 1 ? activeColor : 'bg-muted')} />)}
+  </div>;
 }
 function OpportunityBadges({ opportunity: o }: { opportunity: OpportunitySummary }) {
   return <span className="flex flex-wrap items-center gap-1">
@@ -54,23 +90,24 @@ function OpportunityRow({ opportunity: o, highlight }: { opportunity: Opportunit
   return <TableRow className={cn('hover:bg-accent/50', highlight && 'opp-highlight')}>
     <TableCell className={cn('min-w-[200px] border-l-[3px]', STAGE_TONE[o.state].edge)}><Link className="break-words text-[13px] font-semibold text-primary hover:underline" to={`/opportunity/${o.id}/details`}>{o.title}</Link><div className="mt-0.5 flex flex-wrap items-center gap-1.5"><OpportunityNumber number={o.number} /><OpportunityBadges opportunity={o} /></div></TableCell>
     <TableCell className="text-[12.5px]">{o.clientName || <span className="text-muted-foreground">Client not provided</span>}</TableCell>
-    <TableCell className="hidden lg:table-cell"><OwnerBadge opportunity={o} /></TableCell>
+    <TableCell className="hidden lg:table-cell"><OpportunityPeople opportunity={o} /></TableCell>
     <TableCell className="hidden whitespace-nowrap text-[12.5px] lg:table-cell">{o.submissionDeadline || <span className="text-muted-foreground">Not set</span>}</TableCell>
     <TableCell className="whitespace-nowrap text-right"><strong className="block text-[12.5px]">{localEstimate(o)}</strong><span className="block text-[11px] text-muted-foreground">{o.estimatedValueUsd?.trim() ? money(o.estimatedValueUsd, 'USD') : 'USD not provided'}</span></TableCell>
-    <TableCell className="w-[140px]"><Status {...o} size="sm" /><StageProgress state={o.state} className="mt-1.5 max-w-[120px]" /></TableCell>
+    <TableCell className="w-[140px]"><Status {...o} size="sm" /><StageProgress opportunity={o} className="mt-1.5 max-w-[120px]" /></TableCell>
   </TableRow>;
 }
 function OpportunityCard({ opportunity: o, highlight }: { opportunity: OpportunitySummary; highlight: boolean }) {
   return <Card className={cn('mb-2.5 min-w-0 overflow-hidden border-t-[3px] shadow-sm transition-shadow hover:shadow-md last:mb-0', STAGE_TONE[o.state].top, highlight && 'opp-highlight')}>
     <Link className="block px-2.5 pb-2 pt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" to={`/opportunity/${o.id}/details`} aria-label={`View ${o.title}`}>
-      <div className="flex flex-wrap items-center justify-between gap-1.5"><OpportunityNumber number={o.number} /><OpportunityBadges opportunity={o} /></div>
+      <div className="flex flex-wrap items-start justify-between gap-1.5"><OpportunityNumber number={o.number} /><OutcomeBadge opportunity={o} /></div>
+      <div className="mt-1 flex flex-wrap items-center gap-1"><OpportunityBadges opportunity={o} /></div>
       <h3 className="mt-1 break-words text-[13px] font-semibold leading-snug">{o.title}</h3><p className="text-[11.5px] text-muted-foreground">{o.clientName || 'Client not provided'}</p>
       <div className="mt-1.5"><OpportunityEstimates opportunity={o} /></div>
       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-1.5 text-[11px] text-muted-foreground">
         <span>Due {o.submissionDeadline || 'Not set'}</span>
-        <OwnerBadge opportunity={o} />
+        <OpportunityPeople opportunity={o} />
       </div>
-      <StageProgress state={o.state} className="mt-1.5" /><div className="mt-1.5"><Status {...o} size="sm" hideStage /></div>{o.createdBy && o.createdBy.id !== o.owner?.id && <p className="mt-1.5 border-t pt-1.5 text-[11px] text-muted-foreground">Created by: {o.createdBy.name || o.createdBy.email}</p>}
+      <StageProgress opportunity={o} className="mt-1.5" /><div className="mt-1.5"><Status {...o} size="sm" hideStage /></div>
     </Link>
   </Card>;
 }

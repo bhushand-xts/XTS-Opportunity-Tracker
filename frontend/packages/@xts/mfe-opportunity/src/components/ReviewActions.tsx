@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Button, Card, Checkbox, cn, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label, Textarea } from '@xts/design-system';
+import { Button, Card, Checkbox, cn, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Textarea } from '@xts/design-system';
 import { toast } from 'sonner';
 import { estimationSubmissionError } from '../lib/estimationValidation';
 import type { DecisionCommand, EstimationVersion, OpportunityDetail } from '@xts/api-contracts';
@@ -110,7 +110,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
   const [holdReasonId, setHoldReasonId] = useState('');
   const [negotiationReasonId, setNegotiationReasonId] = useState('');
   const [negotiationAttempted, setNegotiationAttempted] = useState(false);
-  const negotiationReasonRef = useRef<HTMLSelectElement>(null);
+  const negotiationReasonRef = useRef<HTMLButtonElement>(null);
   const [requiresRevisedEstimation, setRequiresRevisedEstimation] = useState(false);
   const [completed, setCompleted] = useState<{ id: string; sourceStageId: OpportunityDetail['stageId']; sourceState: OpportunityDetail['state']; stageId: OpportunityDetail['stageId']; subStageId: OpportunityDetail['subStageId']; decision: DecisionCommand['decision'] }>();
   useEffect(() => {
@@ -240,14 +240,17 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
         </div>}
         {negotiating && <div className="space-y-2">
           <Label htmlFor={negotiationReasonInputId}>Negotiation reason <span className="text-destructive" aria-hidden="true">*</span></Label>
-          <select ref={negotiationReasonRef} id={negotiationReasonInputId} value={negotiationReasonId} required disabled={mutation.saving || negotiationReasons.loading || Boolean(negotiationReasons.error)}
-            aria-invalid={missingNegotiationReason}
-            aria-describedby={missingNegotiationReason ? `${negotiationReasonInputId}-hint` : negotiationReason?.description ? negotiationDescriptionId : undefined}
-            onChange={event => setNegotiationReasonId(event.target.value)}
-            className="opp-negotiation-input h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-            <option value="">{negotiationReasons.loading ? 'Loading negotiation reasons…' : 'Select a negotiation reason'}</option>
-            {negotiationReasons.data?.map(option => <option key={option.id} value={String(option.id)}>{option.name}</option>)}
-          </select>
+          <Select value={negotiationReasonId} onValueChange={setNegotiationReasonId} disabled={mutation.saving || negotiationReasons.loading || Boolean(negotiationReasons.error)}>
+            <SelectTrigger ref={negotiationReasonRef} id={negotiationReasonInputId} aria-label="Negotiation reason" aria-required="true"
+              aria-invalid={missingNegotiationReason}
+              aria-describedby={missingNegotiationReason ? `${negotiationReasonInputId}-hint` : negotiationReason?.description ? negotiationDescriptionId : undefined}
+              className="opp-negotiation-input w-full">
+              <SelectValue placeholder={negotiationReasons.loading ? 'Loading negotiation reasons…' : 'Select a negotiation reason'} />
+            </SelectTrigger>
+            <SelectContent position="popper" className="max-h-[min(16rem,var(--radix-select-content-available-height))] w-[var(--radix-select-trigger-width)]">
+              {negotiationReasons.data?.map(option => <SelectItem key={option.id} value={String(option.id)}>{option.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
           {missingNegotiationReason && <p id={`${negotiationReasonInputId}-hint`} role="status" className="text-xs text-muted-foreground">Please choose the reason for this negotiation to continue.</p>}
           {negotiationReason?.description && <p id={negotiationDescriptionId} className="rounded-md bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">{negotiationReason.description}</p>}
           {negotiationReasons.error && <Notice error={negotiationReasons.error} retry={negotiationReasons.reload} />}

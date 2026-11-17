@@ -128,7 +128,7 @@
 .opp-board::-webkit-scrollbar-track { background: #e8eaf2; border-radius: 8px; }
 .opp-board::-webkit-scrollbar-thumb { background: #8e96a8; border: 2px solid #e8eaf2; border-radius: 8px; }
 .opp-board::-webkit-scrollbar-thumb:hover { background: #64708a; }
-.opp-lane { display: flex; flex-direction: column; flex: 0 0 320px; min-width: 0; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
+.opp-lane { display: flex; flex-direction: column; flex: 0 0 280px; min-width: 0; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
 .opp-lane > h3 { flex-shrink: 0; }
 /* Contain positioned card labels within the lane so they cannot expand the outer page. */
 .opp-lane-cards { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: #a4adbf transparent; padding-right: 3px; }
@@ -206,12 +206,13 @@
 @container opp-solicitation (min-width: 620px) {
   .opp-solicitation .opp-values { grid-template-columns: repeat(3,minmax(0,1fr)); }
 }
-@container opp-questions (min-width: 420px) {
+@container opp-questions (min-width: 380px) {
   .opp-question-viewer .opp-question-categories { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
-@container opp-questions (min-width: 620px) {
-  .opp-question-viewer .opp-question-categories { grid-template-columns: repeat(3,minmax(0,1fr)); }
+@container opp-questions (min-width: 760px) {
+  .opp-question-viewer .opp-question-categories { grid-template-columns: repeat(4,minmax(0,1fr)); }
 }
+.opp-question-viewer .opp-question-categories > button { min-width: 0; }
 @media (pointer: coarse) {
   .opp-question-categories > button { min-height: 40px; }
 }

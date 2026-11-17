@@ -206,7 +206,7 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
   if ((opportunity.stageId ?? 0) >= 3 && access.gateReview && access.canView(opportunity)) actions.push('VIEW_ESTIMATION_RATES');
   if (estimationRatesWritable(opportunity) && access.gateReview && access.canView(opportunity)) actions.push('EDIT_ESTIMATION_RATES');
   if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('SUBMIT_ESTIMATE');
-  if (!preparationModulesLocked(opportunity) && access.canView(opportunity)) actions.push('EDIT_SCOPE');
+  if (!preparationModulesLocked(opportunity) && access.estimate && access.canView(opportunity)) actions.push('EDIT_SCOPE');
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) {
     actions.push('ESTIMATE_APPROVE');
     if (opportunity.subStageId === 8) actions.push('ESTIMATE_HOLD');
@@ -713,8 +713,9 @@ export async function getEstimation(opportunityId: number, ctx: any) {
 
 export async function getResponses(opportunityId: number, ctx: any) {
   const opportunity = await get(opportunityId, ctx);
+  const access = await accessFor(ctx);
   return (await repository.findResponses(opportunityId)).map(response => ({
-    ...response, allowedActions: preparationModulesLocked(opportunity) ? [] : ['SAVE_ANSWER'],
+    ...response, allowedActions: preparationModulesLocked(opportunity) || !access.estimate ? [] : ['SAVE_ANSWER'],
   }));
 }
 
@@ -733,6 +734,7 @@ export async function saveScope(
   const access = await accessFor(ctx);
 
   assertPreparationWritable(opportunity);
+  if (!access.estimate) throw conflict('Only users with Estimation access can edit opportunity scope or assessment.');
 
   if (
     !scope ||
@@ -815,6 +817,7 @@ export async function saveScope(
 export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, ctx: any) {
   const access = await accessFor(ctx);
   assertPreparationWritable(await get(opportunityId, ctx));
+  if (!access.estimate) throw conflict('Only users with Estimation access can edit opportunity answers.');
   if (!Number.isSafeInteger(responseId) || responseId <= 0 || !Number.isSafeInteger(revision) || revision < 0) {
     throw validationFailed('Select a saved opportunity question and its current revision.');
   }
