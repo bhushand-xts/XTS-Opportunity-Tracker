@@ -113,6 +113,15 @@
   * {
     @apply border-border;
   }
+  html {
+    /* Reserve the scrollbar's width permanently so opening a modal (which
+       hides the native scrollbar to lock background scroll) never changes
+       the page's content width. Without this, a layout that measures its
+       own size against the viewport (e.g. the opportunity estimation tab)
+       can oscillate: scrollbar disappears -> content reflows wider ->
+       measured height changes -> page grows a scrollbar again -> repeat. */
+    scrollbar-gutter: stable;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-family: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
