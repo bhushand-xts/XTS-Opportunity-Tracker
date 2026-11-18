@@ -19,6 +19,8 @@ const OPPORTUNITY_FIELDS = gql`
     clientId
     stageId
     subStageId
+    stageName
+    subStageName
     ownerId
     createdBy
     createdDt
@@ -77,7 +79,7 @@ export const GET_OPPORTUNITY = gql`
     opportunity(opportunityId: $opportunityId) {
       ...OpportunityFields
       responses { id title category answer revision allowedActions }
-      stageHistory { id stageId subStageId reachedAt updatedBy comment }
+      stageHistory { id stageId stageName subStageId subStageName reachedAt updatedBy comment }
       estimation { revision status rows { id workItem hours people hourlyRate } rates { roleCode rate rateType currencyCode } assumptions total grid { phaseIds roleCodes durations { phaseId weeks } allocations { phaseId roleCode effort } } }
       scope { revision summary risks { id description severity } alignment { id text } }
     }

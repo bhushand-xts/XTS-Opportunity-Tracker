@@ -19,7 +19,7 @@ type UploadAudit = { uploadedBy: number | null; uploadedDt: string | null };
 export function documentUploadAudit(filePath: string | null | undefined, userId: number, current?: UploadAudit & { filePath: string | null }): UploadAudit {
   if (!filePath) return { uploadedBy: null, uploadedDt: null };
   const unchanged = current?.filePath === filePath;
-  if (!/^opportunity\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\.(pdf|docx?|txt)$/i.test(filePath)) {
+  if (!/^opportunity\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\.(pdf|docx?|txt|xlsx?)$/i.test(filePath)) {
     if (unchanged) return { uploadedBy: current.uploadedBy, uploadedDt: current.uploadedDt };
     throw validationFailed('Upload a document before saving its reference.');
   }

@@ -8,7 +8,7 @@ import { useOpportunityService } from '../services/OpportunityService';
 import { useSave, type ConfirmationTone } from '../hooks/useSave';
 import { Field, Notice, Panel } from './ui';
 import { useResource } from '../hooks/useResource';
-import { ArrowRight, Check, Pause, Send, X } from 'lucide-react';
+import { ArrowRight, Calculator, Check, CircleHelp, Pause, Send, X } from 'lucide-react';
 
 const TONE_ICON: Record<ConfirmationTone, typeof Check> = { success: Check, warning: Pause, error: X, info: ArrowRight };
 
@@ -23,6 +23,7 @@ const LABELS: Record<DecisionCommand['decision'], string> = {
   GATE1_NO_GO: 'Reject Opportunity',
   SUBMIT_ESTIMATE: 'Submit Estimation to CEO',
   ESTIMATE_APPROVE: 'Approve Estimation',
+  ESTIMATE_REQUEST_CHANGES: 'Request Changes',
   ESTIMATE_REVISION_APPROVE: 'Approve estimation revision',
   ESTIMATE_REVISION_DECLINE: 'Decline revision request',
   ESTIMATE_HOLD: 'Hold Estimation',
@@ -43,12 +44,12 @@ const LABELS: Record<DecisionCommand['decision'], string> = {
 const COMPACT_LABELS: Partial<Record<DecisionCommand['decision'], string>> = {
   SALES_APPROVE: 'Approve', SALES_REQUEST_CHANGES: 'Changes', SALES_HOLD: 'Hold', SALES_REJECT: 'Reject',
   GATE1_GO: 'Approve', GATE1_REQUEST_CHANGES: 'Changes', GATE1_HOLD: 'Hold', GATE1_NO_GO: 'Reject',
-  SUBMIT_ESTIMATE: 'Submit', ESTIMATE_APPROVE: 'Approve', ESTIMATE_HOLD: 'Hold', ESTIMATE_REJECT: 'Reject',
+  SUBMIT_ESTIMATE: 'Submit', ESTIMATE_APPROVE: 'Approve', ESTIMATE_REQUEST_CHANGES: 'Changes', ESTIMATE_HOLD: 'Hold', ESTIMATE_REJECT: 'Reject',
   BID_SUBMITTED: 'Submitted', START_NEGOTIATION: 'Negotiate', MARK_WON: 'Won', MARK_LOST: 'Lost',
   OPPORTUNITY_HOLD: 'Hold', RESUME_NEGOTIATION: 'Resume', RESUME_PROPOSAL: 'Resume', CLOSE_OPPORTUNITY: 'Close', RESUBMIT: 'Resubmit',
 };
 const LEGACY_DECISIONS: DecisionCommand['decision'][] = ['SALES_APPROVE', 'SALES_REJECT', 'GATE1_GO', 'GATE1_NO_GO'];
-const NEGATIVE_DECISIONS: DecisionCommand['decision'][] = ['SALES_REJECT', 'GATE1_NO_GO', 'ESTIMATE_REJECT', 'ESTIMATE_REVISION_DECLINE', 'MARK_LOST'];
+const NEGATIVE_DECISIONS: DecisionCommand['decision'][] = ['SALES_REJECT', 'GATE1_NO_GO', 'ESTIMATE_REVISION_DECLINE', 'MARK_LOST'];
 const CONFIRMATION_STYLES: Record<ConfirmationTone, string> = {
   success: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
   warning: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300',
@@ -84,6 +85,7 @@ function decisionDescription(o: OpportunityDetail, decision: DecisionCommand['de
     SALES_REJECT: 'This closes the opportunity as No-Bid / Declined · Rejected by Sales Head.',
     GATE1_NO_GO: 'This closes the opportunity as No-Bid / Declined · No-Go by CEO.',
     ESTIMATE_REJECT: 'This closes the opportunity as No-Bid / Declined · Estimate Rejected by CEO.',
+    ESTIMATE_REQUEST_CHANGES: 'This returns the opportunity to the Estimation Team at Solution/Scoping Estimation.',
     SUBMIT_ESTIMATE: 'This sends the selected saved estimation for CEO/Gate-2 review. Unsaved editor changes are not included.',
     ESTIMATE_APPROVE: 'Approval moves this opportunity to Proposal / Bid Submission · Proposal In Preparation.',
     ESTIMATE_REVISION_APPROVE: 'This approves the revision request and returns the opportunity to Engineering Estimation · In Progress. The revised estimate will follow the normal CEO approval and proposal cycle.',
@@ -110,11 +112,12 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
   const [holdReasonId, setHoldReasonId] = useState('');
   const [negotiationReasonId, setNegotiationReasonId] = useState('');
   const [negotiationAttempted, setNegotiationAttempted] = useState(false);
+  const [negotiationConfirmation, setNegotiationConfirmation] = useState(false);
   const negotiationReasonRef = useRef<HTMLButtonElement>(null);
   const [requiresRevisedEstimation, setRequiresRevisedEstimation] = useState(false);
   const [completed, setCompleted] = useState<{ id: string; sourceStageId: OpportunityDetail['stageId']; sourceState: OpportunityDetail['state']; stageId: OpportunityDetail['stageId']; subStageId: OpportunityDetail['subStageId']; decision: DecisionCommand['decision'] }>();
   useEffect(() => {
-    setNegotiationAttempted(false);
+    setNegotiationAttempted(false); setNegotiationConfirmation(false);
     setDecision(undefined); setReason(''); setHoldReasonId(''); setNegotiationReasonId(''); setRequiresRevisedEstimation(false); setConfirmed(false); setValidation(undefined);
   }, [o.id, o.stageId, o.subStageId]);
   const holdReasonInputId = useId();
@@ -131,7 +134,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
   const revisionRequest = [...(o.stageHistory ?? [])].reverse().find(event => event.stageId === 4 && event.subStageId === 5);
   const staged = o.stageId != null;
   const holding = staged && Boolean(decision?.endsWith('_HOLD'));
-  const rejecting = staged && Boolean(decision && ['SALES_REJECT', 'GATE1_NO_GO', 'ESTIMATE_REJECT'].includes(decision));
+  const rejecting = staged && Boolean(decision && ['SALES_REJECT', 'GATE1_NO_GO'].includes(decision));
   const requiresCode = holding || rejecting;
   const reasonLabel = holding ? 'Hold' : 'Rejection';
   const loadReasons = useCallback(() => service.holdReasons ? service.holdReasons() : Promise.reject(new Error('Hold reasons are not available. Please retry.')), [service]);
@@ -163,6 +166,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
     if (negotiating) {
       setNegotiationAttempted(true);
       if (!negotiationReason) { negotiationReasonRef.current?.focus(); return; }
+      if (!negotiationConfirmation) { setNegotiationConfirmation(true); return; }
     }
     const note = reason.trim();
     const command = {
@@ -206,7 +210,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
           }
           toast.dismiss(`estimate-validation-${o.id}`);
         }
-        setNegotiationAttempted(false);
+        setNegotiationAttempted(false); setNegotiationConfirmation(false);
         setDecision(action); setReason(''); setHoldReasonId(''); setNegotiationReasonId(''); setRequiresRevisedEstimation(false); setConfirmed(false); setValidation(undefined);
       }}><Icon className="opp-review-button-icon" aria-hidden="true" /><span className="opp-review-button-label">{compact ? COMPACT_LABELS[action] ?? LABELS[action] : LABELS[action]}</span></Button>;
   };
@@ -229,7 +233,7 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
     {!decision && validation && <Notice error={validation} />}
     {!decision && mutation.error && <Notice error={mutation.error} />}
     <Dialog open={Boolean(decision)} onOpenChange={open => { if (!open && !mutation.saving) setDecision(undefined); }}>
-      <DialogContent className={cn('opp-dialog', decision === 'SUBMIT_ESTIMATE' && 'w-[calc(100vw-2rem)] !gap-4 !p-5 sm:max-w-lg')}>
+      <DialogContent className={cn('opp-dialog', decision === 'SUBMIT_ESTIMATE' && 'w-[calc(100vw-2rem)] !gap-4 !p-5 sm:max-w-lg', negotiating && 'w-[calc(100vw-2rem)] !gap-4 !p-5 sm:max-w-md')}>
         <DialogHeader>
           <DialogTitle>{decision ? LABELS[decision] : 'Review decision'}</DialogTitle>
           <DialogDescription>{o.number}. {decision && decisionDescription(o, decision, staged)}</DialogDescription>
@@ -238,9 +242,9 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
           {revisionRequestReason && <p className="font-medium">{revisionRequestReason.name}</p>}
           {revisionRequest?.comment && <p className="whitespace-pre-wrap break-words text-muted-foreground">{revisionRequest.comment}</p>}
         </div>}
-        {negotiating && <div className="space-y-2">
+        {negotiating && <div className="space-y-1.5">
           <Label htmlFor={negotiationReasonInputId}>Negotiation reason <span className="text-destructive" aria-hidden="true">*</span></Label>
-          <Select value={negotiationReasonId} onValueChange={setNegotiationReasonId} disabled={mutation.saving || negotiationReasons.loading || Boolean(negotiationReasons.error)}>
+          <Select value={negotiationReasonId} onValueChange={value => { setNegotiationReasonId(value); setNegotiationConfirmation(false); }} disabled={mutation.saving || negotiationReasons.loading || Boolean(negotiationReasons.error)}>
             <SelectTrigger ref={negotiationReasonRef} id={negotiationReasonInputId} aria-label="Negotiation reason" aria-required="true"
               aria-invalid={missingNegotiationReason}
               aria-describedby={missingNegotiationReason ? `${negotiationReasonInputId}-hint` : negotiationReason?.description ? negotiationDescriptionId : undefined}
@@ -256,11 +260,19 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
           {negotiationReasons.error && <Notice error={negotiationReasons.error} retry={negotiationReasons.reload} />}
           {!negotiationReasons.loading && !negotiationReasons.error && negotiationReasons.data?.length === 0 && <p className="text-sm text-muted-foreground">No active negotiation reasons are available.</p>}
         </div>}
-        {negotiating && <div className="flex items-center gap-3 rounded-md border px-3 py-3">
+        {negotiating && <label htmlFor={revisedEstimationInputId} className={cn(
+          'group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all',
+          requiresRevisedEstimation ? 'border-primary/50 bg-primary/[0.055] shadow-sm ring-1 ring-primary/15' : 'border-border bg-card shadow-sm hover:border-primary/35 hover:bg-muted/20',
+          mutation.saving && 'cursor-not-allowed opacity-60',
+        )}>
           <Checkbox id={revisedEstimationInputId} checked={requiresRevisedEstimation}
-            onCheckedChange={checked => setRequiresRevisedEstimation(checked === true)} disabled={mutation.saving} />
-          <Label htmlFor={revisedEstimationInputId}>Requires revised estimation</Label>
-        </div>}
+            onCheckedChange={checked => { setRequiresRevisedEstimation(checked === true); setNegotiationConfirmation(false); }} disabled={mutation.saving}
+            className="shrink-0" />
+          <span className={cn('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', requiresRevisedEstimation ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')} aria-hidden="true"><Calculator size={17} />
+          </span>
+          <span className="min-w-0 flex-1 text-sm font-semibold text-foreground">Requires revised estimation</span>
+          <span className={cn('shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide', requiresRevisedEstimation ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>{requiresRevisedEstimation ? 'Yes' : 'No'}</span>
+        </label>}
         {decision === 'SUBMIT_ESTIMATE' && selectedVersion && <div className="space-y-2">
           <section aria-label="Selected estimation" className="grid gap-3 rounded-lg border bg-muted/30 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
             <div className="min-w-0"><p className="text-xs text-muted-foreground">Saved estimation</p><p className="mt-1 break-words text-sm font-semibold">{selectedVersion.name}</p><p className="mt-1 text-xs text-muted-foreground">{o.number}</p></div>
@@ -280,9 +292,13 @@ export function ReviewActions({ opportunity: o, onSaved, variant = 'panel', getE
         </Label>}
         {validation && <Notice error={validation} />}
         {mutation.error && <Notice error={mutation.error} />}
+        {negotiating && negotiationConfirmation && <div role="status" className="flex items-center gap-2.5 rounded-lg border border-primary/25 bg-primary/[0.045] px-3 py-2.5">
+          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary" aria-hidden="true"><CircleHelp size={15} /></span>
+          <p className="text-sm font-semibold text-foreground">{requiresRevisedEstimation ? 'Send this estimate back for revision?' : 'Proceed without a revised estimate?'}</p>
+        </div>}
         <DialogFooter className={decision === 'SUBMIT_ESTIMATE' ? 'border-t pt-4' : undefined}>
-          <Button type="button" variant="outline" disabled={mutation.saving} onClick={() => setDecision(undefined)}>Cancel</Button>
-          <Button type="button" variant="outline" className={decision ? buttonTone(decision) : undefined} disabled={mutation.saving} onClick={() => void decide()}>{mutation.saving ? 'Recording…' : 'Confirm decision'}</Button>
+          <Button type="button" variant="outline" disabled={mutation.saving} onClick={() => negotiationConfirmation ? setNegotiationConfirmation(false) : setDecision(undefined)}>{negotiationConfirmation ? 'Back' : 'Cancel'}</Button>
+          <Button type="button" variant="outline" className={decision ? buttonTone(decision) : undefined} disabled={mutation.saving} onClick={() => void decide()}>{mutation.saving ? 'Recording…' : negotiating && negotiationConfirmation ? 'Confirm' : 'Confirm decision'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

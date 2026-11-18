@@ -2,7 +2,7 @@
 import type { ApolloClient, NormalizedCacheObject } from '@apollo/client';
 import type { DocumentNode } from 'graphql';
 import type { Action, OpportunityClient, OpportunityDetail, OpportunitySummary, Page, DirectoryUser, SourceDocument } from '@xts/api-contracts';
-import type { OpportunityService } from '../OpportunityService';
+import { productionOpportunityService, type OpportunityService } from '../OpportunityService';
 import { GET_OPPORTUNITY_LOOKUPS } from '../opportunity.queries';
 import * as operations from './workflow.queries';
 
@@ -82,7 +82,10 @@ export function createWorkflowService(client: ApolloClient<NormalizedCacheObject
       let binary = ''; for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
       return mutate<SourceDocument>(operations.UPLOADOPPORTUNITYSOURCE, { ...command, filename: file.name, mimeType: file.type, contentBase64: btoa(binary) }, 'uploadOpportunitySource');
     },
-    download: async () => { throw new Error('Document download is not connected in this workflow adapter.'); },
+    listDocuments: opportunityId => productionOpportunityService.listDocuments(opportunityId),
+    uploadAttachment: (opportunityId, file) => productionOpportunityService.uploadAttachment(opportunityId, file),
+    deleteDocument: (opportunityId, document) => productionOpportunityService.deleteDocument(opportunityId, document),
+    download: (opportunityId, document) => productionOpportunityService.download(opportunityId, document),
     extract: command => mutate<OpportunityDetail>(operations.STARTOPPORTUNITYEXTRACTION, command, 'startOpportunityExtraction'),
     extractionStatus: (opportunityId, jobId, signal) => query<OpportunityDetail>(operations.EXTRACTION_STATUS, { opportunityId, jobId }, 'opportunityExtractionStatus', signal),
     saveEstimation: command => mutate<OpportunityDetail>(operations.SAVEOPPORTUNITYESTIMATION, command, 'saveOpportunityEstimation'),
