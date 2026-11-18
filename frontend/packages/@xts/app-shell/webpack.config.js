@@ -23,6 +23,13 @@ module.exports = {
     headers: {
       "Access-Control-Allow-Origin": "*",
     },
+    client: {
+      overlay: {
+        // Benign browser quirk triggered by dialogs/resizable tables; not a
+        // real failure, so don't let the dev overlay block the page on it.
+        runtimeErrors: (error) => !/ResizeObserver loop/.test(error.message),
+      },
+    },
   },
   // Docker Desktop on Windows doesn't reliably deliver native filesystem
   // change events for bind-mounted files edited from the host, so native
