@@ -10,11 +10,12 @@ type Props = {
   rateError: (role: RateMaster) => boolean;
   personWeek: (phaseId: number, roleCode: string) => number; cellCost: (phaseId: number, roleCode: string, role: RateMaster) => number;
   formatNumber: (value: number) => string; effortTotal: number; total: string; calculationError?: string;
+  emptyMessage?: string;
 };
 
 /** Presentation only: all inputs, validation and calculations remain owned by EstimationModule. */
 export function EstimationMatrix(p: Props) {
-  if (!p.phases.length || !p.roles.length) return <p className="text-sm text-muted-foreground">Select at least one phase and one technical role above to build the grid.</p>;
+  if (!p.phases.length || !p.roles.length) return <p className="text-sm text-muted-foreground">{p.emptyMessage ?? 'Select at least one phase and one technical role above to build the grid.'}</p>;
   return <div className="opp-estimation-scroll opp-estimation-matrix" role="region" aria-label="Estimation matrix" tabIndex={0}>
     <Table aria-label="Phase-wise estimation: allocation, person-weeks and cost">
       <TableHeader>

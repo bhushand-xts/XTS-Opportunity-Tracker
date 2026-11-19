@@ -15,6 +15,11 @@ import cors from 'cors';
 import documentRoutes from './routes/document.routes';
 import { canUploadDocument, canUploadOpportunityDocument, canViewOpportunityDocuments } from './services/opportunity.service';
 
+const documentFrontendOrigins = (process.env.FRONTEND_ORIGIN || 'http://localhost:3000')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
 // Opportunity & Pipeline
 
 const base = `
@@ -45,7 +50,7 @@ async function start() {
   app.use(
   '/documents',
   cors({
-    origin: process.env.FRONTEND_ORIGIN || 'http://localhost:3000',
+    origin: (origin, callback) => callback(null, !origin || documentFrontendOrigins.includes(origin)),
     allowedHeaders: ['Authorization', 'Content-Type'],
     methods: ['POST', 'GET', 'DELETE', 'OPTIONS'],
   }),

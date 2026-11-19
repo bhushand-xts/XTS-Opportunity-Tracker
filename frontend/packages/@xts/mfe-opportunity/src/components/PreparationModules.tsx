@@ -168,6 +168,7 @@ export function EstimationModule({
   const mutation = useSave();
   const auth = useAuth();
   const ceoRatesView = o.allowedActions.some(action => ['VIEW_ESTIMATION_RATES', 'EDIT_ESTIMATION_RATES', 'ESTIMATE_APPROVE', 'ESTIMATE_REVISION_APPROVE'].includes(action));
+  const canViewAllEstimations = o.allowedActions.includes('VIEW_ALL_ESTIMATIONS');
 
   const { data: masters } = useQuery<{
     estimationPhasesList: (EstimationPhase | null)[] | null;
@@ -178,7 +179,7 @@ export function EstimationModule({
   });
 
   const phases = (masters?.estimationPhasesList ?? [])
-    .filter((p): p is EstimationPhase => Boolean(p && (p.isActive || ceoRatesView)))
+    .filter((p): p is EstimationPhase => Boolean(p && (p.isActive || ceoRatesView || !canViewAllEstimations)))
     .sort(
       (a, b) =>
         (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) ||
@@ -186,7 +187,7 @@ export function EstimationModule({
     );
 
   const roles = (masters?.rateMasters ?? [])
-    .filter((r): r is RateMaster => Boolean(r && (r.isActive || ceoRatesView) && masters?.currencies?.some(c => c && (c.isActive || ceoRatesView) && c.currencyId === r.currencyId && c.currencyCode === ESTIMATION_CURRENCY_CODE)))
+    .filter((r): r is RateMaster => Boolean(r && (r.isActive || ceoRatesView || !canViewAllEstimations) && masters?.currencies?.some(c => c && (c.isActive || ceoRatesView || !canViewAllEstimations) && c.currencyId === r.currencyId && c.currencyCode === ESTIMATION_CURRENCY_CODE)))
     .sort((a, b) => a.roleName.localeCompare(b.roleName));
 
   const currencies = (masters?.currencies ?? []).filter(
@@ -460,7 +461,7 @@ export function EstimationModule({
   const rateMaster = (canViewRates || ceoRatesView || editable) && <EstimationRateMaster inline={ceoRatesView} roles={ceoRatesView ? displayedRoles.filter(role => selectedRoleCodes.has(role.roleCode)) : displayedRoles} currencies={currencies} currencyCode={ESTIMATION_CURRENCY_CODE} editableRoleCodes={canEditRates && rateTarget && !mutation.saving ? selectedRoleCodes : undefined} onRateChange={canEditRates && rateTarget ? (code, value) => setRateOverrides(previous => ({ ...previous, [code]: value })) : undefined} onValidationChange={setInvalidRates} />;
 
   return <div className={`opp-estimation-workspace space-y-3${ceoRatesView ? ' opp-estimation-ceo-workspace' : ''}`}>
-    {ceoRatesView ? rateMaster : <Panel title="Select phases & technical roles" tone="indigo" icon={ClipboardList} accentIcon>
+    {ceoRatesView ? rateMaster : canViewAllEstimations ? <Panel title="Select phases & technical roles" tone="indigo" icon={ClipboardList} accentIcon>
       <div className="opp-estimation-controls grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
         {!ceoRatesView && <><MultiSelectField label="Phases" displayLabel="Select Phase" options={phases.map(p => ({ id: String(p.id), label: p.phaseName }))} selected={new Set([...selectedPhaseIds].map(String))} onToggle={id => togglePhase(Number(id))} onSelectAll={selectAllPhases} onClear={clearPhases} disabled={!editable || mutation.saving}
           addControl={editable ? <>
@@ -472,7 +473,7 @@ export function EstimationModule({
         {rateMaster}
 
       </div>
-    </Panel>}
+    </Panel> : null}
     {canEditRates && ratesDirty && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3"><p className="text-sm text-muted-foreground">Rates changed for {rateTarget?.name}.</p><Button type="button" disabled={!rateTarget || invalidRates || mutation.saving || Boolean(calculationError)} onClick={() => void updateRates()}>{mutation.saving ? 'Updating...' : 'Update estimate'}</Button></div>}
       <div className="opp-estimation-matrix-panel-group space-y-3">
         <Panel title="Estimation matrix" tone="indigo" className="[&>div:first-child>div]:flex-wrap" headerRight={<div role="group" aria-label="Estimation totals" className="flex max-w-full flex-wrap items-center justify-end gap-2">
@@ -480,6 +481,7 @@ export function EstimationModule({
           <Badge variant="muted" className="gap-1.5 rounded-md border-primary/30 bg-accent px-2.5 py-1 text-accent-foreground shadow-sm">Total effort <strong className="font-semibold tabular-nums">{trimDecimal(effortTotal)} person-weeks</strong></Badge>
         </div>}>
           <EstimationMatrix phases={activePhases} roles={activeRoles} editable={editable} saving={mutation.saving} validationId={validationId} currencyCode={ESTIMATION_CURRENCY_CODE}
+            emptyMessage={canViewAllEstimations ? undefined : 'No submitted estimation is available to display.'}
             duration={id => duration[id] ?? (editable ? '' : '0')} allocation={(id, code) => allocation[cellKey(id, code)] ?? (editable ? '' : '0')}
             onDuration={(id, value) => setDuration(previous => ({ ...previous, [id]: value }))}
             onAllocation={(id, code, value) => setAllocation(previous => ({ ...previous, [cellKey(id, code)]: value }))}
@@ -489,7 +491,7 @@ export function EstimationModule({
         {legacyRows.length > 0 && <p className="text-xs text-muted-foreground">{legacyRows.length} previously saved item{legacyRows.length === 1 ? '' : 's'} not tied to a phase/role {legacyRows.length === 1 ? 'is' : 'are'} preserved and included in the total, though no longer editable here.</p>}
         {calculationError && <Notice error={calculationError} />}{mutation.error && <Notice error={mutation.error} />}
       </div>
-    <SavedEstimationVersions sidebarTarget={sidebarTarget} opportunityId={o.id} revision={draft.revision} editable={editable} saving={mutation.saving || !masters} dirty={dirty} onSave={saveNamedVersion} onLoad={loadVersion} selectedVersion={selectedVersion} onSelectVersion={selectVersion} selectionLocked={o.stageId === 4 && [8, 9].includes(o.subStageId ?? 0)} submittedOnly={ceoRatesView}
+    <SavedEstimationVersions sidebarTarget={sidebarTarget} opportunityId={o.id} revision={draft.revision} editable={editable} saving={mutation.saving || !masters} dirty={dirty} onSave={saveNamedVersion} onLoad={loadVersion} selectedVersion={selectedVersion} onSelectVersion={selectVersion} selectionLocked={o.stageId === 4 && [8, 9].includes(o.subStageId ?? 0)} submittedOnly={!canViewAllEstimations}
       submitAction={showActions && o.allowedActions.includes('SUBMIT_ESTIMATE') ? <div className={sidebarTarget ? 'w-full [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-full [&_button]:!whitespace-normal' : 'shrink-0 [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-auto [&_button]:!whitespace-nowrap'}><ReviewActions opportunity={o} onSaved={onSubmitted} variant="toolbar" selectedVersion={mutation.saving ? null : selectedVersion} getEstimation={() => {
         setSubmissionAttempted(true);
         if (!masters || mutation.saving) throw new Error('Wait for the estimate to finish loading or saving before submitting.');

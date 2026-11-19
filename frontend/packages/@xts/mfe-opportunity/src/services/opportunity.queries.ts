@@ -195,7 +195,7 @@ export const GET_NEGOTIATION_REASON_CODES = gql`
 
 const ESTIMATION_VERSION_FIELDS = gql`fragment EstimationVersionFields on OpportunityEstimationVersion {
   isSelected
-  id revision updatedBy updatedAt version name status currencyCode personWeeks createdBy createdAt
+  id revision updatedBy updatedAt version name status currencyCode personWeeks createdBy createdByName createdAt
   estimation { revision status assumptions total rows { id workItem hours people hourlyRate } rates { roleCode rate rateType currencyCode } grid { phaseIds roleCodes durations { phaseId weeks } allocations { phaseId roleCode effort } } }
 }`;
 export const GET_ESTIMATION_VERSION = gql`query EstimationVersion($opportunityId: Int!, $estimationId: ID!) { estimationVersion(opportunityId: $opportunityId, estimationId: $estimationId) { ...EstimationVersionFields } } ${ESTIMATION_VERSION_FIELDS}`;
