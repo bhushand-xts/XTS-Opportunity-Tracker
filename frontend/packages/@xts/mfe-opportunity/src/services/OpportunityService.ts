@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE, GET_ESTIMATION_VERSIONS, GET_ESTIMATION_VERSION, SAVE_ESTIMATION_VERSION, UPDATE_ESTIMATION_RATES } from './opportunity.queries';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY, type OwnerDirectoryData } from './userDirectory.queries';
+import { randomUUID } from '../lib/uuid';
 import { mapOwnerDirectory } from './useOwnerDirectory';
 import { getApolloClient } from '@xts/api-client';
 import type { Action, AssessmentSection, ClientDraft, DecisionCommand, DirectoryUser, Estimation, EstimationVersion, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
@@ -335,7 +336,7 @@ export const productionOpportunityService: OpportunityService = {
     return result as SourceDocument[];
   },
   async uploadAttachment(opportunityId, file, documentTitle = file.name) {
-    const document = await productionOpportunityService.upload({ opportunityId, expectedRevision: 1, idempotencyKey: crypto.randomUUID() }, file, true);
+    const document = await productionOpportunityService.upload({ opportunityId, expectedRevision: 1, idempotencyKey: randomUUID() }, file, true);
     const token = readDocumentToken();
     const response = await fetch(`${OPPORTUNITY_SERVICE_URL}/documents/attach?opportunityId=${encodeURIComponent(opportunityId)}`, {
       method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ storagePath: document.storagePath, documentTitle }),
