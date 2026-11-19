@@ -32,7 +32,26 @@ async function start() {
   );
 }
 
-start().catch((err) => {
+// On container startup (especially a cold `docker compose up -d` right after
+// a host reboot), the subgraphs can report healthy before Docker's embedded
+// DNS has the hostname ready, so introspection fails with EAI_AGAIN even
+// though depends_on already waited for service_healthy. Retry in-process for
+// up to a minute before giving up — far faster than waiting on Docker's own
+// (slow, backing-off) `restart: on-failure` to cycle the whole container.
+async function startWithRetry(maxAttempts = 20, delayMs = 3000) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await start();
+      return;
+    } catch (err) {
+      if (attempt === maxAttempts) throw err;
+      console.error(`Gateway failed to start (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms:`, err);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
+startWithRetry().catch((err) => {
   console.error('Gateway failed to start:', err);
   process.exit(1);
 });
