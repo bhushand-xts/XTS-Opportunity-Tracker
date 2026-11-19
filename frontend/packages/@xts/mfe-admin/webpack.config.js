@@ -17,6 +17,14 @@ module.exports = {
     publicPath: `${process.env.ADMIN_REMOTE_URL || "http://localhost:3001"}/`,
     clean: true,
   },
+  // Without this, every restart recompiles every module from scratch (the
+  // default is an in-memory cache that dies with the process) — this one
+  // is written to disk, inside this package's own node_modules (already
+  // excluded from the bind mount by its own anonymous volume in
+  // docker-compose.yml), so it survives container restarts and recreates.
+  cache: {
+    type: "filesystem",
+  },
   devServer: {
     port: 3001,
     historyApiFallback: true,
