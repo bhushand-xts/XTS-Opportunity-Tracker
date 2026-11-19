@@ -203,6 +203,7 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
     actions.push('GATE1_NO_GO');
   }
   if (estimationWritable(opportunity) && access.estimate && access.canView(opportunity)) actions.push('EDIT_ESTIMATION');
+  if (access.estimate && access.canView(opportunity)) actions.push('VIEW_ALL_ESTIMATIONS');
   if ((opportunity.stageId ?? 0) >= 3 && access.gateReview && access.canView(opportunity)) actions.push('VIEW_ESTIMATION_RATES');
   if (estimationRatesWritable(opportunity) && access.gateReview && access.canView(opportunity)) actions.push('EDIT_ESTIMATION_RATES');
   if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('SUBMIT_ESTIMATE');
@@ -732,7 +733,7 @@ export async function allowedActions(opportunity: repository.Opportunity, ctx: a
 
 export async function getEstimation(opportunityId: number, ctx: any) {
   await get(opportunityId, ctx);
-  if ((await accessFor(ctx)).gateReview) {
+  if (!(await accessFor(ctx)).estimate) {
     const [submitted] = await repository.listEstimationVersions(opportunityId, true);
     return submitted?.estimation ?? null;
   }
@@ -921,14 +922,21 @@ function validateCompletedEstimate(estimate: repository.OpportunityEstimation | 
 export async function listEstimationVersions(opportunityId: number, ctx: any) {
   await get(opportunityId, ctx);
   const access = await accessFor(ctx);
-  return repository.listEstimationVersions(opportunityId, access.gateReview);
+  const versions = await repository.listEstimationVersions(opportunityId, !access.estimate);
+  let users: Awaited<ReturnType<typeof userService.findUsers>> = [];
+  try { users = await userService.findUsers([...new Set(versions.map(version => version.createdBy))]); } catch { /* Keep estimate history available if the user directory is temporarily unavailable. */ }
+  const names = new Map(users.map(user => [user.id, userName(user)]));
+  return versions.map(version => ({ ...version, createdByName: names.get(version.createdBy) ?? 'Unknown user' }));
 }
 export async function getEstimationVersion(opportunityId: number, estimationId: string, ctx: any) {
   await get(opportunityId, ctx);
   if (!/^[1-9]\d{0,18}$/.test(estimationId) || BigInt(estimationId) > 9223372036854775807n) throw validationFailed('Select a saved estimation.');
   const saved = await repository.findEstimationVersion(opportunityId, estimationId);
-  if (!saved || (await accessFor(ctx)).gateReview && (!saved.isSelected || saved.status !== 'SUBMITTED')) throw notFound('Saved estimation not found.');
-  return saved;
+  const access = await accessFor(ctx);
+  if (!saved || !access.estimate && (!saved.isSelected || saved.status !== 'SUBMITTED')) throw notFound('Saved estimation not found.');
+  let creator: Awaited<ReturnType<typeof userService.findUsers>>[number] | undefined;
+  try { creator = (await userService.findUsers([saved.createdBy]))[0]; } catch { /* Fall back to the user ID if the directory is temporarily unavailable. */ }
+  return { ...saved, createdByName: userName(creator ?? null) };
 }
 export async function saveEstimationVersion(opportunityId: number, input: repository.OpportunityEstimation, name: string, requestKey: string, ctx: any, sourceVersionId?: string, sourceRevision?: number) {
   const access = await accessFor(ctx);

@@ -1,5 +1,6 @@
 ﻿const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
+require("dotenv").config({ path: path.resolve(__dirname, "../../../.env") });
 const Dotenv = require("dotenv-webpack");
 const { container } = require("webpack");
 
@@ -17,6 +18,7 @@ module.exports = {
     clean: true,
   },
   devServer: {
+    host: "0.0.0.0",
     port: 3000,
     historyApiFallback: true,
     hot: true,

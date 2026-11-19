@@ -49,24 +49,24 @@ export function SavedEstimationBreakdown({ estimation }: { estimation: Estimatio
   }));
   const roleTotals = roleCodes.map((_, index) => phaseRows.reduce((sum, phase) => add(sum, phase.cells[index]), emptyValues()));
   const total = [...phaseRows.map(phase => phase.total), ...otherRows.map(item => item.values)].reduce(add, emptyValues());
-  const tableStyle = 'min-w-full [&_th]:border-r [&_th:last-child]:border-r-0 [&_td]:border-r [&_td:last-child]:border-r-0 [&_th]:whitespace-nowrap [&_th]:text-xs [&_td]:text-sm';
-  const roleHeaders = roleCodes.map(code => <TableHead key={code} scope="col" className="text-right" title={roleNames.get(code)}>{code}</TableHead>);
-  return <div className="space-y-5">
+  const tableStyle = 'min-w-full [&_th]:border-r [&_th:last-child]:border-r-0 [&_td]:border-r [&_td:last-child]:border-r-0 [&_th]:whitespace-nowrap [&_th]:px-3 [&_th]:py-2 [&_th]:text-[10px] [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-center [&_td]:px-3 [&_td]:py-2 [&_td]:text-[13px] [&_td]:text-center [&_th:first-child]:text-left [&_td:first-child]:text-left [&_tbody_tr:nth-child(even)]:bg-muted/20 [&_tbody_tr:hover]:bg-primary/5';
+  const roleHeaders = roleCodes.map(code => <TableHead key={code} scope="col" title={roleNames.get(code)}>{code}</TableHead>);
+  return <div className="space-y-3">
     <section aria-label="Resource allocation">
-      <h3 className="mb-2 text-sm font-semibold">Resource allocation</h3>
+      <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold"><span className="size-1.5 rounded-full bg-indigo-500" aria-hidden="true" />Resource allocation</h3>
       {phaseRows.length > 0 && <div className="overflow-x-auto rounded-lg border" tabIndex={0}>
         <Table aria-label="Resource allocation" className={tableStyle}>
-          <TableHeader className="bg-indigo-50/70 dark:bg-indigo-950/30"><TableRow><TableHead scope="col">Phase</TableHead><TableHead scope="col" className="text-right">Duration in weeks</TableHead>{roleHeaders}</TableRow></TableHeader>
+          <TableHeader className="bg-indigo-50/70 dark:bg-indigo-950/30"><TableRow><TableHead scope="col">Phase</TableHead><TableHead scope="col">Duration in weeks</TableHead>{roleHeaders}</TableRow></TableHeader>
           <TableBody>{phaseRows.map(phase => <TableRow key={phase.phaseId}>
-            <TableCell className="font-medium">{phase.name}</TableCell><TableCell className="text-right tabular-nums">{duration(phase.phaseId)}</TableCell>
-            {roleCodes.map(code => <TableCell key={code} className="text-right tabular-nums">{allocation(phase.phaseId, code)}</TableCell>)}
+            <TableCell className="font-medium">{phase.name}</TableCell><TableCell className="tabular-nums">{duration(phase.phaseId)}</TableCell>
+            {roleCodes.map(code => <TableCell key={code} className="tabular-nums">{allocation(phase.phaseId, code)}</TableCell>)}
           </TableRow>)}</TableBody>
         </Table>
       </div>}
       {otherRows.length > 0 && <div className="mt-2 overflow-x-auto rounded-lg border" tabIndex={0}>
         <Table aria-label="Additional resource allocation" className={tableStyle}>
-          <TableHeader className="bg-indigo-50/70 dark:bg-indigo-950/30"><TableRow><TableHead scope="col">Work item</TableHead><TableHead scope="col" className="text-right">Duration in weeks</TableHead><TableHead scope="col" className="text-right">Resource allocation</TableHead></TableRow></TableHeader>
-          <TableBody>{otherRows.map(({ row }) => <TableRow key={row.id}><TableCell>{row.workItem}</TableCell><TableCell className="text-right tabular-nums">{quantity(Number(row.hours) / 40)}</TableCell><TableCell className="text-right tabular-nums">{row.people}</TableCell></TableRow>)}</TableBody>
+          <TableHeader className="bg-indigo-50/70 dark:bg-indigo-950/30"><TableRow><TableHead scope="col">Work item</TableHead><TableHead scope="col">Duration in weeks</TableHead><TableHead scope="col">Resource allocation</TableHead></TableRow></TableHeader>
+          <TableBody>{otherRows.map(({ row }) => <TableRow key={row.id}><TableCell>{row.workItem}</TableCell><TableCell className="tabular-nums">{quantity(Number(row.hours) / 40)}</TableCell><TableCell className="tabular-nums">{row.people}</TableCell></TableRow>)}</TableBody>
         </Table>
       </div>}
       {!phaseRows.length && !otherRows.length && <p className="text-sm text-muted-foreground">No saved allocation.</p>}
@@ -75,14 +75,14 @@ export function SavedEstimationBreakdown({ estimation }: { estimation: Estimatio
       const title = metric === 'effort' ? 'Person-weeks' : 'Cost (USD)';
       const format = (values: Values) => metric === 'effort' ? quantity(values.effort) : cost(values.cost);
       return <section key={metric} aria-label={title}>
-        <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+        <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold"><span className={`size-1.5 rounded-full ${metric === 'effort' ? 'bg-teal-500' : 'bg-amber-500'}`} aria-hidden="true" />{title}</h3>
         <div className="overflow-x-auto rounded-lg border" tabIndex={0}>
           <Table aria-label={title} className={tableStyle}>
-            <TableHeader className={metric === 'effort' ? 'bg-teal-50/70 dark:bg-teal-950/30' : 'bg-amber-50/70 dark:bg-amber-950/30'}><TableRow><TableHead scope="col">{phaseRows.length ? 'Phase' : 'Work item'}</TableHead>{roleHeaders}<TableHead scope="col" className="text-right">{metric === 'effort' ? 'Total effort' : 'Total cost'}</TableHead></TableRow></TableHeader>
+            <TableHeader className={metric === 'effort' ? 'bg-teal-50/70 dark:bg-teal-950/30' : 'bg-amber-50/70 dark:bg-amber-950/30'}><TableRow><TableHead scope="col">{phaseRows.length ? 'Phase' : 'Work item'}</TableHead>{roleHeaders}<TableHead scope="col">{metric === 'effort' ? 'Total effort' : 'Total cost'}</TableHead></TableRow></TableHeader>
             <TableBody>
-              {phaseRows.map(phase => <TableRow key={phase.phaseId}><TableCell className="font-medium">{phase.name}</TableCell>{phase.cells.map((cell, index) => <TableCell key={roleCodes[index]} className="whitespace-nowrap text-right tabular-nums">{format(cell)}</TableCell>)}<TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">{format(phase.total)}</TableCell></TableRow>)}
-              {otherRows.map(({ row, values }) => <TableRow key={row.id}><TableCell>{row.workItem}</TableCell>{roleCodes.length > 0 && <TableCell colSpan={roleCodes.length} className="text-center">—</TableCell>}<TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">{format(values)}</TableCell></TableRow>)}
-              <TableRow className="bg-muted/40 font-semibold"><TableCell>Total</TableCell>{roleTotals.map((values, index) => <TableCell key={roleCodes[index]} className="whitespace-nowrap text-right tabular-nums">{format(values)}</TableCell>)}<TableCell className="whitespace-nowrap text-right tabular-nums">{format(total)}</TableCell></TableRow>
+              {phaseRows.map(phase => <TableRow key={phase.phaseId}><TableCell className="font-medium">{phase.name}</TableCell>{phase.cells.map((cell, index) => <TableCell key={roleCodes[index]} className="whitespace-nowrap tabular-nums">{format(cell)}</TableCell>)}<TableCell className="whitespace-nowrap font-semibold tabular-nums">{format(phase.total)}</TableCell></TableRow>)}
+              {otherRows.map(({ row, values }) => <TableRow key={row.id}><TableCell>{row.workItem}</TableCell>{roleCodes.length > 0 && <TableCell colSpan={roleCodes.length} className="text-center">—</TableCell>}<TableCell className="whitespace-nowrap font-semibold tabular-nums">{format(values)}</TableCell></TableRow>)}
+              <TableRow className="border-t-2 bg-muted/50 font-semibold"><TableCell>Total</TableCell>{roleTotals.map((values, index) => <TableCell key={roleCodes[index]} className="whitespace-nowrap tabular-nums">{format(values)}</TableCell>)}<TableCell className="whitespace-nowrap tabular-nums">{format(total)}</TableCell></TableRow>
             </TableBody>
           </Table>
         </div>

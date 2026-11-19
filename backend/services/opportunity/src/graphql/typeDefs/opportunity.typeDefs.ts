@@ -111,7 +111,7 @@ export const opportunityTypeDefs = `#graphql
   input OpportunityRiskInput { id: ID!, description: String!, severity: String! }
   input OpportunityAlignmentInput { id: ID!, text: String! }
   input OpportunityScopeInput { revision: Int!, summary: String!, risks: [OpportunityRiskInput!]!, alignment: [OpportunityAlignmentInput!]! }
-  type OpportunityEstimationVersion { id: ID!, isSelected: Boolean!, revision: Int!, updatedBy: Int, updatedAt: String, version: Int!, name: String!, status: String!, currencyCode: String!, personWeeks: String!, createdBy: Int!, createdAt: String!, estimation: OpportunityEstimation! }
+  type OpportunityEstimationVersion { id: ID!, isSelected: Boolean!, revision: Int!, updatedBy: Int, updatedAt: String, version: Int!, name: String!, status: String!, currencyCode: String!, personWeeks: String!, createdBy: Int!, createdByName: String, createdAt: String!, estimation: OpportunityEstimation! }
   enum OpportunityEstimationStatus { DRAFT SUBMITTED }
   type OpportunityEstimationDuration { phaseId: Int!, weeks: String! }
   type OpportunityEstimationAllocation { phaseId: Int!, roleCode: String!, effort: String! }
