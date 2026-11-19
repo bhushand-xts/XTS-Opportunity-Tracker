@@ -13,7 +13,7 @@ import opportunityResolvers from './graphql/resolvers/opportunity.resolver';
 import { extractionRouter } from './extraction/routes';
 import cors from 'cors';
 import documentRoutes from './routes/document.routes';
-import { canUploadDocument } from './services/opportunity.service';
+import { canUploadDocument, canUploadOpportunityDocument, canViewOpportunityDocuments } from './services/opportunity.service';
 
 // Opportunity & Pipeline
 
@@ -47,7 +47,7 @@ async function start() {
   cors({
     origin: process.env.FRONTEND_ORIGIN || 'http://localhost:3000',
     allowedHeaders: ['Authorization', 'Content-Type'],
-    methods: ['POST', 'GET', 'OPTIONS'],
+    methods: ['POST', 'GET', 'DELETE', 'OPTIONS'],
   }),
   async (req, res, next) => {
     const authorization = req.header('authorization');
@@ -84,12 +84,25 @@ async function start() {
         return;
       }
 
-      if (req.method === 'POST' && !await canUploadDocument({ user: { id } })) {
-        res.status(403).json({ message: 'You cannot upload documents.' });
-        return;
-      }
-
       res.locals.userId = id;
+      if (req.method === 'POST') {
+        const opportunityId = Number(req.query.opportunityId);
+        const allowed = Number.isInteger(opportunityId) && opportunityId > 0
+          ? await canUploadOpportunityDocument(opportunityId, { user: { id } })
+          : await canUploadDocument({ user: { id } });
+        if (!allowed) {
+          res.status(403).json({ message: 'You cannot manage opportunity documents.' });
+          return;
+        }
+      }
+      if (req.method === 'DELETE') {
+        const opportunityId = Number(req.query.opportunityId);
+        if (!Number.isInteger(opportunityId) || opportunityId <= 0 ||
+            !await canViewOpportunityDocuments(opportunityId, { user: { id } })) {
+          res.status(403).json({ message: 'You cannot manage opportunity documents.' });
+          return;
+        }
+      }
       next();
     } catch {
       res.status(503).json({ message: 'Unable to verify upload access.' });

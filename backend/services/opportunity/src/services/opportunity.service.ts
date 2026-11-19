@@ -206,11 +206,11 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
   if ((opportunity.stageId ?? 0) >= 3 && access.gateReview && access.canView(opportunity)) actions.push('VIEW_ESTIMATION_RATES');
   if (estimationRatesWritable(opportunity) && access.gateReview && access.canView(opportunity)) actions.push('EDIT_ESTIMATION_RATES');
   if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('SUBMIT_ESTIMATE');
-  if (!preparationModulesLocked(opportunity) && access.canView(opportunity)) actions.push('EDIT_SCOPE');
+  if (!preparationModulesLocked(opportunity) && access.estimate && access.canView(opportunity)) actions.push('EDIT_SCOPE');
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) {
     actions.push('ESTIMATE_APPROVE');
+    actions.push('ESTIMATE_REQUEST_CHANGES');
     if (opportunity.subStageId === 8) actions.push('ESTIMATE_HOLD');
-    actions.push('ESTIMATE_REJECT');
   }
   if (opportunity.stageId === 4 && opportunity.subStageId === 5 && access.gateReview) {
     actions.push('ESTIMATE_REVISION_APPROVE', 'ESTIMATE_REVISION_DECLINE');
@@ -503,6 +503,9 @@ async function transitionWorkflowCore(
   const reviewingCeo = opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const reviewingEstimate = opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const submittedBid = opportunity.stageId === 5 && opportunity.subStageId === 11;
+  if (action === 'REJECT' && reviewingEstimate) {
+    throw conflict('Estimation cannot be rejected. Use Request Changes to return it to the Estimation Team.');
+  }
   if (action === 'HOLD' && (reviewingSales && opportunity.subStageId === 3 || reviewingCeo && opportunity.subStageId === 6 || reviewingEstimate && opportunity.subStageId === 9)) {
     throw conflict('This opportunity is already on hold. Choose another available action.');
   }
@@ -569,14 +572,19 @@ async function transitionWorkflowCore(
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) {
     if (!access.gateReview) throw conflict('The CEO role is required to review estimates.');
     if (action === 'HOLD') return persistTransition(opportunity, opportunityId, 4, 9, null, userId, comment?.trim() || null, null, audit);
+    if (action === 'REQUEST_CHANGES') {
+      if (!comment?.trim()) throw validationFailed('Enter the changes requested for the estimation team.');
+      return repository.transitionWorkflow(opportunityId, 3, 7, null, userId, comment.trim(), null, audit,
+        { stageId: opportunity.stageId, subStageId: opportunity.subStageId },
+        { stageId: 4, subStageId: 17, comment: comment.trim() });
+    }
     if (action === 'APPROVE') {
       const estimate = await repository.findEstimation(opportunityId);
       validateCompletedEstimate(estimate);
       return repository.transitionWorkflow(opportunityId, 5, 10, null, userId, comment?.trim() || null, null, audit,
         { stageId: opportunity.stageId, subStageId: opportunity.subStageId, estimationRevision: estimate!.revision });
     }
-    if (action === 'REJECT') return persistTransition(opportunity, opportunityId, 9, 17, null, userId, comment!.trim(), null, audit);
-    throw validationFailed('Use Hold, Approve or Reject for estimate review.');
+    throw validationFailed('Use Hold, Request Changes or Approve for estimate review.');
   }
   if (opportunity.stageId === 1) {
     return reviewBySalesHead(opportunityId, opportunity, userId, access, action, comment, audit);
@@ -698,6 +706,26 @@ export async function canUploadDocument(ctx: any) {
   return access.create || access.edit;
 }
 
+export async function canUploadOpportunityDocument(opportunityId: number, ctx: any) {
+  try {
+    // `get` enforces the user's access scope for this specific opportunity.
+    await get(opportunityId, ctx);
+    const access = await accessFor(ctx);
+    return access.create || access.edit || access.review || access.gateReview;
+  } catch {
+    return false;
+  }
+}
+
+export async function canViewOpportunityDocuments(opportunityId: number, ctx: any) {
+  try {
+    await get(opportunityId, ctx);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function allowedActions(opportunity: repository.Opportunity, ctx: any) {
   return projectAllowedActions(opportunity, await accessFor(ctx));
 }
@@ -713,8 +741,9 @@ export async function getEstimation(opportunityId: number, ctx: any) {
 
 export async function getResponses(opportunityId: number, ctx: any) {
   const opportunity = await get(opportunityId, ctx);
+  const access = await accessFor(ctx);
   return (await repository.findResponses(opportunityId)).map(response => ({
-    ...response, allowedActions: preparationModulesLocked(opportunity) ? [] : ['SAVE_ANSWER'],
+    ...response, allowedActions: preparationModulesLocked(opportunity) || !access.estimate ? [] : ['SAVE_ANSWER'],
   }));
 }
 
@@ -733,6 +762,7 @@ export async function saveScope(
   const access = await accessFor(ctx);
 
   assertPreparationWritable(opportunity);
+  if (!access.estimate) throw conflict('Only users with Estimation access can edit opportunity scope or assessment.');
 
   if (
     !scope ||
@@ -815,6 +845,7 @@ export async function saveScope(
 export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, ctx: any) {
   const access = await accessFor(ctx);
   assertPreparationWritable(await get(opportunityId, ctx));
+  if (!access.estimate) throw conflict('Only users with Estimation access can edit opportunity answers.');
   if (!Number.isSafeInteger(responseId) || responseId <= 0 || !Number.isSafeInteger(revision) || revision < 0) {
     throw validationFailed('Select a saved opportunity question and its current revision.');
   }

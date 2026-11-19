@@ -137,7 +137,7 @@ export function decisionError(o: OpportunityDetail, decision: Action, reason: st
   if (!may(o, decision)) return 'You are not permitted to make this decision.';
   if (o.stageId != null) {
     if (!applicableDecisions(o).includes(decision)) return 'This opportunity is no longer awaiting this decision. Refresh the opportunity.';
-    if (decision.endsWith('_HOLD') || ['SALES_REJECT', 'GATE1_NO_GO', 'ESTIMATE_REJECT'].includes(decision)) {
+    if (decision.endsWith('_HOLD') || ['SALES_REJECT', 'GATE1_NO_GO'].includes(decision)) {
       const label = decision.endsWith('_HOLD') ? 'hold' : 'rejection';
       if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) return `Select a ${label} reason.`;
       if (!reason.trim()) return `Enter a ${label} description.`;
@@ -171,8 +171,8 @@ export function applicableDecisions(o: OpportunityDetail): Action[] {
   if (stage === 4 && substage === 5) decisions.push('ESTIMATE_REVISION_APPROVE', 'ESTIMATE_REVISION_DECLINE');
   if (stage === 4 && [8, 9].includes(substage ?? 0)) {
     decisions.push('ESTIMATE_APPROVE');
+    decisions.push('ESTIMATE_REQUEST_CHANGES');
     if (substage === 8) decisions.push('ESTIMATE_HOLD');
-    decisions.push('ESTIMATE_REJECT');
   }
   if (stage === 5 && substage === 10) decisions.push('BID_SUBMITTED');
   if (stage === 5 && substage === 11) decisions.push('START_NEGOTIATION', 'MARK_WON', 'MARK_LOST');

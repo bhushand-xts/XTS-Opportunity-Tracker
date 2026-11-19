@@ -239,6 +239,8 @@ const SELECT_COLUMNS = `
 
 const OPPORTUNITY_LIST_COLUMNS = `
   ${SELECT_COLUMNS},
+  (SELECT stage_name FROM mst_stage WHERE stage_id = o.stage_id) AS "stageName",
+  (SELECT sub_stage_name FROM mst_sub_stage WHERE sub_stage_id = o.sub_stage_id AND stage_id = o.stage_id) AS "subStageName",
   (SELECT client_name FROM mst_client WHERE client_id = o.client_id) AS "clientName",
   (SELECT account_type FROM mst_client WHERE client_id = o.client_id) AS "accountType",
   (SELECT sector FROM mst_client WHERE client_id = o.client_id) AS sector,
@@ -808,7 +810,9 @@ export interface WorkflowAudit {
 export interface OpportunityStageHistory {
   id: number;
   stageId: number;
+  stageName?: string | null;
   subStageId: number;
+  subStageName?: string | null;
   reachedAt: Date | string;
   updatedBy: number | null;
   comment: string | null;
@@ -816,11 +820,16 @@ export interface OpportunityStageHistory {
 
 export async function findStageHistory(opportunityId: number): Promise<OpportunityStageHistory[]> {
   return query<OpportunityStageHistory>(
-    `SELECT tracker_id AS id, stage_id AS "stageId", substage_id AS "subStageId",
-            updated_dt AS "reachedAt", updated_by AS "updatedBy", comment
-     FROM tbl_opportunity_engage_tracker
-     WHERE opportunity_id = $1
-     ORDER BY updated_dt ASC, tracker_id ASC`,
+    `SELECT tracker.tracker_id AS id, tracker.stage_id AS "stageId", stage.stage_name AS "stageName",
+            tracker.substage_id AS "subStageId",
+            sub_stage.sub_stage_name AS "subStageName",
+            tracker.updated_dt AS "reachedAt", tracker.updated_by AS "updatedBy", tracker.comment
+     FROM tbl_opportunity_engage_tracker tracker
+     LEFT JOIN mst_stage stage ON stage.stage_id = tracker.stage_id
+     LEFT JOIN mst_sub_stage sub_stage
+       ON sub_stage.sub_stage_id = tracker.substage_id AND sub_stage.stage_id = tracker.stage_id
+     WHERE tracker.opportunity_id = $1
+     ORDER BY tracker.updated_dt ASC, tracker.tracker_id ASC`,
     [opportunityId]
   );
 }
@@ -856,7 +865,8 @@ async function transitionWorkflow(
   comment: string | null,
   opportunityDescription?: string | null,
   audit: WorkflowAudit = {},
-  expected?: { stageId: number | null; subStageId: number | null; estimationRevision?: number; selectedVersionId?: string; selectedRevision?: number }
+  expected?: { stageId: number | null; subStageId: number | null; estimationRevision?: number; selectedVersionId?: string; selectedRevision?: number },
+  precedingEvent?: { stageId: number; subStageId: number; comment: string | null }
 ): Promise<Opportunity | null> {
   return transaction(async (client) => {
     const current = await client.query<{ stageId: number; subStageId: number }>(
@@ -891,6 +901,16 @@ async function transitionWorkflow(
        WHERE opportunity_id = $1 AND is_current = TRUE`,
       [opportunityId]
     );
+    if (precedingEvent) {
+      await client.query(
+        `INSERT INTO tbl_opportunity_engage_tracker
+           (opportunity_id, stage_id, substage_id, updated_by, updated_dt, is_current, comment,
+            reason_code_id, role_id, role_name)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, FALSE, $5, $6, $7, $8)`,
+        [opportunityId, precedingEvent.stageId, precedingEvent.subStageId, userId, precedingEvent.comment,
+          audit.reasonCodeId ?? null, audit.roleId ?? null, audit.roleName ?? null]
+      );
+    }
     await client.query(
       `INSERT INTO tbl_opportunity_engage_tracker
          (opportunity_id, stage_id, substage_id, updated_by, updated_dt, is_current, comment,

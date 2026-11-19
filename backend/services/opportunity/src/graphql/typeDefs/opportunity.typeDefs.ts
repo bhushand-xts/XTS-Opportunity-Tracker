@@ -15,6 +15,8 @@ export const opportunityTypeDefs = `#graphql
     clientId: Int
     stageId: Int
     subStageId: Int
+    stageName: String
+    subStageName: String
     ownerId: Int
     assignedTo: Int
 
@@ -75,7 +77,9 @@ export const opportunityTypeDefs = `#graphql
   type OpportunityStageHistory {
     id: ID!
     stageId: Int!
+    stageName: String
     subStageId: Int!
+    subStageName: String
     reachedAt: String!
     updatedBy: Int
     comment: String
