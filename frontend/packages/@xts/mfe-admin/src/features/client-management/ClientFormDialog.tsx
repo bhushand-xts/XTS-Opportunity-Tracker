@@ -90,8 +90,8 @@ export function ClientFormDialog({
       client
         ? {
             clientName: client.clientName,
-            accountType: client.accountType ?? "",
-            sector: client.sector ?? "",
+            accountTypeId: client.accountTypeId != null ? String(client.accountTypeId) : "",
+            industryId: client.industryId != null ? String(client.industryId) : "",
             website: client.website ?? "",
             city: client.city ?? "",
             state: client.state ?? "",
@@ -134,8 +134,8 @@ export function ClientFormDialog({
 
     const input: ClientInput = {
       clientName: values.clientName.trim(),
-      accountType: values.accountType || null,
-      sector: values.sector || null,
+      accountTypeId: values.accountTypeId ? Number(values.accountTypeId) : null,
+      industryId: values.industryId ? Number(values.industryId) : null,
       website: values.website?.trim() || null,
       city: values.city?.trim() || null,
       state: values.state?.trim() || null,
@@ -174,28 +174,28 @@ export function ClientFormDialog({
                 <FormItem><FormLabel>Organization / account name</FormLabel><FormControl><Input autoFocus {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <FormField control={form.control} name="accountType" render={({ field }) => (
+                <FormField control={form.control} name="accountTypeId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Account type</FormLabel>
                     <Select value={field.value || undefined} onValueChange={field.onChange}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {accountTypes.filter((a) => a.isActive).map((a) => (
-                          <SelectItem key={a.accountTypeId} value={a.accountName}>{a.accountName}</SelectItem>
+                        {accountTypes.filter((a) => a.isActive || String(a.accountTypeId) === field.value).map((a) => (
+                          <SelectItem key={a.accountTypeId} value={String(a.accountTypeId)}>{a.accountName}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="sector" render={({ field }) => (
+                <FormField control={form.control} name="industryId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Sector / industry</FormLabel>
                     <Select value={field.value || undefined} onValueChange={field.onChange}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {industries.filter((i) => i.isActive).map((i) => (
-                          <SelectItem key={i.industryId} value={i.industryName}>{i.industryName}</SelectItem>
+                        {industries.filter((i) => i.isActive || String(i.industryId) === field.value).map((i) => (
+                          <SelectItem key={i.industryId} value={String(i.industryId)}>{i.industryName}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

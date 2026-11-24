@@ -100,4 +100,9 @@ services:
       - "3002:3002"
     environment:
       OPPORTUNITY_REMOTE_URL: ${OPPORTUNITY_REMOTE_URL:-http://localhost:3002}
+      # This bundle's size (recharts + the country/state/city dataset) pushes
+      # webpack past V8's default old-space ceiling on a small host, which
+      # crashes the whole dev server with an OOM FATAL ERROR instead of just
+      # running slower. Raising the ceiling lets it spill into swap instead.
+      NODE_OPTIONS: --max-old-space-size=3072
     volumes: *workspace-node-modules-volumes

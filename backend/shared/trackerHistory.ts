@@ -32,8 +32,8 @@ const trackers = {
   },
   mst_client: {
     tracker: 'mst_client_tracker', id: 'client_id',
-    columns: 'client_id, client_name, account_type, sector, website, city, state, country, street_address, created_dt, created_by, updated_dt, updated_by, is_active',
-    values: 'client_id, client_name, account_type, sector, website, city, state, country, street_address, COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, updated_dt, updated_by, COALESCE(is_active, TRUE)',
+    columns: 'client_id, client_name, account_type_id, industry_id, website, city, state, country, street_address, created_dt, created_by, updated_dt, updated_by, is_active',
+    values: 'client_id, client_name, account_type_id, industry_id, website, city, state, country, street_address, COALESCE(created_dt, CURRENT_TIMESTAMP), created_by, updated_dt, updated_by, COALESCE(is_active, TRUE)',
   },
   tbl_client_contact_person: {
     tracker: 'tbl_client_contact_person_tracker', id: 'client_contact_id',

@@ -67,7 +67,7 @@ export function OpportunityProgress({ opportunity: o }: { opportunity: Opportuni
   chronological.forEach((event, index) => {
     const completion = COMPLETIONS[`${event.stageId}/${event.subStageId}`];
     const previous = chronological[index - 1];
-    if (event.stageId === 3 && event.subStageId === 7 && previous?.stageId === 4 && previous.subStageId === 5) {
+    if (event.stageId === 3 && event.subStageId === 7 && previous?.stageId === 4 && [5, 17].includes(previous.subStageId)) {
       cycles.push({ events: [], results: new Map() });
     }
     const cycle = cycles[cycles.length - 1];
@@ -111,17 +111,21 @@ export function OpportunityProgress({ opportunity: o }: { opportunity: Opportuni
       <ol className="opp-stage-timeline" aria-label="Opportunity progress history">{stages.map(({ id, cycle, index, latest }) => {
         const outcome = id === 7;
         const events = cycle.events.filter(event => outcome ? isOpportunityOutcome(event.stageId) : event.stageId === id);
+        const changeRequest = id === 4 ? [...events].reverse().find(event => event.subStageId === 17) : undefined;
         const current = latest && (outcome ? isOpportunityOutcome(o.stageId) : id === o.stageId);
         const currentHasResult = outcome || id === 9 || id === 5 && o.subStageId === 11;
         const result = !current || currentHasResult ? cycle.results.get(id) : undefined;
-        const substage = outcome && o.stageId === 10 ? 'On Hold' : opportunityStatus(o).substage ?? 'Status unavailable';
+        const currentStatusEvent = current ? [...history].reverse().find(event => event.stageId === o.stageId && event.subStageId === o.subStageId) : undefined;
+        const latestStageEvent = [...events].reverse().find(event => event.stageName);
+        const substage = outcome && o.stageId === 10 ? currentStatusEvent?.subStageName ?? 'On Hold' : currentStatusEvent?.subStageName ?? opportunityStatus(o).substage ?? 'Status unavailable';
         const reached = current || Boolean(result) || !outcome && events.length > 0 || id === 1;
-        const name = outcome ? OPPORTUNITY_OUTCOME_LABEL : STAGE_LABELS[id] ?? 'Status unavailable';
+        const name = latestStageEvent?.stageName ?? (outcome ? OPPORTUNITY_OUTCOME_LABEL : STAGE_LABELS[id] ?? 'Status unavailable');
         return <li key={`${index}-${id}`} className={`opp-timeline-stage ${current ? 'current' : reached ? 'reached' : 'upcoming'}`} aria-current={current ? 'step' : undefined}>
           <span className="opp-timeline-marker" aria-hidden="true">{reached && !current ? <Check size={13} /> : <span className="opp-timeline-dot" />}</span>
           <div className="opp-timeline-body">
             <div className="opp-timeline-heading"><h3>{name}</h3>{current && <span className="opp-timeline-state">Current</span>}</div>
             {result && <div className={current ? 'opp-substage-current' : 'opp-stage-completion'}><strong>{result.label}</strong><ProgressDetails at={result.event.reachedAt} actor={result.event.actor} /></div>}
+            {changeRequest && <div className="opp-stage-completion"><strong>{changeRequest.subStageName || opportunityStatus({ ...o, stageId: changeRequest.stageId, subStageId: changeRequest.subStageId }).substage || 'Estimation Change Request'}</strong><ProgressDetails at={changeRequest.reachedAt} actor={changeRequest.actor} /></div>}
             {current && !result && <div className="opp-substage-current"><strong>{substage}</strong>{currentHasResult && <ProgressDetails />}</div>}
             {id === 1 && <div className="opp-stage-completion opp-progress-created"><strong>Opportunity created</strong><ProgressDetails at={o.createdDt} actor={o.createdBy} actorLabel="Created by" /></div>}
           </div>

@@ -1,4 +1,5 @@
 import * as service from "../../services/opportunity.service";
+import * as repository from '../../repositories/opportunity.repository';
 
 function formDate(value: Date | string | null | undefined): string | null {
   if (value == null) return null;
@@ -11,6 +12,8 @@ export const opportunityResolvers = {
     scope: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getScope(opportunity.opportunityId, ctx),
     responses: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getResponses(opportunity.opportunityId, ctx),
     stageHistory: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getStageHistory(opportunity.opportunityId, ctx),
+    stageName: (opportunity: { stageId: number | null; stageName?: string | null }) => opportunity.stageName ?? repository.findStageName(opportunity.stageId),
+    subStageName: (opportunity: { subStageId: number | null; subStageName?: string | null }) => opportunity.subStageName ?? repository.findSubStageName(opportunity.subStageId),
     createdDt: (opportunity: { createdDt: Date | string }) => opportunity.createdDt instanceof Date ? opportunity.createdDt.toISOString() : opportunity.createdDt,
     estimation: (opportunity: { opportunityId: number }, _: unknown, ctx: any) => service.getEstimation(opportunity.opportunityId, ctx),
     allowedActions: (opportunity: Parameters<typeof service.allowedActions>[0], _: unknown, ctx: any) => service.allowedActions(opportunity, ctx),
@@ -20,6 +23,8 @@ export const opportunityResolvers = {
     uploadedDt: (opportunity: { uploadedDt: Date | string | null }) => opportunity.uploadedDt instanceof Date ? opportunity.uploadedDt.toISOString() : opportunity.uploadedDt,
   },
   OpportunityStageHistory: {
+    stageName: (event: { stageId: number; stageName?: string | null }) => event.stageName ?? repository.findStageName(event.stageId),
+    subStageName: (event: { subStageId: number; subStageName?: string | null }) => event.subStageName ?? repository.findSubStageName(event.subStageId),
     reachedAt: (event: { reachedAt: Date | string }) => event.reachedAt instanceof Date ? event.reachedAt.toISOString() : event.reachedAt,
   },
   OpportunityEstimationVersion: { createdAt: (version: { createdAt: Date | string }) => version.createdAt instanceof Date ? version.createdAt.toISOString() : version.createdAt },

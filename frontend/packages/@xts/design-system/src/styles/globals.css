@@ -27,16 +27,16 @@
     --input: 220 15% 84%;
     --ring: 224 76% 48%;
     --radius: 0.625rem;
-    /* Sidebar: plain slate with a single clean blue accent — flat surfaces,
-       one accent color, no gradients or glow, for a clear resting/hover/active
-       distinction without visual noise. */
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 215 20% 75%;
+    /* Sidebar: light, matching the rest of the app's surfaces — a white
+       panel with the same blue accent used for the active item, instead of
+       the previous dark-navy chrome. */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 25% 35%;
     --sidebar-primary: 217 91% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 33% 20%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 215 25% 24%;
+    --sidebar-accent: 224 100% 96%;
+    --sidebar-accent-foreground: 224 76% 38%;
+    --sidebar-border: 220 16% 89%;
     --sidebar-ring: 217 91% 60%;
     /* AppShell rail + pipeline-funnel tokens, ported with AppShell/DashboardContent.
        rail-active is the same clean blue used for the active item on the sidebar. */
@@ -112,6 +112,15 @@
 @layer base {
   * {
     @apply border-border;
+  }
+  html {
+    /* Reserve the scrollbar's width permanently so opening a modal (which
+       hides the native scrollbar to lock background scroll) never changes
+       the page's content width. Without this, a layout that measures its
+       own size against the viewport (e.g. the opportunity estimation tab)
+       can oscillate: scrollbar disappears -> content reflows wider ->
+       measured height changes -> page grows a scrollbar again -> repeat. */
+    scrollbar-gutter: stable;
   }
   body {
     @apply bg-background text-foreground antialiased;

@@ -19,6 +19,10 @@ export interface ClientContact {
 export interface Client {
   id: number;
   clientName: string;
+  /** mst_account_type / mst_industry ids. */
+  accountTypeId: number | null;
+  industryId: number | null;
+  /** Names resolved from the masters, for display only. */
   accountType: string | null;
   sector: string | null;
   website: string | null;
@@ -43,8 +47,8 @@ export interface ClientContactInput {
 
 export interface ClientInput {
   clientName: string;
-  accountType?: string | null;
-  sector?: string | null;
+  accountTypeId?: number | null;
+  industryId?: number | null;
   website?: string | null;
   city?: string | null;
   state?: string | null;
@@ -63,6 +67,10 @@ export interface ClientHistory {
   trackerId: number;
   clientId: number;
   clientName: string;
+  /** mst_account_type / mst_industry ids. */
+  accountTypeId: number | null;
+  industryId: number | null;
+  /** Names resolved from the masters, for display only. */
   accountType: string | null;
   sector: string | null;
   website: string | null;

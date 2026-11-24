@@ -23,6 +23,9 @@ export default `
   type Client {
     id: Int!
     clientName: String!
+    accountTypeId: Int
+    industryId: Int
+    # Names resolved from mst_account_type / mst_industry (read-only).
     accountType: String
     sector: String
     website: String
@@ -43,6 +46,8 @@ export default `
     trackerId: Int!
     clientId: Int!
     clientName: String!
+    accountTypeId: Int
+    industryId: Int
     accountType: String
     sector: String
     website: String
@@ -68,8 +73,8 @@ export default `
 
   input CreateClientInput {
     clientName: String!
-    accountType: String
-    sector: String
+    accountTypeId: Int
+    industryId: Int
     website: String
     city: String
     state: String
@@ -85,8 +90,8 @@ export default `
   # whole list — omit it to leave existing contacts untouched.
   input UpdateClientInput {
     clientName: String
-    accountType: String
-    sector: String
+    accountTypeId: Int
+    industryId: Int
     website: String
     city: String
     state: String

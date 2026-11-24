@@ -1,5 +1,6 @@
 ﻿const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
+require("dotenv").config({ path: path.resolve(__dirname, "../../../.env") });
 const Dotenv = require("dotenv-webpack");
 const { container } = require("webpack");
 
@@ -17,12 +18,28 @@ module.exports = {
     publicPath: `${process.env.OPPORTUNITY_REMOTE_URL || "http://localhost:3002"}/`,
     clean: true,
   },
+  // Without this, every restart recompiles every module from scratch (the
+  // default is an in-memory cache that dies with the process) — this one
+  // is written to disk, inside this package's own node_modules (already
+  // excluded from the bind mount by its own anonymous volume in
+  // docker-compose.yml), so it survives container restarts and recreates.
+  cache: {
+    type: "filesystem",
+  },
   devServer: {
+    host: "0.0.0.0",
     port: 3002,
     historyApiFallback: true,
     hot: true,
     headers: {
       "Access-Control-Allow-Origin": "*",
+    },
+    client: {
+      overlay: {
+        // Benign browser quirk triggered by dialogs/resizable tables; not a
+        // real failure, so don't let the dev overlay block the page on it.
+        runtimeErrors: (error) => !/ResizeObserver loop/.test(error.message),
+      },
     },
   },
   // Docker Desktop on Windows doesn't reliably deliver native filesystem

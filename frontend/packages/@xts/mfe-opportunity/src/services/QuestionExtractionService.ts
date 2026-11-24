@@ -108,22 +108,22 @@ export function extractionCandidateKeys(question: PreparedQuestion) {
   return [question.id, `${question.text.replace(/\s+/g, ' ').trim()}|${question.sourceReference}`];
 }
 export function extractionProgress(result: QuestionExtractionStatus, asIs = false) {
-  const batches = result.total ? ` ${result.completed}/${result.total} sections` : '';
-  const pages = result.totalPages ? ` (${result.coveredPages ?? 0}/${result.totalPages} pages)` : '';
+  const completed = result.total ? ` · ${result.completed}/${result.total} sections complete` : '';
   if (result.state === 'SUCCEEDED' && !result.questions.length) {
     return asIs ? 'No questions were found written as-is in this file. Try "Document-Based Questionnaire" instead.'
       : 'No questions matched these instructions. Try broader instructions.';
   }
   if (result.state === 'SUCCEEDED') return `${result.questions.length} questions extracted. Review them before saving.`;
-  if (result.state === 'PARTIAL') return `Extraction incomplete${batches}${pages}. Available questions are ready for review; retry to finish.`;
+  if (result.state === 'PARTIAL') return `Extraction incomplete${completed}. Available questions are ready for review; retry to finish.`;
   if (result.stage === 'RATE_LIMITED') {
-    const wait = result.retryAfterSeconds ? ` Retry in about ${Math.ceil(result.retryAfterSeconds)} seconds.` : '';
-    return `Waiting for the provider's available quota${batches}${pages}.${wait}`;
+    const wait = result.retryAfterSeconds !== undefined ? ` · retry in ${Math.max(0, Math.ceil(result.retryAfterSeconds))} seconds` : '';
+    return `Waiting for quota${wait}${completed}`;
   }
-  if (result.stage === 'PARSING') return 'Reading all document pages, including scanned content.';
-  if (result.stage === 'RETRYING') return `Retrying unfinished sections${batches}${pages}. Completed questions have been kept.`;
-  if (result.state === 'QUEUED') return 'Questions queued for extraction.';
-  return `Extracting questions${batches}${pages}.`;
+  if (result.stage === 'PARSING') return 'Reading document…';
+  if (result.stage === 'RETRYING') return `Retrying unfinished sections${completed}. Completed questions have been kept.`;
+  if (result.state === 'QUEUED') return 'Queued for extraction.';
+  if (result.stage === 'EXTRACTING' && result.total > 0) return `Extracting section ${Math.min(result.completed + 1, result.total)} of ${result.total}`;
+  return 'Extracting questions…';
 }
 export function pollDelay(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {

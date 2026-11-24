@@ -49,7 +49,7 @@ describe('Production client persistence', () => {
       industries: [{ industryId: 8, industryName: 'Technology', isActive: true }],
     } });
     client.mutate.mockResolvedValue({ data: { createOpportunityClient: {
-      clientId: 99, clientName: form.name, accountType: 'Enterprise', sector: 'Technology',
+      clientId: 99, clientName: form.name, accountTypeId: 4, industryId: 8, accountType: 'Enterprise', sector: 'Technology',
       website: null, city: 'Pune', state: 'Maharashtra', country: 'India', streetAddress: 'Main Street',
       contacts: [{ fullName: 'Primary Contact', titleRole: 'Manager', email: 'primary@example.com', phone: '1234567890', roleInDecision: 2 }],
     } } });
@@ -57,7 +57,7 @@ describe('Production client persistence', () => {
     expect(client.query).toHaveBeenCalledWith(expect.objectContaining({ query: GET_OPPORTUNITY_LOOKUPS, fetchPolicy: 'network-only' }));
     expect(client.mutate).toHaveBeenCalledWith(expect.objectContaining({
       mutation: CREATE_OPPORTUNITY_CLIENT, errorPolicy: 'none', variables: {
-        client: { clientName: 'New client', accountType: 'Enterprise', sector: 'Technology', website: null,
+        client: { clientName: 'New client', accountTypeId: 4, industryId: 8, website: null,
           city: 'Pune', state: 'Maharashtra', country: 'India', streetAddress: 'Main Street' },
         contacts: [
           { fullName: 'Primary Contact', titleRole: 'Manager', email: 'primary@example.com', phone: '1234567890', roleInDecision: 2, roleInDecisionOther: null },

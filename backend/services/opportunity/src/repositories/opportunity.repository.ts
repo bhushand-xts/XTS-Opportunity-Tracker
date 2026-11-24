@@ -74,11 +74,15 @@ export interface Opportunity {
   isActive: boolean;
   estimatedValue: number | null;
   estimatedValueUsd?: number | null;
+  submittedEstimateUsd?: number | null;
   currencyId: number | null;
   rfpType: number | null;
   workflowComment?: string | null;
   workflowReasonCodeId?: number | null;
   clientName?: string | null;
+  accountTypeId?: number | null;
+  industryId?: number | null;
+  /** Names resolved from mst_account_type / mst_industry. */
   accountType?: string | null;
   sector?: string | null;
   website?: string | null;
@@ -175,8 +179,8 @@ export type RfpIntakeOpportunityUpdateInput = RfpIntakeOpportunityInput;
 
 export interface RfpIntakeClientInput {
   clientName: string;
-  accountType: string;
-  sector: string;
+  accountTypeId: number;
+  industryId: number;
   website?: string | null;
   city: string;
   state: string;
@@ -239,14 +243,27 @@ const SELECT_COLUMNS = `
 
 const OPPORTUNITY_LIST_COLUMNS = `
   ${SELECT_COLUMNS},
+  (SELECT stage_name FROM mst_stage WHERE stage_id = o.stage_id) AS "stageName",
+  (SELECT sub_stage_name FROM mst_sub_stage WHERE sub_stage_id = o.sub_stage_id AND stage_id = o.stage_id) AS "subStageName",
   (SELECT client_name FROM mst_client WHERE client_id = o.client_id) AS "clientName",
-  (SELECT account_type FROM mst_client WHERE client_id = o.client_id) AS "accountType",
-  (SELECT sector FROM mst_client WHERE client_id = o.client_id) AS sector,
+  (SELECT account_type_id FROM mst_client WHERE client_id = o.client_id) AS "accountTypeId",
+  (SELECT industry_id FROM mst_client WHERE client_id = o.client_id) AS "industryId",
+  (SELECT a.account_name FROM mst_client c JOIN mst_account_type a ON a.account_type_id = c.account_type_id
+    WHERE c.client_id = o.client_id) AS "accountType",
+  (SELECT i.industry_name FROM mst_client c JOIN mst_industry i ON i.industry_id = c.industry_id
+    WHERE c.client_id = o.client_id) AS sector,
   (SELECT website FROM mst_client WHERE client_id = o.client_id) AS website,
   (SELECT city FROM mst_client WHERE client_id = o.client_id) AS city,
   (SELECT state FROM mst_client WHERE client_id = o.client_id) AS state,
   (SELECT country FROM mst_client WHERE client_id = o.client_id) AS country,
   (SELECT street_address FROM mst_client WHERE client_id = o.client_id) AS "streetAddress",
+  -- The estimation team's selected, submitted estimate (USD); after CEO
+  -- approval (stage 5+) this is the approved value, including CEO rate edits.
+  (SELECT (e.person_weeks_cost->>'total')::FLOAT8 FROM tbl_opportunity_estimation e
+    WHERE e.opportunity_id = o.opportunity_id AND e.isselected = TRUE
+      AND e.resource_allocation->'saved'->>'status' = 'SUBMITTED'
+      AND COALESCE(e.resource_allocation->'saved'->>'deleted', 'false') = 'false'
+    LIMIT 1) AS "submittedEstimateUsd",
   COALESCE((SELECT JSON_AGG(JSON_BUILD_OBJECT(
     'fullName', COALESCE(full_name, ''), 'titleRole', COALESCE(title_role, ''),
     'email', COALESCE(email, ''), 'phone', COALESCE(phone, ''),
@@ -449,22 +466,26 @@ async function saveProposalQuestion(
 async function findClients() {
   return query(`SELECT c.client_id AS "clientId",
     COALESCE(NULLIF(TRIM(c.client_name), ''), 'Client ' || c.client_id::TEXT) AS "clientName",
-    c.account_type AS "accountType", c.sector, c.website, c.city, c.state, c.country,
+    c.account_type_id AS "accountTypeId", c.industry_id AS "industryId",
+    a.account_name AS "accountType", i.industry_name AS sector, c.website, c.city, c.state, c.country,
     c.street_address AS "streetAddress",
     COALESCE((SELECT JSON_AGG(JSON_BUILD_OBJECT('fullName', COALESCE(full_name, ''), 'titleRole', COALESCE(title_role, ''),
       'email', COALESCE(email, ''), 'phone', COALESCE(phone, ''), 'roleInDecision', role_in_decision, 'roleInDecisionOther', role_in_decision_other)
       ORDER BY contact_sequence NULLS LAST, client_contact_id)
       FROM tbl_client_contact_person WHERE client_id = c.client_id AND is_active = TRUE), '[]'::JSON) AS contacts
-    FROM mst_client c ORDER BY c.client_name NULLS LAST, c.client_id`);
+    FROM mst_client c
+    LEFT JOIN mst_account_type a ON a.account_type_id = c.account_type_id
+    LEFT JOIN mst_industry i ON i.industry_id = c.industry_id
+    ORDER BY c.client_name NULLS LAST, c.client_id`);
 }
 
 export async function createClient(input: RfpIntakeClientInput, contacts: RfpIntakeContactInput[], userId: number) {
   return transaction(async client => {
     const result = await client.query<{ clientId: number }>(
-      `INSERT INTO mst_client (client_name, account_type, sector, website, city, state, country,
+      `INSERT INTO mst_client (client_name, account_type_id, industry_id, website, city, state, country,
         street_address, created_by, is_active)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE) RETURNING client_id AS "clientId"`,
-      [input.clientName.trim(), input.accountType.trim(), input.sector.trim(), input.website?.trim() || null,
+      [input.clientName.trim(), input.accountTypeId, input.industryId, input.website?.trim() || null,
         input.city.trim(), input.state.trim(), input.country.trim(), input.streetAddress?.trim() || null, userId]);
     const clientId = result.rows[0].clientId;
     for (const [index, contact] of contacts.entries()) {
@@ -492,10 +513,10 @@ export async function updateClient(clientId: number, input: RfpIntakeClientInput
     const existing = await client.query('SELECT client_id FROM mst_client WHERE client_id = $1 FOR UPDATE', [clientId]);
     if (!existing.rows.length) throw new Error('Client not found.');
     await client.query(
-      `UPDATE mst_client SET client_name = $1, account_type = $2, sector = $3, website = $4,
+      `UPDATE mst_client SET client_name = $1, account_type_id = $2, industry_id = $3, website = $4,
        city = $5, state = $6, country = $7, street_address = $8,
        updated_dt = CURRENT_TIMESTAMP, updated_by = $9 WHERE client_id = $10`,
-      [input.clientName.trim(), input.accountType.trim(), input.sector.trim(), input.website?.trim() || null,
+      [input.clientName.trim(), input.accountTypeId, input.industryId, input.website?.trim() || null,
         input.city.trim(), input.state.trim(), input.country.trim(), input.streetAddress?.trim() || null, userId, clientId]);
     await removeMissingClientContacts(client, clientId, contacts, userId);
     for (const [index, contact] of contacts.entries()) await saveClientContact(client, clientId, contact, index + 1, userId);
@@ -639,11 +660,11 @@ async function updateRfpIntakeOpportunity(
 
     await client.query(
       `UPDATE mst_client
-       SET client_name = $1, account_type = $2, sector = $3, website = $4,
+       SET client_name = $1, account_type_id = $2, industry_id = $3, website = $4,
            city = $5, state = $6, country = $7, street_address = $8,
            updated_dt = CURRENT_TIMESTAMP, updated_by = $9, is_active = TRUE
        WHERE client_id = $10`,
-      [input.client.clientName.trim(), input.client.accountType, input.client.sector,
+      [input.client.clientName.trim(), input.client.accountTypeId, input.client.industryId,
         input.client.website?.trim() || null, input.client.city, input.client.state,
         input.client.country, input.client.streetAddress?.trim() || null, userId, clientId]
     );
@@ -719,23 +740,23 @@ async function finalizeRfpIntakeOpportunity(
     const clientResult = input.clientId ? existingClient : existingClient.rows[0]
       ? await client.query<{ clientId: number }>(
           `UPDATE mst_client
-           SET client_name = $1, account_type = $2, sector = $3, website = $4,
+           SET client_name = $1, account_type_id = $2, industry_id = $3, website = $4,
                city = $5, state = $6, country = $7, street_address = $8,
                updated_dt = CURRENT_TIMESTAMP, updated_by = $9, is_active = TRUE
            WHERE client_id = $10
            RETURNING client_id AS "clientId"`,
-          [input.client.clientName.trim(), input.client.accountType, input.client.sector,
+          [input.client.clientName.trim(), input.client.accountTypeId, input.client.industryId,
             input.client.website?.trim() || null, input.client.city, input.client.state,
             input.client.country, input.client.streetAddress?.trim() || null, userId,
             existingClient.rows[0].clientId]
         )
       : await client.query<{ clientId: number }>(
           `INSERT INTO mst_client
-             (client_name, account_type, sector, website, city, state, country,
+             (client_name, account_type_id, industry_id, website, city, state, country,
               street_address, created_by, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)
            RETURNING client_id AS "clientId"`,
-          [input.client.clientName.trim(), input.client.accountType, input.client.sector,
+          [input.client.clientName.trim(), input.client.accountTypeId, input.client.industryId,
             input.client.website?.trim() || null, input.client.city, input.client.state,
             input.client.country, input.client.streetAddress?.trim() || null, userId]
         );
@@ -808,7 +829,9 @@ export interface WorkflowAudit {
 export interface OpportunityStageHistory {
   id: number;
   stageId: number;
+  stageName?: string | null;
   subStageId: number;
+  subStageName?: string | null;
   reachedAt: Date | string;
   updatedBy: number | null;
   comment: string | null;
@@ -816,11 +839,16 @@ export interface OpportunityStageHistory {
 
 export async function findStageHistory(opportunityId: number): Promise<OpportunityStageHistory[]> {
   return query<OpportunityStageHistory>(
-    `SELECT tracker_id AS id, stage_id AS "stageId", substage_id AS "subStageId",
-            updated_dt AS "reachedAt", updated_by AS "updatedBy", comment
-     FROM tbl_opportunity_engage_tracker
-     WHERE opportunity_id = $1
-     ORDER BY updated_dt ASC, tracker_id ASC`,
+    `SELECT tracker.tracker_id AS id, tracker.stage_id AS "stageId", stage.stage_name AS "stageName",
+            tracker.substage_id AS "subStageId",
+            sub_stage.sub_stage_name AS "subStageName",
+            tracker.updated_dt AS "reachedAt", tracker.updated_by AS "updatedBy", tracker.comment
+     FROM tbl_opportunity_engage_tracker tracker
+     LEFT JOIN mst_stage stage ON stage.stage_id = tracker.stage_id
+     LEFT JOIN mst_sub_stage sub_stage
+       ON sub_stage.sub_stage_id = tracker.substage_id AND sub_stage.stage_id = tracker.stage_id
+     WHERE tracker.opportunity_id = $1
+     ORDER BY tracker.updated_dt ASC, tracker.tracker_id ASC`,
     [opportunityId]
   );
 }
@@ -856,7 +884,8 @@ async function transitionWorkflow(
   comment: string | null,
   opportunityDescription?: string | null,
   audit: WorkflowAudit = {},
-  expected?: { stageId: number | null; subStageId: number | null; estimationRevision?: number; selectedVersionId?: string; selectedRevision?: number }
+  expected?: { stageId: number | null; subStageId: number | null; estimationRevision?: number; selectedVersionId?: string; selectedRevision?: number },
+  precedingEvent?: { stageId: number; subStageId: number; comment: string | null }
 ): Promise<Opportunity | null> {
   return transaction(async (client) => {
     const current = await client.query<{ stageId: number; subStageId: number }>(
@@ -891,6 +920,16 @@ async function transitionWorkflow(
        WHERE opportunity_id = $1 AND is_current = TRUE`,
       [opportunityId]
     );
+    if (precedingEvent) {
+      await client.query(
+        `INSERT INTO tbl_opportunity_engage_tracker
+           (opportunity_id, stage_id, substage_id, updated_by, updated_dt, is_current, comment,
+            reason_code_id, role_id, role_name)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, FALSE, $5, $6, $7, $8)`,
+        [opportunityId, precedingEvent.stageId, precedingEvent.subStageId, userId, precedingEvent.comment,
+          audit.reasonCodeId ?? null, audit.roleId ?? null, audit.roleName ?? null]
+      );
+    }
     await client.query(
       `INSERT INTO tbl_opportunity_engage_tracker
          (opportunity_id, stage_id, substage_id, updated_by, updated_dt, is_current, comment,

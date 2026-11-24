@@ -19,6 +19,8 @@ const OPPORTUNITY_FIELDS = gql`
     clientId
     stageId
     subStageId
+    stageName
+    subStageName
     ownerId
     createdBy
     createdDt
@@ -48,6 +50,8 @@ const OPPORTUNITY_FIELDS = gql`
     workflowComment
     workflowReasonCodeId
     clientName
+    accountTypeId
+    industryId
     accountType
     sector
     website
@@ -77,7 +81,7 @@ export const GET_OPPORTUNITY = gql`
     opportunity(opportunityId: $opportunityId) {
       ...OpportunityFields
       responses { id title category answer revision allowedActions }
-      stageHistory { id stageId subStageId reachedAt updatedBy comment }
+      stageHistory { id stageId stageName subStageId subStageName reachedAt updatedBy comment }
       estimation { revision status rows { id workItem hours people hourlyRate } rates { roleCode rate rateType currencyCode } assumptions total grid { phaseIds roleCodes durations { phaseId weeks } allocations { phaseId roleCode effort } } }
       scope { revision summary risks { id description severity } alignment { id text } }
     }
@@ -108,6 +112,8 @@ export const LIST_OPPORTUNITY_CLIENTS = gql`
     opportunityClients {
       clientId
       clientName
+      accountTypeId
+      industryId
       accountType
       sector
       website
@@ -143,7 +149,7 @@ export const CREATE_OPPORTUNITY = gql`
 export const CREATE_OPPORTUNITY_CLIENT = gql`
   mutation CreateOpportunityClient($client: RfpIntakeClientInput!, $contacts: [RfpIntakeContactInput!]!) {
     createOpportunityClient(client: $client, contacts: $contacts) {
-      clientId clientName accountType sector website city state country streetAddress
+      clientId clientName accountTypeId industryId accountType sector website city state country streetAddress
       contacts { fullName titleRole email phone roleInDecision roleInDecisionOther }
     }
   }
@@ -152,7 +158,7 @@ export const CREATE_OPPORTUNITY_CLIENT = gql`
 export const UPDATE_OPPORTUNITY_CLIENT = gql`
   mutation UpdateOpportunityClient($clientId: Int!, $client: RfpIntakeClientInput!, $contacts: [RfpIntakeContactInput!]!) {
     updateOpportunityClient(clientId: $clientId, client: $client, contacts: $contacts) {
-      clientId clientName accountType sector website city state country streetAddress
+      clientId clientName accountTypeId industryId accountType sector website city state country streetAddress
       contacts { fullName titleRole email phone roleInDecision roleInDecisionOther }
     }
   }
@@ -193,7 +199,7 @@ export const GET_NEGOTIATION_REASON_CODES = gql`
 
 const ESTIMATION_VERSION_FIELDS = gql`fragment EstimationVersionFields on OpportunityEstimationVersion {
   isSelected
-  id revision updatedBy updatedAt version name status currencyCode personWeeks createdBy createdAt
+  id revision updatedBy updatedAt version name status currencyCode personWeeks createdBy createdByName createdAt
   estimation { revision status assumptions total rows { id workItem hours people hourlyRate } rates { roleCode rate rateType currencyCode } grid { phaseIds roleCodes durations { phaseId weeks } allocations { phaseId roleCode effort } } }
 }`;
 export const GET_ESTIMATION_VERSION = gql`query EstimationVersion($opportunityId: Int!, $estimationId: ID!) { estimationVersion(opportunityId: $opportunityId, estimationId: $estimationId) { ...EstimationVersionFields } } ${ESTIMATION_VERSION_FIELDS}`;

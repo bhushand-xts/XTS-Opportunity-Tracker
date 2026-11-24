@@ -203,14 +203,15 @@ function projectAllowedActions(opportunity: repository.Opportunity, access: Oppo
     actions.push('GATE1_NO_GO');
   }
   if (estimationWritable(opportunity) && access.estimate && access.canView(opportunity)) actions.push('EDIT_ESTIMATION');
+  if (access.estimate && access.canView(opportunity)) actions.push('VIEW_ALL_ESTIMATIONS');
   if ((opportunity.stageId ?? 0) >= 3 && access.gateReview && access.canView(opportunity)) actions.push('VIEW_ESTIMATION_RATES');
   if (estimationRatesWritable(opportunity) && access.gateReview && access.canView(opportunity)) actions.push('EDIT_ESTIMATION_RATES');
   if (opportunity.stageId === 3 && opportunity.subStageId === 7 && access.estimate) actions.push('SUBMIT_ESTIMATE');
-  if (!preparationModulesLocked(opportunity) && access.canView(opportunity)) actions.push('EDIT_SCOPE');
+  if (!preparationModulesLocked(opportunity) && access.estimate && access.canView(opportunity)) actions.push('EDIT_SCOPE');
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview) {
     actions.push('ESTIMATE_APPROVE');
+    actions.push('ESTIMATE_REQUEST_CHANGES');
     if (opportunity.subStageId === 8) actions.push('ESTIMATE_HOLD');
-    actions.push('ESTIMATE_REJECT');
   }
   if (opportunity.stageId === 4 && opportunity.subStageId === 5 && access.gateReview) {
     actions.push('ESTIMATE_REVISION_APPROVE', 'ESTIMATE_REVISION_DECLINE');
@@ -284,7 +285,7 @@ async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunity
   )) {
     throw validationFailed("The selected proposal section IDs are invalid.");
   }
-  if (!input.client?.clientName?.trim() || !input.client.accountType?.trim() || !input.client.sector?.trim() ||
+  if (!input.client?.clientName?.trim() || !(Number.isInteger(input.client.accountTypeId) && input.client.accountTypeId > 0) || !(Number.isInteger(input.client.industryId) && input.client.industryId > 0) ||
       !input.client.city?.trim() || !input.client.state?.trim() || !input.client.country?.trim()) {
     throw validationFailed("Complete the client details before saving the opportunity.");
   }
@@ -330,7 +331,7 @@ async function updateRfpIntakeOpportunity(
     throw validationFailed("Select Questionnaire or Generic RFP.");
   }
   if (!input.opportunityName?.trim() || !input.client?.clientName?.trim() ||
-      !input.client.accountType?.trim() || !input.client.sector?.trim() ||
+      !(Number.isInteger(input.client.accountTypeId) && input.client.accountTypeId > 0) || !(Number.isInteger(input.client.industryId) && input.client.industryId > 0) ||
       !input.client.city?.trim() || !input.client.state?.trim() || !input.client.country?.trim()) {
     throw validationFailed("Complete the opportunity and client details before saving.");
   }
@@ -503,6 +504,9 @@ async function transitionWorkflowCore(
   const reviewingCeo = opportunity.stageId === 2 && [4, 5, 6].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const reviewingEstimate = opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0) && access.gateReview;
   const submittedBid = opportunity.stageId === 5 && opportunity.subStageId === 11;
+  if (action === 'REJECT' && reviewingEstimate) {
+    throw conflict('Estimation cannot be rejected. Use Request Changes to return it to the Estimation Team.');
+  }
   if (action === 'HOLD' && (reviewingSales && opportunity.subStageId === 3 || reviewingCeo && opportunity.subStageId === 6 || reviewingEstimate && opportunity.subStageId === 9)) {
     throw conflict('This opportunity is already on hold. Choose another available action.');
   }
@@ -569,14 +573,19 @@ async function transitionWorkflowCore(
   if (opportunity.stageId === 4 && [8, 9].includes(opportunity.subStageId ?? 0)) {
     if (!access.gateReview) throw conflict('The CEO role is required to review estimates.');
     if (action === 'HOLD') return persistTransition(opportunity, opportunityId, 4, 9, null, userId, comment?.trim() || null, null, audit);
+    if (action === 'REQUEST_CHANGES') {
+      if (!comment?.trim()) throw validationFailed('Enter the changes requested for the estimation team.');
+      return repository.transitionWorkflow(opportunityId, 3, 7, null, userId, comment.trim(), null, audit,
+        { stageId: opportunity.stageId, subStageId: opportunity.subStageId },
+        { stageId: 4, subStageId: 17, comment: comment.trim() });
+    }
     if (action === 'APPROVE') {
       const estimate = await repository.findEstimation(opportunityId);
       validateCompletedEstimate(estimate);
       return repository.transitionWorkflow(opportunityId, 5, 10, null, userId, comment?.trim() || null, null, audit,
         { stageId: opportunity.stageId, subStageId: opportunity.subStageId, estimationRevision: estimate!.revision });
     }
-    if (action === 'REJECT') return persistTransition(opportunity, opportunityId, 9, 17, null, userId, comment!.trim(), null, audit);
-    throw validationFailed('Use Hold, Approve or Reject for estimate review.');
+    throw validationFailed('Use Hold, Request Changes or Approve for estimate review.');
   }
   if (opportunity.stageId === 1) {
     return reviewBySalesHead(opportunityId, opportunity, userId, access, action, comment, audit);
@@ -652,8 +661,7 @@ async function saveDirectoryClient(id: number | null, input: repository.RfpIntak
   const access = await accessFor(ctx), userId = access.userId;
   if (!(id === null ? access.create : access.edit)) throw conflict('You do not have permission to create or update clients.');
   const fields: [string, string | null | undefined, number, boolean][] = [
-    ['Client name', input.clientName, 255, true], ['Account type', input.accountType, 100, true],
-    ['Sector', input.sector, 100, true], ['Website', input.website, 500, false],
+    ['Client name', input.clientName, 255, true], ['Website', input.website, 500, false],
     ['City', input.city, 100, true], ['State', input.state, 100, true],
     ['Country', input.country, 100, true], ['Street address', input.streetAddress, 20, false],
   ];
@@ -662,6 +670,8 @@ async function saveDirectoryClient(id: number | null, input: repository.RfpIntak
       throw validationFailed(`${label} ${required ? 'is required and ' : ''}must be at most ${max} characters.`);
     }
   }
+  if (!Number.isInteger(input.accountTypeId) || input.accountTypeId <= 0) throw validationFailed('Account type is required.');
+  if (!Number.isInteger(input.industryId) || input.industryId <= 0) throw validationFailed('Sector is required.');
   if (input.website && !/^https?:\/\/\S+$/i.test(input.website.trim())) throw validationFailed("Enter a valid HTTP or HTTPS website URL.");
   if (!contacts.length) throw validationFailed("A primary contact is required.");
   const emails = new Set<string>();
@@ -698,13 +708,33 @@ export async function canUploadDocument(ctx: any) {
   return access.create || access.edit;
 }
 
+export async function canUploadOpportunityDocument(opportunityId: number, ctx: any) {
+  try {
+    // `get` enforces the user's access scope for this specific opportunity.
+    await get(opportunityId, ctx);
+    const access = await accessFor(ctx);
+    return access.create || access.edit || access.review || access.gateReview;
+  } catch {
+    return false;
+  }
+}
+
+export async function canViewOpportunityDocuments(opportunityId: number, ctx: any) {
+  try {
+    await get(opportunityId, ctx);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function allowedActions(opportunity: repository.Opportunity, ctx: any) {
   return projectAllowedActions(opportunity, await accessFor(ctx));
 }
 
 export async function getEstimation(opportunityId: number, ctx: any) {
   await get(opportunityId, ctx);
-  if ((await accessFor(ctx)).gateReview) {
+  if (!(await accessFor(ctx)).estimate) {
     const [submitted] = await repository.listEstimationVersions(opportunityId, true);
     return submitted?.estimation ?? null;
   }
@@ -713,8 +743,9 @@ export async function getEstimation(opportunityId: number, ctx: any) {
 
 export async function getResponses(opportunityId: number, ctx: any) {
   const opportunity = await get(opportunityId, ctx);
+  const access = await accessFor(ctx);
   return (await repository.findResponses(opportunityId)).map(response => ({
-    ...response, allowedActions: preparationModulesLocked(opportunity) ? [] : ['SAVE_ANSWER'],
+    ...response, allowedActions: preparationModulesLocked(opportunity) || !access.estimate ? [] : ['SAVE_ANSWER'],
   }));
 }
 
@@ -733,6 +764,7 @@ export async function saveScope(
   const access = await accessFor(ctx);
 
   assertPreparationWritable(opportunity);
+  if (!access.estimate) throw conflict('Only users with Estimation access can edit opportunity scope or assessment.');
 
   if (
     !scope ||
@@ -815,6 +847,7 @@ export async function saveScope(
 export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, ctx: any) {
   const access = await accessFor(ctx);
   assertPreparationWritable(await get(opportunityId, ctx));
+  if (!access.estimate) throw conflict('Only users with Estimation access can edit opportunity answers.');
   if (!Number.isSafeInteger(responseId) || responseId <= 0 || !Number.isSafeInteger(revision) || revision < 0) {
     throw validationFailed('Select a saved opportunity question and its current revision.');
   }
@@ -890,14 +923,21 @@ function validateCompletedEstimate(estimate: repository.OpportunityEstimation | 
 export async function listEstimationVersions(opportunityId: number, ctx: any) {
   await get(opportunityId, ctx);
   const access = await accessFor(ctx);
-  return repository.listEstimationVersions(opportunityId, access.gateReview);
+  const versions = await repository.listEstimationVersions(opportunityId, !access.estimate);
+  let users: Awaited<ReturnType<typeof userService.findUsers>> = [];
+  try { users = await userService.findUsers([...new Set(versions.map(version => version.createdBy))]); } catch { /* Keep estimate history available if the user directory is temporarily unavailable. */ }
+  const names = new Map(users.map(user => [user.id, userName(user)]));
+  return versions.map(version => ({ ...version, createdByName: names.get(version.createdBy) ?? 'Unknown user' }));
 }
 export async function getEstimationVersion(opportunityId: number, estimationId: string, ctx: any) {
   await get(opportunityId, ctx);
   if (!/^[1-9]\d{0,18}$/.test(estimationId) || BigInt(estimationId) > 9223372036854775807n) throw validationFailed('Select a saved estimation.');
   const saved = await repository.findEstimationVersion(opportunityId, estimationId);
-  if (!saved || (await accessFor(ctx)).gateReview && (!saved.isSelected || saved.status !== 'SUBMITTED')) throw notFound('Saved estimation not found.');
-  return saved;
+  const access = await accessFor(ctx);
+  if (!saved || !access.estimate && (!saved.isSelected || saved.status !== 'SUBMITTED')) throw notFound('Saved estimation not found.');
+  let creator: Awaited<ReturnType<typeof userService.findUsers>>[number] | undefined;
+  try { creator = (await userService.findUsers([saved.createdBy]))[0]; } catch { /* Fall back to the user ID if the directory is temporarily unavailable. */ }
+  return { ...saved, createdByName: userName(creator ?? null) };
 }
 export async function saveEstimationVersion(opportunityId: number, input: repository.OpportunityEstimation, name: string, requestKey: string, ctx: any, sourceVersionId?: string, sourceRevision?: number) {
   const access = await accessFor(ctx);

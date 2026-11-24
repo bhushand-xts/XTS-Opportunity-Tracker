@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import { SAVE_OPPORTUNITY_ANSWER, SAVE_OPPORTUNITY_ESTIMATION, SAVE_OPPORTUNITY_SCOPE, GET_ESTIMATION_VERSIONS, GET_ESTIMATION_VERSION, SAVE_ESTIMATION_VERSION, UPDATE_ESTIMATION_RATES } from './opportunity.queries';
 import { GET_OPPORTUNITY_OWNER_DIRECTORY, type OwnerDirectoryData } from './userDirectory.queries';
+import { randomUUID } from '../lib/uuid';
 import { mapOwnerDirectory } from './useOwnerDirectory';
 import { getApolloClient } from '@xts/api-client';
 import type { Action, AssessmentSection, ClientDraft, DecisionCommand, DirectoryUser, Estimation, EstimationVersion, ListFilter, OpportunityClient, OpportunityDetail, OpportunityLookups, OpportunitySummary, Page, ResponseCommand, SaveCommand, Scope, SourceDocument, VersionCommand } from '@xts/api-contracts';
@@ -37,7 +38,10 @@ export interface OpportunityService {
   clients(search: string, after: string | null, signal?: AbortSignal): Promise<Page<OpportunityClient>>;
   saveClient(input: { id: string | null; expectedRevision: number | null; idempotencyKey: string; form: ClientDraft }): Promise<OpportunityClient>;
   eligibleUsers(input: { opportunityId: string | null; purpose: 'OWNER' | 'REVIEWER' | 'SALES_REVIEWER' | 'GATE1_APPROVER'; search: string; after: string | null }, signal?: AbortSignal): Promise<Page<DirectoryUser>>;
-  upload(command: VersionCommand, file: File): Promise<SourceDocument>;
+  upload(command: VersionCommand, file: File, attachment?: boolean): Promise<SourceDocument>;
+  listDocuments(opportunityId: string): Promise<SourceDocument[]>;
+  uploadAttachment(opportunityId: string, file: File, documentTitle?: string): Promise<SourceDocument>;
+  deleteDocument(opportunityId: string, document: SourceDocument): Promise<void>;
   download(opportunityId: string | null, document: SourceDocument): Promise<Blob>;
   extract(command: VersionCommand & { documentId: string }): Promise<OpportunityDetail>;
   extractionStatus(opportunityId: string, jobId: string, signal?: AbortSignal): Promise<OpportunityDetail>;
@@ -64,25 +68,25 @@ interface BackendCurrency { currencyId: number; currencyCode: string; currencySy
 interface BackendOpportunity {
   responses?: { id: string; title: string; category: string | null; answer: string; revision: number; allowedActions: Action[] }[];
   createdDt?: string | null;
-  stageHistory?: { id: string; stageId: number; subStageId: number; reachedAt: string; updatedBy?: number | null; comment?: string | null }[];
+  stageHistory?: { id: string; stageId: number; stageName?: string | null; subStageId: number; subStageName?: string | null; reachedAt: string; updatedBy?: number | null; comment?: string | null }[];
   estimation?: Estimation | null;
   scope?: Scope | null;
   allowedActions?: Action[];
   opportunityId: number; opportunityNumber: string | null; opportunityName: string | null;
-  sourceTypeId: number | null; clientId: number | null; stageId: number | null; subStageId: number | null;
+  sourceTypeId: number | null; clientId: number | null; stageId: number | null; subStageId: number | null; stageName?: string | null; subStageName?: string | null;
   ownerId: number | null; createdBy?: number | null; assignedTo: number | null; priority: string | null; serviceLine: string | null;
   solicitationNumber: string | null; issuingAgency: string | null; procurementContact: string | null;
   queDueDate: string | null; submissionMethod: string | null; contractTerm: string | null; incumbentVendor: string | null;
   preBidMeeting: number | null; documentType: string | null; fileName: string | null; filePath: string | null; docSubmissionFormat: string | null;
   evaluationBasis: string | null; opportunityDescription: string | null; leadReceivedDate: string | null;
   proposalDueDate: string | null; estimatedValue: number | null; estimatedValueUsd?: number | null; currencyId: number | null; rfpType: number | null;
-  workflowComment: string | null; workflowReasonCodeId?: number | null; clientName: string | null; accountType: string | null; sector: string | null;
+  workflowComment: string | null; workflowReasonCodeId?: number | null; clientName: string | null; accountTypeId?: number | null; industryId?: number | null; accountType: string | null; sector: string | null;
   website: string | null; city: string | null; state: string | null; country: string | null; streetAddress: string | null;
   contacts: BackendContact[]; proposalQuestions: string[]; proposalQuestionIds: (number | null)[]; proposalQuestionCategories: (string | null)[];
   proposalQuestionnaireTypeIds?: (number | null)[];
 }
 interface BackendClient {
-  clientId: number; clientName: string; accountType: string | null; sector: string | null; website: string | null;
+  clientId: number; clientName: string; accountTypeId?: number | null; industryId?: number | null; accountType: string | null; sector: string | null; website: string | null;
   city: string | null; state: string | null; country: string | null; streetAddress: string | null; contacts: BackendContact[];
 }
 
@@ -129,8 +133,8 @@ function mapContact(contact: BackendContact, id?: string) {
 function mapClient(c: BackendClient): OpportunityClient {
   const [primary, ...additional] = c.contacts ?? [];
   return {
-    id: String(c.clientId), revision: 1, name: c.clientName ?? '', relationship: '', accountTypeId: c.accountType ?? '',
-    industryId: c.sector ?? '', website: c.website ?? '', address: c.streetAddress ?? '', country: c.country ?? '',
+    id: String(c.clientId), revision: 1, name: c.clientName ?? '', relationship: '', accountTypeId: c.accountTypeId != null ? String(c.accountTypeId) : '',
+    industryId: c.industryId != null ? String(c.industryId) : '', website: c.website ?? '', address: c.streetAddress ?? '', country: c.country ?? '',
     stateProvince: c.state ?? '', city: c.city ?? '', streetAddress: c.streetAddress ?? '',
     primaryContact: primary ? mapContact(primary, `${c.clientId}-primary`) : { name: '', title: '', email: '', phone: '', decisionRole: '' },
     additionalContacts: additional.map((contact, index) => mapContact(contact, `${c.clientId}-${index + 1}`)),
@@ -141,7 +145,7 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
   const currentState = state(o);
   const owner = user(o.ownerId, directory);
   const client = o.clientId ? mapClient({
-    clientId: o.clientId, clientName: o.clientName ?? '', accountType: o.accountType, sector: o.sector, website: o.website,
+    clientId: o.clientId, clientName: o.clientName ?? '', accountTypeId: o.accountTypeId, industryId: o.industryId, accountType: o.accountType, sector: o.sector, website: o.website,
     city: o.city, state: o.state, country: o.country, streetAddress: o.streetAddress, contacts: o.contacts ?? [],
   }) : null;
   const questions = (o.proposalQuestions ?? []).map((text, index) => ({
@@ -152,10 +156,10 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
   return {
     id: String(o.opportunityId), number: o.opportunityNumber ?? String(o.opportunityId), title: o.opportunityName ?? '',
     estimatedValue: String(o.estimatedValue ?? ''), estimatedValueUsd: String(o.estimatedValueUsd ?? ''), currencyCode, currencySymbol, clientName: o.clientName, owner, createdBy: user(o.createdBy, directory), priority: priority(o.priority),
-    state: currentState, stageId: o.stageId ?? null, subStageId: o.subStageId ?? null, holdReasonCodeId: o.workflowReasonCodeId ?? null, rfpType: rfpType(o.rfpType), submissionDeadline: o.proposalDueDate, revision: 1,
+    state: currentState, stageId: o.stageId ?? null, subStageId: o.subStageId ?? null, stageName: o.stageName ?? null, subStageName: o.subStageName ?? null, holdReasonCodeId: o.workflowReasonCodeId ?? null, rfpType: rfpType(o.rfpType), submissionDeadline: o.proposalDueDate, revision: 1,
     packageRevision: null, allowedActions: actions(o),
     createdDt: o.createdDt ?? null, stageHistory: (o.stageHistory ?? []).map(event => ({
-      id: event.id, stageId: event.stageId, subStageId: event.subStageId, reachedAt: event.reachedAt,
+      id: event.id, stageId: event.stageId, stageName: event.stageName ?? null, subStageId: event.subStageId, subStageName: event.subStageName ?? null, reachedAt: event.reachedAt,
       comment: event.comment, actor: user(event.updatedBy, directory),
     })),
     form: {
@@ -267,9 +271,9 @@ export const productionOpportunityService: OpportunityService = {
   async saveClient(command) {
     const form = command.form;
     const lookups = await productionOpportunityService.lookups();
-    const accountType = lookups.accountTypes.find(option => option.id === form.accountTypeId)?.label;
-    const sector = lookups.industries.find(option => option.id === form.industryId)?.label;
-    if (!accountType || !sector) throw new Error('Select a valid account type and sector.');
+    const accountTypeId = Number(lookups.accountTypes.find(option => option.id === form.accountTypeId)?.id);
+    const industryId = Number(lookups.industries.find(option => option.id === form.industryId)?.id);
+    if (!accountTypeId || !industryId) throw new Error('Select a valid account type and sector.');
     const roles = DECISION_ROLE_IDS;
     const contacts = [form.primaryContact, ...form.additionalContacts].map(contact => ({
       fullName: contact.name, titleRole: contact.title, email: contact.email, phone: contact.phone,
@@ -279,7 +283,7 @@ export const productionOpportunityService: OpportunityService = {
     const { data } = await getApolloClient().mutate<{ createOpportunityClient?: BackendClient; updateOpportunityClient?: BackendClient }>({
       mutation: command.id ? UPDATE_OPPORTUNITY_CLIENT : CREATE_OPPORTUNITY_CLIENT, variables: {
         ...(command.id ? { clientId: Number(command.id) } : {}),
-        client: { clientName: form.name, accountType, sector, website: form.website || null, city: form.city,
+        client: { clientName: form.name, accountTypeId, industryId, website: form.website || null, city: form.city,
           state: form.stateProvince, country: form.country, streetAddress: form.streetAddress || form.address || null },
         contacts,
       }, errorPolicy: 'none',
@@ -289,9 +293,9 @@ export const productionOpportunityService: OpportunityService = {
     return mapClient(saved);
   },
   eligibleUsers: () => unavailable('Eligible user directory'),
-  async upload(_command, file): Promise<SourceDocument> {
-    if (!/\.(pdf|docx?|txt)$/i.test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) {
-      throw new Error('Choose a non-empty PDF, Word or text document up to 25 MB.');
+  async upload(command, file, attachment = false): Promise<SourceDocument> {
+    if (!/\.(pdf|docx?|txt|xlsx?)$/i.test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) {
+      throw new Error('Choose a non-empty PDF, Word, Excel or text document up to 25 MB.');
     }
     let token: unknown;
     try {
@@ -303,7 +307,12 @@ export const productionOpportunityService: OpportunityService = {
     if (typeof token !== 'string' || !token) throw new Error('Please sign in before uploading.');
     const body = new FormData();
     body.append('file', file);
-    const response = await fetch(`${OPPORTUNITY_SERVICE_URL}/documents/upload`, {
+    const query = new URLSearchParams();
+    if (command.opportunityId) query.set('opportunityId', command.opportunityId);
+    if (attachment) query.set('attachment', '1');
+    const queryString = query.toString();
+    const opportunityQuery = queryString ? `?${queryString}` : '';
+    const response = await fetch(`${OPPORTUNITY_SERVICE_URL}/documents/upload${opportunityQuery}`, {
       method: 'POST', headers: { Authorization: `Bearer ${token}` }, body,
     });
     const result: unknown = await response.json().catch(() => null);
@@ -317,6 +326,34 @@ export const productionOpportunityService: OpportunityService = {
       throw new Error('The upload returned incomplete document details.');
     }
     return { id: result.id, name: result.name, storagePath: result.storagePath, downloadUrl: null };
+  },
+  async listDocuments(opportunityId) {
+    const token = readDocumentToken();
+    const response = await fetch(`${OPPORTUNITY_SERVICE_URL}/documents?opportunityId=${encodeURIComponent(opportunityId)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const result: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(documentError(result, 'Unable to load opportunity documents.'));
+    if (!Array.isArray(result)) throw new Error('The document list returned an invalid response.');
+    return result as SourceDocument[];
+  },
+  async uploadAttachment(opportunityId, file, documentTitle = file.name) {
+    const document = await productionOpportunityService.upload({ opportunityId, expectedRevision: 1, idempotencyKey: randomUUID() }, file, true);
+    const token = readDocumentToken();
+    const response = await fetch(`${OPPORTUNITY_SERVICE_URL}/documents/attach?opportunityId=${encodeURIComponent(opportunityId)}`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ storagePath: document.storagePath, documentTitle }),
+    });
+    const result: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(documentError(result, 'Unable to attach the uploaded document.'));
+    return document;
+  },
+  async deleteDocument(opportunityId, document) {
+    const token = readDocumentToken();
+    const response = await fetch(`${OPPORTUNITY_SERVICE_URL}/documents/attachments/${encodeURIComponent(document.id)}?opportunityId=${encodeURIComponent(opportunityId)}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(documentError(result, 'Unable to delete the document.'));
+    }
   },
   async download(opportunityId, document) {
     const filename = document.storagePath?.split('/').pop();
@@ -395,7 +432,7 @@ export const productionOpportunityService: OpportunityService = {
     const workflowActions = {
       SALES_APPROVE: 'APPROVE', SALES_REQUEST_CHANGES: 'REQUEST_CHANGES', SALES_HOLD: 'HOLD',
       SALES_REJECT: 'REJECT', GATE1_NO_GO: 'REJECT', ESTIMATE_REJECT: 'REJECT',
-      ESTIMATE_APPROVE: 'APPROVE', ESTIMATE_HOLD: 'HOLD', SUBMIT_ESTIMATE: 'SUBMIT_ESTIMATE',
+      ESTIMATE_APPROVE: 'APPROVE', ESTIMATE_REQUEST_CHANGES: 'REQUEST_CHANGES', ESTIMATE_HOLD: 'HOLD', SUBMIT_ESTIMATE: 'SUBMIT_ESTIMATE',
       ESTIMATE_REVISION_APPROVE: 'APPROVE_ESTIMATE_REVISION', ESTIMATE_REVISION_DECLINE: 'DECLINE_ESTIMATE_REVISION',
       BID_SUBMITTED: 'BID_SUBMITTED', START_NEGOTIATION: 'START_NEGOTIATION', MARK_WON: 'MARK_WON', MARK_LOST: 'MARK_LOST',
       OPPORTUNITY_HOLD: 'OPPORTUNITY_HOLD', RESUME_NEGOTIATION: 'RESUME_NEGOTIATION', RESUME_PROPOSAL: 'RESUME_PROPOSAL', CLOSE_OPPORTUNITY: 'CLOSE_OPPORTUNITY',
@@ -440,6 +477,17 @@ export const productionOpportunityService: OpportunityService = {
     };
   },
 };
+
+function readDocumentToken(): string {
+  let token: unknown;
+  try { token = JSON.parse(localStorage.getItem('authState') ?? '{}')?.session?.token; }
+  catch { throw new Error('Please sign in again.'); }
+  if (typeof token !== 'string' || !token) throw new Error('Please sign in before managing documents.');
+  return token;
+}
+function documentError(result: unknown, fallback: string) {
+  return result && typeof result === 'object' && 'message' in result && typeof result.message === 'string' ? result.message : fallback;
+}
 
 export const OpportunityServiceContext = createContext<OpportunityService>(productionOpportunityService);
 export function useOpportunityService() { return useContext(OpportunityServiceContext); }

@@ -45,7 +45,7 @@ export interface LocalWorkflowDirectory {
 }
 export interface MockState {
   version: 1; nextId: number; records: Record<string, MockRecord>; clients: Record<string, OpportunityClient>;
-  documents: Record<string, SourceDocument & { opportunityId: string }>;
+  documents: Record<string, SourceDocument & { opportunityId: string; isActive?: boolean }>;
   requests: Record<string, { fingerprint: string; result: unknown }>;
 }
 export interface MockOpportunityStore { snapshot(): MockState; replace(state: MockState): void; reset(seed?: boolean): void; lockName?: string; }
@@ -234,6 +234,15 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
     if (old) { if (old.fingerprint !== fingerprint) throw new Error('Mock idempotency key was reused for another command.'); return mockCopy(old.result) as T; }
     const result = update(state); state.requests[identity] = { fingerprint, result: mockCopy(result) }; store.replace(state); return result;
   }
+  async function uploadMock(command: VersionCommand, file: File): Promise<SourceDocument> {
+    return mutate('upload', { ...command, filename: file.name, size: file.size, modified: file.lastModified }, state => {
+      if (directory) throw new Error('Document upload requires the backend integration.');
+      const record = checked(state, command); editable(record);
+      if (!/\.(pdf|docx?|txt|xlsx?)$/i.test(file.name) || file.size === 0 || file.size > 25 * 1024 * 1024) throw new Error('Choose PDF, Word, Excel or text up to 25 MB.');
+      const document: SourceDocument = { id: `mock-document-${crypto.randomUUID()}`, name: `Mock upload · ${file.name}`, title: file.name.replace(/\.[^.]+$/, ''), type: file.name.split('.').pop()?.toUpperCase(), size: file.size, isActive: true, downloadUrl: null, uploadedBy: Number(actor().id), uploadedByName: actor().name, canDelete: true };
+      state.documents[document.id] = { ...document, opportunityId: record.detail.id }; log(record, 'Simulated upload', 'Only mock filename stored; contents are not uploaded or parsed.'); return document;
+    });
+  }
   return {
     async globalActions() { return permitted(actor().id, 'add') ? ['CLIENT_CREATE'] : []; },
     async lookups() { actor(); return mockCopy(lookups); },
@@ -294,13 +303,30 @@ export function createMockOpportunityService(store: MockOpportunityStore, getAct
       return mockPage(users.filter(user => ids.includes(user.id) && `${user.name} ${user.email}`.toLowerCase().includes(term)).map(mockCopy), input.after);
     },
     download: async () => { throw new Error('Document download requires the backend integration.'); },
-    upload: (command, file) => mutate('upload', { ...command, filename: file.name, size: file.size, modified: file.lastModified }, state => {
-      if (directory) throw new Error('Document upload requires the backend integration.');
-      const record = checked(state, command); editable(record);
-      if (!/\.(pdf|docx?|txt|xlsx|csv)$/i.test(file.name) || file.size > 25 * 1024 * 1024) throw new Error('Choose PDF, Word, Excel, CSV or text up to 25 MB.');
-      const document: SourceDocument = { id: `mock-document-${crypto.randomUUID()}`, name: `Mock upload · ${file.name}`, downloadUrl: null };
-      state.documents[document.id] = { ...document, opportunityId: record.detail.id }; log(record, 'Simulated upload', 'Only mock filename stored; contents are not uploaded or parsed.'); return document;
-    }),
+    async listDocuments(opportunityId) {
+      const state = store.snapshot(), record = find(state, opportunityId), userId = actor().id;
+      if (!permitted(userId, 'view')) throw new Error('You cannot view documents for this opportunity.');
+      return Object.values(state.documents).filter(document => document.opportunityId === opportunityId && document.id !== record.detail.form.rfp.source?.id).map(({ opportunityId: _opportunityId, ...document }) => mockCopy(document));
+    },
+    upload: uploadMock,
+    async uploadAttachment(opportunityId, file, documentTitle) {
+      const record = find(store.snapshot(), opportunityId);
+      const document = await uploadMock({ opportunityId, expectedRevision: record.detail.revision, idempotencyKey: crypto.randomUUID() }, file);
+      document.title = documentTitle ?? file.name.replace(/\.[^.]+$/, '');
+      const state = store.snapshot();
+      if (state.documents[document.id]) state.documents[document.id].title = document.title;
+      store.replace(state);
+      return document;
+    },
+    async deleteDocument(opportunityId, document) {
+      const state = store.snapshot(), stored = state.documents[document.id];
+      if (!stored || stored.opportunityId !== opportunityId || Number(stored.uploadedBy) !== Number(actor().id)) throw new Error('You can delete only documents you uploaded.');
+      stored.isActive = false;
+      stored.deletedBy = Number(actor().id);
+      stored.deletedByName = actor().name;
+      stored.deletedAt = new Date().toISOString();
+      store.replace(state);
+    },
     extract: command => mutate('extract', command, state => {
       if (directory) throw new Error('Document extraction requires the backend integration.');
       const record = checked(state, command); editable(record);

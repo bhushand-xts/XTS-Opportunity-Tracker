@@ -202,7 +202,7 @@ test('both update paths return requested changes to the correct review and prese
       const audit = { roleId: 15, roleName: 'Sales Head' };
       const saved = intake ? await updateRfpIntakeOpportunity(10, {
         opportunityName: 'Corrected', ownerId: 7, currencyId: 1, estimatedValue: 100, sourceTypeId: 1, rfpType: 2,
-        client: { clientName: 'Client', accountType: 'Enterprise', sector: 'Technology', city: 'Pune', state: 'Maharashtra', country: 'India' },
+        client: { clientName: 'Client', accountTypeId: 1, industryId: 1, city: 'Pune', state: 'Maharashtra', country: 'India' },
         contacts: [], questions: [],
       }, 7, audit) : await update(10, { stageId, subStageId, opportunityName: 'Corrected' }, 7, audit);
       assert.equal(saved?.stageId, stageId);
@@ -234,7 +234,7 @@ test('a verified Sales Head correction save restores review while another non-cr
     }));
     const saved = intake ? await updateRfpIntakeOpportunity(10, {
       opportunityName: 'Corrected', ownerId: 7, currencyId: 1, estimatedValue: 100, sourceTypeId: 1, rfpType: 2,
-      client: { clientName: 'Client', accountType: 'Enterprise', sector: 'Technology', city: 'Pune', state: 'Maharashtra', country: 'India' },
+      client: { clientName: 'Client', accountTypeId: 1, industryId: 1, city: 'Pune', state: 'Maharashtra', country: 'India' },
       contacts: [], questions: [],
     }, 7, { roleName: 'Sales Head' }, salesReviewAuthorized) : await update(10, { stageId: 1, subStageId: 2, opportunityName: 'Corrected' }, 7, { roleName: 'Sales Head' }, salesReviewAuthorized);
     assert.equal(saved?.subStageId, salesReviewAuthorized ? 1 : 2);
@@ -330,7 +330,7 @@ test('an engagement tracker failure rolls back the opportunity and releases the 
   assert.equal(released, true);
 });
 
-const intakeClient = { clientName: 'Client', accountType: 'Enterprise', sector: 'Technology', city: 'Pune', state: 'Maharashtra', country: 'India' };
+const intakeClient = { clientName: 'Client', accountTypeId: 1, industryId: 1, city: 'Pune', state: 'Maharashtra', country: 'India' };
 const intakeContact = { fullName: 'Contact', titleRole: 'Manager', email: 'contact@example.com', phone: '123', roleInDecision: 1 };
 const intake = { opportunityName: 'Opportunity', ownerId: 7, currencyId: 1, estimatedValue: 100, sourceTypeId: 1, rfpType: 2, client: intakeClient, contacts: [intakeContact], questions: ['Delivery?'] };
 

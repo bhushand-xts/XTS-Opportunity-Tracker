@@ -177,7 +177,7 @@ test('RFP intake create and update report client budget errors and accept a posi
   const intake: RfpIntakeOpportunityInput = {
     opportunityName: 'RFP budget test', ownerId: 7, currencyId: 1,
     estimatedValue: 10, sourceTypeId: 1, rfpType: 2, questions: ['Scope'],
-    client: { clientName: 'Example', accountType: 'Enterprise', sector: 'Technology',
+    client: { clientName: 'Example', accountTypeId: 1, industryId: 1,
       city: 'Pune', state: 'Maharashtra', country: 'India' },
     contacts: [{ fullName: 'Contact', titleRole: 'Buyer', email: 'contact@example.com', phone: '12345', roleInDecision: 1 }],
   };
@@ -220,7 +220,7 @@ test('custom roles can list, create and maintain clients only with their assigne
   await service.create(input, ctx());
   assert.equal(create.mock.calls.length, 1);
   assert.deepEqual(create.mock.calls[0].arguments[0], { ...input, stageId: 1, subStageId: 1, assignedTo: null, uploadedBy: null, uploadedDt: null });
-  const client = { clientName: 'Example', accountType: 'Enterprise', sector: 'Technology', city: 'Pune', state: 'Maharashtra', country: 'India' };
+  const client = { clientName: 'Example', accountTypeId: 1, industryId: 1, city: 'Pune', state: 'Maharashtra', country: 'India' };
   const contacts = [{ fullName: 'Contact', titleRole: 'Buyer', email: 'contact@example.com', phone: '12345', roleInDecision: 1 }];
   await service.createClient(client, contacts, ctx());
   assert.equal(createClient.mock.calls.length, 1);
@@ -471,7 +471,7 @@ test('both opportunity saves pass verified Sales Head review capability so own c
   const intakeUpdate = t.mock.method(repository, 'updateRfpIntakeOpportunity', async (...args: unknown[]) => ({ ...current, subStageId: args[4] ? 1 : 2 }));
   const intake: RfpIntakeOpportunityInput = {
     opportunityName: 'Corrected details', ownerId: 7, currencyId: 1, estimatedValue: 100, sourceTypeId: 1, rfpType: 2, questions: ['Scope'],
-    client: { clientName: 'Client', accountType: 'Enterprise', sector: 'Technology', city: 'Pune', state: 'Maharashtra', country: 'India' },
+    client: { clientName: 'Client', accountTypeId: 1, industryId: 1, city: 'Pune', state: 'Maharashtra', country: 'India' },
     contacts: [{ fullName: 'Contact', titleRole: 'Buyer', email: 'contact@example.com', phone: '12345', roleInDecision: 1 }],
   };
   for (const roleCode of ['SH', 'custom_editor']) {

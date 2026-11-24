@@ -29,6 +29,11 @@ async function findUser(userId: number): Promise<DirectoryUser | null> {
   return (await listUsers()).find((user) => user.id === userId && user.isActive !== false) ?? null;
 }
 
+async function findUsers(userIds: number[]): Promise<DirectoryUser[]> {
+  const wanted = new Set(userIds);
+  return (await listUsers()).filter(user => wanted.has(user.id));
+}
+
 async function findFirstActiveUserByRole(roleId: number): Promise<DirectoryUser | null> {
   return (await listUsers())
     .filter((user) => user.roleId === roleId && user.isActive !== false)
@@ -41,4 +46,4 @@ async function findActiveUsersByRole(roleId: number): Promise<DirectoryUser[]> {
     .sort((left, right) => left.id - right.id);
 }
 
-export { findUser, findFirstActiveUserByRole, findActiveUsersByRole };
+export { findUser, findUsers, findFirstActiveUserByRole, findActiveUsersByRole };
