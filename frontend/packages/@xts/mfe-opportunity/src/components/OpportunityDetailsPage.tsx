@@ -218,16 +218,28 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
   const [estimationLayout, setEstimationLayout] = useState<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     if (!estimationLayout) return;
-    const resize = () => {
+    let frame = 0;
+    const measure = () => {
       const height = Math.max(280, Math.floor(window.innerHeight - Math.max(12, estimationLayout.getBoundingClientRect().top) - 16));
-      estimationLayout.style.setProperty('--opp-estimation-height', `${height}px`);
+      const nextHeight = `${height}px`;
+      if (estimationLayout.style.getPropertyValue('--opp-estimation-height') !== nextHeight) {
+        estimationLayout.style.setProperty('--opp-estimation-height', nextHeight);
+      }
+    };
+    const resize = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
     };
     resize();
-    const observer = new ResizeObserver(resize);
-    const page = estimationLayout.closest('.opp-page');
-    page?.querySelectorAll('.opp-detail-heading, .opp-detail-toolbar').forEach(element => observer.observe(element));
     window.addEventListener('resize', resize);
-    return () => { observer.disconnect(); window.removeEventListener('resize', resize); estimationLayout.style.removeProperty('--opp-estimation-height'); };
+    return () => {
+      window.removeEventListener('resize', resize);
+      if (frame) cancelAnimationFrame(frame);
+      estimationLayout.style.removeProperty('--opp-estimation-height');
+    };
   }, [estimationLayout]);
   const estimationDraft = useRef<(() => Estimation) | null>(null);
   const registerDraft = useCallback((reader: (() => Estimation) | null) => { estimationDraft.current = reader; }, []);

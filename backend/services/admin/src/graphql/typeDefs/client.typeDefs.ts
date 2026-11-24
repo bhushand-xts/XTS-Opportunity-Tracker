@@ -24,9 +24,8 @@ export default `
     id: Int!
     clientName: String!
     accountTypeId: Int
-    industryId: Int
-    # Names resolved from mst_account_type / mst_industry (read-only).
     accountType: String
+    industryId: Int
     sector: String
     website: String
     city: String
@@ -47,8 +46,8 @@ export default `
     clientId: Int!
     clientName: String!
     accountTypeId: Int
-    industryId: Int
     accountType: String
+    industryId: Int
     sector: String
     website: String
     city: String
@@ -73,8 +72,8 @@ export default `
 
   input CreateClientInput {
     clientName: String!
-    accountTypeId: Int
-    industryId: Int
+    accountTypeId: Int!
+    industryId: Int!
     website: String
     city: String
     state: String

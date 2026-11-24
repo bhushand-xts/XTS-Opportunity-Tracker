@@ -209,8 +209,8 @@ function useDevNavPreview(): boolean {
   const [on, setOn] = useState(false);
   useEffect(() => {
     const flag = new URLSearchParams(window.location.search).get("devNav");
-    if (flag === "1") window.localStorage.setItem("devNavPreview", "1");
-    if (flag === "0") window.localStorage.removeItem("devNavPreview");
+    if (flag === "0") window.localStorage.setItem("devNavPreview", "1");
+    if (flag === "1") window.localStorage.removeItem("devNavPreview");
     setOn(window.localStorage.getItem("devNavPreview") === "1");
   }, []);
   return on;

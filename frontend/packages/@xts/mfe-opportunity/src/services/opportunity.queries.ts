@@ -53,6 +53,7 @@ const OPPORTUNITY_FIELDS = gql`
     accountTypeId
     industryId
     accountType
+    industryId
     sector
     website
     city
@@ -113,8 +114,8 @@ export const LIST_OPPORTUNITY_CLIENTS = gql`
       clientId
       clientName
       accountTypeId
-      industryId
       accountType
+      industryId
       sector
       website
       city
@@ -149,7 +150,7 @@ export const CREATE_OPPORTUNITY = gql`
 export const CREATE_OPPORTUNITY_CLIENT = gql`
   mutation CreateOpportunityClient($client: RfpIntakeClientInput!, $contacts: [RfpIntakeContactInput!]!) {
     createOpportunityClient(client: $client, contacts: $contacts) {
-      clientId clientName accountTypeId industryId accountType sector website city state country streetAddress
+      clientId clientName accountTypeId accountType industryId sector website city state country streetAddress
       contacts { fullName titleRole email phone roleInDecision roleInDecisionOther }
     }
   }
@@ -158,7 +159,7 @@ export const CREATE_OPPORTUNITY_CLIENT = gql`
 export const UPDATE_OPPORTUNITY_CLIENT = gql`
   mutation UpdateOpportunityClient($clientId: Int!, $client: RfpIntakeClientInput!, $contacts: [RfpIntakeContactInput!]!) {
     updateOpportunityClient(clientId: $clientId, client: $client, contacts: $contacts) {
-      clientId clientName accountTypeId industryId accountType sector website city state country streetAddress
+      clientId clientName accountTypeId accountType industryId sector website city state country streetAddress
       contacts { fullName titleRole email phone roleInDecision roleInDecisionOther }
     }
   }

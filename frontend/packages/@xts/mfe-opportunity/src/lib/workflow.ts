@@ -138,9 +138,10 @@ export function decisionError(o: OpportunityDetail, decision: Action, reason: st
   if (o.stageId != null) {
     if (!applicableDecisions(o).includes(decision)) return 'This opportunity is no longer awaiting this decision. Refresh the opportunity.';
     if (decision.endsWith('_HOLD') || ['SALES_REJECT', 'GATE1_NO_GO'].includes(decision)) {
-      const label = decision.endsWith('_HOLD') ? 'hold' : 'rejection';
+      const holding = decision.endsWith('_HOLD');
+      const label = holding ? 'hold' : 'rejection';
       if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) return `Select a ${label} reason.`;
-      if (!reason.trim()) return `Enter a ${label} description.`;
+      if (!holding && !['SALES_REJECT', 'GATE1_NO_GO'].includes(decision) && !reason.trim()) return `Enter a ${label} description.`;
     }
     if (decision.endsWith('_REQUEST_CHANGES') && !reason.trim()) return 'Enter the changes requested before returning the opportunity.';
     return null;
@@ -148,7 +149,6 @@ export function decisionError(o: OpportunityDetail, decision: Action, reason: st
   if ((decision.startsWith('SALES_') && o.state !== 'SALES_REVIEW') || (decision.startsWith('GATE1_') && o.state !== 'GATE1_PENDING')) return 'This package is no longer awaiting this decision. Refresh the opportunity.';
   if (o.packageRevision === null) return 'There is no submitted package to review.';
   if (!confirmed) return 'Confirm that you reviewed this opportunity.';
-  if ((decision === 'SALES_REJECT' || decision === 'GATE1_NO_GO') && !reason.trim()) return 'Enter a reason for this decision.';
   return null;
 }
 

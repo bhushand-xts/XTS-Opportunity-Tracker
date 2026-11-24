@@ -95,6 +95,8 @@ function lengthErrors(input: ClientInputLike): string[] {
 function assertValidCreate(input: ClientInputLike): void {
   const errors: string[] = [];
   if (!input.clientName || !input.clientName.trim()) errors.push('Organization / account name is required');
+  if (!Number.isInteger(input.accountTypeId) || Number(input.accountTypeId) <= 0) errors.push('A valid account type is required');
+  if (!Number.isInteger(input.industryId) || Number(input.industryId) <= 0) errors.push('A valid sector / industry is required');
   errors.push(...lengthErrors(input));
   if (errors.length) throw validationFailed(errors.join(', '));
 }
@@ -103,6 +105,12 @@ function assertValidUpdate(input: ClientInputLike): void {
   const errors: string[] = [];
   if ('clientName' in input && (!input.clientName || !input.clientName.trim())) {
     errors.push('Organization / account name cannot be empty');
+  }
+  if ('accountTypeId' in input && (!Number.isInteger(input.accountTypeId) || Number(input.accountTypeId) <= 0)) {
+    errors.push('A valid account type is required');
+  }
+  if ('industryId' in input && (!Number.isInteger(input.industryId) || Number(input.industryId) <= 0)) {
+    errors.push('A valid sector / industry is required');
   }
   errors.push(...lengthErrors(input));
   if (errors.length) throw validationFailed(errors.join(', '));
