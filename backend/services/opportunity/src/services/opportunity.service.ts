@@ -285,7 +285,8 @@ async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunity
   )) {
     throw validationFailed("The selected proposal section IDs are invalid.");
   }
-  if (!input.client?.clientName?.trim() || !(Number.isInteger(input.client.accountTypeId) && input.client.accountTypeId > 0) || !(Number.isInteger(input.client.industryId) && input.client.industryId > 0) ||
+  if (!input.client?.clientName?.trim() || !Number.isInteger(input.client.accountTypeId) || Number(input.client.accountTypeId) <= 0 ||
+      !Number.isInteger(input.client.industryId) || Number(input.client.industryId) <= 0 ||
       !input.client.city?.trim() || !input.client.state?.trim() || !input.client.country?.trim()) {
     throw validationFailed("Complete the client details before saving the opportunity.");
   }
@@ -331,7 +332,8 @@ async function updateRfpIntakeOpportunity(
     throw validationFailed("Select Questionnaire or Generic RFP.");
   }
   if (!input.opportunityName?.trim() || !input.client?.clientName?.trim() ||
-      !(Number.isInteger(input.client.accountTypeId) && input.client.accountTypeId > 0) || !(Number.isInteger(input.client.industryId) && input.client.industryId > 0) ||
+      !Number.isInteger(input.client.accountTypeId) || Number(input.client.accountTypeId) <= 0 ||
+      !Number.isInteger(input.client.industryId) || Number(input.client.industryId) <= 0 ||
       !input.client.city?.trim() || !input.client.state?.trim() || !input.client.country?.trim()) {
     throw validationFailed("Complete the opportunity and client details before saving.");
   }
@@ -418,12 +420,12 @@ async function reviewBySalesHead(
     return persistTransition(opportunity, opportunityId, 1, 2, opportunity.createdBy, userId, comment.trim(), null, audit);
   }
   if (action === "HOLD") {
-    return persistTransition(opportunity, opportunityId, 1, 3, null, userId, comment!.trim(), null, audit);
+    return persistTransition(opportunity, opportunityId, 1, 3, null, userId, comment?.trim() || null, null, audit);
   }
   if (action === "APPROVE") {
     return persistTransition(opportunity, opportunityId, 2, 4, null, userId, comment?.trim() || null, null, audit);
   }
-  if (action === 'REJECT') return persistTransition(opportunity, opportunityId, 9, 15, null, userId, comment!.trim(), null, audit);
+  if (action === 'REJECT') return persistTransition(opportunity, opportunityId, 9, 15, null, userId, comment?.trim() || null, null, audit);
   throw validationFailed("Unknown opportunity workflow action.");
 }
 
@@ -447,12 +449,12 @@ async function reviewByCeo(
     return persistTransition(opportunity, opportunityId, 2, 5, null, userId, comment.trim(), null, audit);
   }
   if (action === "HOLD") {
-    return persistTransition(opportunity, opportunityId, 2, 6, null, userId, comment!.trim(), null, audit);
+    return persistTransition(opportunity, opportunityId, 2, 6, null, userId, comment?.trim() || null, null, audit);
   }
   if (action === "APPROVE") {
     return persistTransition(opportunity, opportunityId, 3, 7, null, userId, comment?.trim() || null, null, audit);
   }
-  if (action === 'REJECT') return persistTransition(opportunity, opportunityId, 9, 16, null, userId, comment!.trim(), null, audit);
+  if (action === 'REJECT') return persistTransition(opportunity, opportunityId, 9, 16, null, userId, comment?.trim() || null, null, audit);
   throw validationFailed("Unknown CEO Go/No-Go action.");
 }
 
@@ -530,7 +532,6 @@ async function transitionWorkflowCore(
   if ((action === 'HOLD' || action === 'REJECT') && (reviewingSales || reviewingCeo || reviewingEstimate)) {
     const reasonLabel = action === 'HOLD' ? 'hold' : 'rejection';
     if (!Number.isSafeInteger(reasonCodeId) || (reasonCodeId ?? 0) <= 0) throw validationFailed(`Select a ${reasonLabel} reason.`);
-    if (!comment?.trim()) throw validationFailed(`Enter a ${reasonLabel} description.`);
     const reason = await holdReasonCode(reasonCodeId!);
     if (!reason || !reason.isActive || reason.id !== reasonCodeId || reason.isNegotiationReason === true) throw validationFailed(`Select an active ${reasonLabel} reason.`);
     audit.reasonCodeId = reason.id;
@@ -660,6 +661,11 @@ export async function updateClient(clientId: number, input: repository.RfpIntake
 async function saveDirectoryClient(id: number | null, input: repository.RfpIntakeClientInput, contacts: repository.RfpIntakeContactInput[], ctx: any) {
   const access = await accessFor(ctx), userId = access.userId;
   if (!(id === null ? access.create : access.edit)) throw conflict('You do not have permission to create or update clients.');
+  const hasAccountType = Number.isInteger(input.accountTypeId) && Number(input.accountTypeId) > 0;
+  const hasIndustry = Number.isInteger(input.industryId) && Number(input.industryId) > 0;
+  if (!hasAccountType || !hasIndustry) {
+    throw validationFailed('Select a valid account type and sector / industry.');
+  }
   const fields: [string, string | null | undefined, number, boolean][] = [
     ['Client name', input.clientName, 255, true], ['Website', input.website, 500, false],
     ['City', input.city, 100, true], ['State', input.state, 100, true],
@@ -743,9 +749,8 @@ export async function getEstimation(opportunityId: number, ctx: any) {
 
 export async function getResponses(opportunityId: number, ctx: any) {
   const opportunity = await get(opportunityId, ctx);
-  const access = await accessFor(ctx);
   return (await repository.findResponses(opportunityId)).map(response => ({
-    ...response, allowedActions: preparationModulesLocked(opportunity) || !access.estimate ? [] : ['SAVE_ANSWER'],
+    ...response, allowedActions: preparationModulesLocked(opportunity) ? [] : ['SAVE_ANSWER'],
   }));
 }
 
@@ -847,7 +852,6 @@ export async function saveScope(
 export async function saveAnswer(opportunityId: number, responseId: number, revision: number, answer: string, ctx: any) {
   const access = await accessFor(ctx);
   assertPreparationWritable(await get(opportunityId, ctx));
-  if (!access.estimate) throw conflict('Only users with Estimation access can edit opportunity answers.');
   if (!Number.isSafeInteger(responseId) || responseId <= 0 || !Number.isSafeInteger(revision) || revision < 0) {
     throw validationFailed('Select a saved opportunity question and its current revision.');
   }

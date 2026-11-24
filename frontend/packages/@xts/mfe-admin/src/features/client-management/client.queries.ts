@@ -20,8 +20,8 @@ const CLIENT_FIELDS = gql`
     id
     clientName
     accountTypeId
-    industryId
     accountType
+    industryId
     sector
     website
     city
@@ -78,8 +78,8 @@ export const GET_CLIENT_HISTORY = gql`
       clientId
       clientName
       accountTypeId
-      industryId
       accountType
+      industryId
       sector
       website
       city

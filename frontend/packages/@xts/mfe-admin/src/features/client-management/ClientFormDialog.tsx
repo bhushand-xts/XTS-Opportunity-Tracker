@@ -111,7 +111,7 @@ export function ClientFormDialog({
           }
         : EMPTY_CLIENT_FORM
     );
-  }, [open, client, form]);
+  }, [open, client, form, accountTypes, industries]);
 
   async function onSubmit(values: ClientFormValues) {
     const others = allClients.filter((c) => c.id !== client?.id);
@@ -180,7 +180,7 @@ export function ClientFormDialog({
                     <Select value={field.value || undefined} onValueChange={field.onChange}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {accountTypes.filter((a) => a.isActive || String(a.accountTypeId) === field.value).map((a) => (
+                        {accountTypes.filter((a) => a.isActive).map((a) => (
                           <SelectItem key={a.accountTypeId} value={String(a.accountTypeId)}>{a.accountName}</SelectItem>
                         ))}
                       </SelectContent>
@@ -194,7 +194,7 @@ export function ClientFormDialog({
                     <Select value={field.value || undefined} onValueChange={field.onChange}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {industries.filter((i) => i.isActive || String(i.industryId) === field.value).map((i) => (
+                        {industries.filter((i) => i.isActive).map((i) => (
                           <SelectItem key={i.industryId} value={String(i.industryId)}>{i.industryName}</SelectItem>
                         ))}
                       </SelectContent>

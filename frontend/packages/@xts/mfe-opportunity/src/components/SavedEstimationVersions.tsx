@@ -11,7 +11,7 @@ import { EstimationVersionView } from './EstimationVersionView';
 
 export function SavedEstimationVersions({ opportunityId, revision, editable, saving, dirty, onSave, onLoad, submitAction, selectedVersion, onSelectVersion, sidebarTarget, selectionLocked = false, submittedOnly = false }: {
   opportunityId: string; revision: number; editable: boolean; saving: boolean; dirty: boolean;
-  submitAction?: ReactNode;
+  submitAction?: ReactNode | ((hasUnsavedName: boolean, currentName: string) => ReactNode);
   sidebarTarget?: HTMLElement | null;
   selectedVersion?: EstimationVersion | null; onSelectVersion?: (version: EstimationVersion | null) => void;
   onSave: (name: string, source?: EstimationVersion) => Promise<boolean>; onLoad: (version: EstimationVersion) => boolean | void;
@@ -61,11 +61,13 @@ export function SavedEstimationVersions({ opportunityId, revision, editable, sav
   }, [editing, selectionLocked, versions.data]);
   const visibleVersions = versions.data?.filter(version => !submittedOnly || version.isSelected && version.status === 'SUBMITTED');
   const selectedId = selectionLocked ? visibleVersions?.find(version => version.isSelected && version.status === 'SUBMITTED')?.id ?? selectedVersion?.id : selectedVersion?.id;
+  const nameDirty = Boolean(editing && name.trim() !== editing.name);
+  const renderedSubmitAction = typeof submitAction === 'function' ? submitAction(nameDirty, name.trim()) : submitAction;
   const actions = editable && <section aria-label="Estimation actions" className={sidebarTarget ? "flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3" : "mt-3 flex flex-wrap items-end gap-3 border-t pt-3"}>
       <div className="w-full sm:w-72 sm:max-w-sm sm:flex-1"><Label htmlFor={`estimate-name-${opportunityId}`}>Estimation name</Label><Input id={`estimate-name-${opportunityId}`} className="mt-1" placeholder="Estimation name" maxLength={500} value={name} onChange={event => setName(event.target.value)} disabled={saving || opening} /></div>
       <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
       <Button type="button" variant="secondary" disabled={saving || opening || !name.trim()} onClick={async () => { if (await onSave(name.trim(), editing)) { setName(''); setEditing(undefined); versions.reload(); } }}>{editing ? 'Update' : 'Save Estimation'}</Button>
-      {!sidebarTarget && submitAction}
+      {!sidebarTarget && renderedSubmitAction}
       </div>
       {editing && <p role="status" className="w-full text-xs text-muted-foreground">Editing {editing.name} (V{editing.version}). Update saves changes to this estimate; its previous data is kept in history.</p>}
     </section>;
@@ -95,7 +97,7 @@ export function SavedEstimationVersions({ opportunityId, revision, editable, sav
       </TableRow>)}</TableBody>
     </Table></div>}
     {editable && !sidebarTarget && !selectionLocked && <p className="mt-2 text-xs text-muted-foreground">{selectedVersion ? `Selected for CEO review: ${selectedVersion.name} \u00b7 V${selectedVersion.version}` : 'Select a saved estimation to enable Submit to CEO.'}</p>}
-    {sidebarTarget && submitAction && <div className="mt-2">{submitAction}</div>}
+    {sidebarTarget && renderedSubmitAction && <div className="mt-2">{renderedSubmitAction}</div>}
     <Dialog open={Boolean(viewing)} onOpenChange={open => { if (!open) setViewing(undefined); }}><DialogContent className="max-h-[82dvh] max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] gap-2.5 p-3 sm:p-4">
       {viewing && <EstimationVersionView version={viewing} />}
     </DialogContent></Dialog>

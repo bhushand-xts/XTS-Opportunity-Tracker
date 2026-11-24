@@ -18,8 +18,10 @@ export const OPPORTUNITY_OUTCOME_LABEL = 'Outcome (Won / Lost)';
 export const PIPELINE_STAGE_IDS = [1, 2, 3, 4, 5, 6, 7, 9];
 export function approvalStagesForRole(roleName?: string | null): number[] {
   const role = (roleName ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  if (['sh', 'sales_head'].includes(role)) return [1, 5, 6];
+  if (['sh', 'sales_head'].includes(role)) return [1, 2, 5, 6, 10];
   if (['ceo', 'approver_gate2', 'ceo/gate_2_approver', 'approver'].includes(role)) return [2, 4];
+  if (['sales_executive', 'sales_representative'].includes(role)) return [1];
+  if (role === 'estimation_team') return [3];
   return [];
 }
 

@@ -11,9 +11,8 @@ export interface Client {
   id: number;
   clientName: string;
   accountTypeId: number | null;
-  industryId: number | null;
-  /** Resolved from mst_account_type / mst_industry for display. */
   accountType: string | null;
+  industryId: number | null;
   sector: string | null;
   website: string | null;
   city: string | null;
@@ -32,9 +31,8 @@ export interface ClientHistory {
   clientId: number;
   clientName: string;
   accountTypeId: number | null;
-  industryId: number | null;
-  /** Resolved from mst_account_type / mst_industry for display. */
   accountType: string | null;
+  industryId: number | null;
   sector: string | null;
   website: string | null;
   city: string | null;
@@ -103,7 +101,10 @@ const nameColumns = (table: 'mst_client' | 'mst_client_tracker') => `
 const SELECT_COLUMNS = `
   client_id AS id,
   client_name AS "clientName",
-  ${nameColumns('mst_client')},
+  account_type_id AS "accountTypeId",
+  (SELECT account_name FROM mst_account_type WHERE account_type_id = mst_client.account_type_id) AS "accountType",
+  industry_id AS "industryId",
+  (SELECT industry_name FROM mst_industry WHERE industry_id = mst_client.industry_id) AS sector,
   website,
   city,
   state,
@@ -115,6 +116,21 @@ const SELECT_COLUMNS = `
   updated_dt AS "updatedDt",
   updated_by AS "updatedBy"
 `;
+
+type DbClient = Pick<PoolClient, 'query'>;
+async function lookupClientMaster(db: DbClient, kind: 'account' | 'industry', id: number | null | undefined) {
+  const account = kind === 'account';
+  const table = account ? 'mst_account_type' : 'mst_industry';
+  const idColumn = account ? 'account_type_id' : 'industry_id';
+  const result = await db.query<{ id: number }>(
+    `SELECT ${idColumn} AS id FROM ${table}
+     WHERE ${idColumn} = $1
+     ORDER BY ${idColumn} LIMIT 1`,
+    [id ?? null]
+  );
+  if (!result.rows[0]) throw new Error(`Select a valid ${account ? 'account type' : 'sector / industry'}.`);
+  return result.rows[0];
+}
 
 const CONTACT_COLUMNS = `
   client_contact_id AS id,
@@ -135,6 +151,12 @@ const CONTACT_COLUMNS = `
 
 async function findAll(): Promise<Client[]> {
   return query<Client>(`SELECT ${SELECT_COLUMNS} FROM mst_client ORDER BY client_name`);
+}
+
+async function selectClient(db: DbClient, id: number): Promise<Client> {
+  const result = await db.query<Client>(`SELECT ${SELECT_COLUMNS} FROM mst_client WHERE client_id = $1`, [id]);
+  if (!result.rows[0]) throw new Error('Client could not be loaded after saving.');
+  return result.rows[0];
 }
 
 async function findById(id: number): Promise<Client | null> {
@@ -178,7 +200,10 @@ async function findHistory(clientId: number): Promise<ClientHistory[]> {
        tracker_id AS "trackerId",
        client_id AS "clientId",
        client_name AS "clientName",
-       ${nameColumns('mst_client_tracker')},
+       account_type_id AS "accountTypeId",
+       industry_id AS "industryId",
+       (SELECT account_name FROM mst_account_type WHERE account_type_id = mst_client_tracker.account_type_id) AS "accountType",
+       (SELECT industry_name FROM mst_industry WHERE industry_id = mst_client_tracker.industry_id) AS sector,
        website,
        city,
        state,
@@ -245,14 +270,18 @@ async function replaceContacts(
 
 async function create(input: ClientInput, userId: number | null): Promise<Client> {
   return transaction(async (client) => {
-    const result = await client.query<Client>(
+    const [accountType, industry] = await Promise.all([
+      lookupClientMaster(client, 'account', input.accountTypeId),
+      lookupClientMaster(client, 'industry', input.industryId),
+    ]);
+    const result = await client.query<{ id: number }>(
       `INSERT INTO mst_client (client_name, account_type_id, industry_id, website, city, state, country, street_address, is_active, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, TRUE), $10)
-       RETURNING ${SELECT_COLUMNS}`,
+       RETURNING client_id AS id`,
       [
         input.clientName.trim(),
-        input.accountTypeId ?? null,
-        input.industryId ?? null,
+        accountType?.id ?? null,
+        industry?.id ?? null,
         input.website?.trim() || null,
         input.city?.trim() || null,
         input.state?.trim() || null,
@@ -266,18 +295,24 @@ async function create(input: ClientInput, userId: number | null): Promise<Client
     if (input.contacts?.length) {
       await replaceContacts(client, clientId, input.contacts, userId);
     }
-    return result.rows[0];
+    return selectClient(client, clientId);
   });
 }
 
 async function update(id: number, input: Partial<ClientInput>, userId: number | null): Promise<Client> {
   return transaction(async (client) => {
     await recordTracker(client, id);
-    const result = await client.query<Client>(
+    const accountChanged = 'accountTypeId' in input;
+    const industryChanged = 'industryId' in input;
+    const [accountType, industry] = await Promise.all([
+      accountChanged ? lookupClientMaster(client, 'account', input.accountTypeId) : null,
+      industryChanged ? lookupClientMaster(client, 'industry', input.industryId) : null,
+    ]);
+    const result = await client.query<{ id: number }>(
       `UPDATE mst_client SET
          client_name = COALESCE($1, client_name),
-         account_type_id = CASE WHEN $2::boolean THEN $3::integer ELSE account_type_id END,
-         industry_id = CASE WHEN $4::boolean THEN $5::integer ELSE industry_id END,
+         account_type_id = CASE WHEN $2::boolean THEN $3 ELSE account_type_id END,
+         industry_id = CASE WHEN $4::boolean THEN $5 ELSE industry_id END,
          website = CASE WHEN $6::boolean THEN $7 ELSE website END,
          city = CASE WHEN $8::boolean THEN $9 ELSE city END,
          state = CASE WHEN $10::boolean THEN $11 ELSE state END,
@@ -287,13 +322,13 @@ async function update(id: number, input: Partial<ClientInput>, userId: number | 
          updated_dt = CURRENT_TIMESTAMP,
          updated_by = $17
        WHERE client_id = $18
-       RETURNING ${SELECT_COLUMNS}`,
+       RETURNING client_id AS id`,
       [
         input.clientName?.trim() ?? null,
-        'accountTypeId' in input,
-        input.accountTypeId ?? null,
-        'industryId' in input,
-        input.industryId ?? null,
+        accountChanged,
+        accountType?.id ?? null,
+        industryChanged,
+        industry?.id ?? null,
         'website' in input,
         input.website?.trim() || null,
         'city' in input,
@@ -309,10 +344,11 @@ async function update(id: number, input: Partial<ClientInput>, userId: number | 
         id,
       ]
     );
+    if (!result.rows[0]) throw new Error('Client not found.');
     if (input.contacts !== undefined) {
       await replaceContacts(client, id, input.contacts, userId);
     }
-    return result.rows[0];
+    return selectClient(client, id);
   });
 }
 

@@ -130,6 +130,14 @@
 .opp-board::-webkit-scrollbar-thumb:hover { background: #64708a; }
 .opp-lane { display: flex; flex-direction: column; flex: 0 0 280px; min-width: 0; background: #eef0f5; border: 0; border-radius: 11px; padding: 9px; min-height: 0; }
 .opp-lane > h3 { flex-shrink: 0; }
+.opp-outcome-lane { border-top: 3px solid #64748b; padding-top: 7px; background: linear-gradient(180deg, #f4f6fa 0%, #eef0f5 110px); }
+.opp-outcome-group { margin-bottom: 12px; padding-left: 7px; border-left: 2px solid #cbd5e1; }
+.opp-outcome-group:last-child { margin-bottom: 0; }
+.opp-outcome-group-title { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 7px; padding: 0 2px; color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .025em; }
+.opp-outcome-group-count { display: inline-grid; min-width: 20px; height: 18px; place-items: center; border: 1px solid #d8dee9; border-radius: 999px; background: #fff; color: #475569; font-size: 10px; font-weight: 600; }
+.opp-outcome-won { border-left-color: #22a06b; }.opp-outcome-won > .opp-outcome-group-title { color: #18745f; }
+.opp-outcome-lost { border-left-color: #e05a67; }.opp-outcome-lost > .opp-outcome-group-title { color: #b42332; }
+.opp-outcome-hold { border-left-color: #d39b2a; }.opp-outcome-hold > .opp-outcome-group-title { color: #946512; }
 .opp-card-title { display: -webkit-box; min-width: 0; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .opp-card-client { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opp-card-number .opp-opportunity-number { gap: 2px 4px; padding: 2px 5px; }
