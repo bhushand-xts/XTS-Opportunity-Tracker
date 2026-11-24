@@ -30,11 +30,6 @@ module.exports = {
     port: 3000,
     historyApiFallback: true,
     hot: true,
-    client: {
-      overlay: {
-        runtimeErrors: (error) => !error.message.includes("ResizeObserver loop completed with undelivered notifications."),
-      },
-    },
     headers: {
       "Access-Control-Allow-Origin": "*",
     },

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Activity, Ban, Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2, CircleX, Trophy, CircleX, Trophy } from 'lucide-react';
+import { Activity, Ban, Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2, CircleX, Trophy } from 'lucide-react';
 import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle } from '@xts/design-system';
 import type { ListFilter, OpportunitySummary, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';

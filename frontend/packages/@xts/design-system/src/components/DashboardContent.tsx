@@ -146,14 +146,16 @@ const FY_MONTH_LABELS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
 function currentFinancialYear(reference = new Date()) {
   const startYear = reference.getMonth() >= 3 ? reference.getFullYear() : reference.getFullYear() - 1;
   const start = new Date(startYear, 3, 1, 0, 0, 0, 0);
-  const end = new Date(startYear + 1, 2, 31, 23, 59, 59, 999);
+  // Use the following April as an exclusive bound. That includes all of
+  // March 31, even if the database timestamp has sub-millisecond precision.
+  const endExclusive = new Date(startYear + 1, 3, 1, 0, 0, 0, 0);
   const label = `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
-  return { startYear, start, end, label };
+  return { startYear, start, endExclusive, label };
 }
 
 function isWithinFinancialYear(dateString: string, fy: ReturnType<typeof currentFinancialYear>) {
   const timestamp = new Date(dateString).getTime();
-  return !Number.isNaN(timestamp) && timestamp >= fy.start.getTime() && timestamp <= fy.end.getTime();
+  return !Number.isNaN(timestamp) && timestamp >= fy.start.getTime() && timestamp < fy.endExclusive.getTime();
 }
 
 // Conversion = Won ÷ (Won + Lost): only closed deals count.
