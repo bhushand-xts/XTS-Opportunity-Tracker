@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { gql, useQuery } from "@apollo/client";
-import { Bar, BarChart, CartesianGrid, XAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
 import {
   type LucideIcon,
   Activity,
@@ -788,9 +788,9 @@ function ReportsSkeleton() {
 
 const MONTH_CHART_CONFIG: ChartConfig = { count: { label: "Opportunities created", color: "hsl(var(--primary))" } };
 
-// Every bar gets a plain count label above it; the bar with the most
-// opportunities additionally gets a circled value + a "Peak Month" callout.
-// The callout points away from the nearer card edge so it never clips.
+// Every bar gets a bold count above it; the bar with the most opportunities
+// gets its count in a soft circle plus a "Peak Month" tag whose arrow points
+// at that circle. The tag sits on the side away from the nearer card edge.
 function monthBarLabel(peakIndex: number, barCount: number) {
   const side = peakIndex >= barCount / 2 ? -1 : 1;
   return (props: any) => {
@@ -798,25 +798,59 @@ function monthBarLabel(peakIndex: number, barCount: number) {
     const cx = x + width / 2;
     if (index !== peakIndex) {
       return (
-        <text key={`m-${index}`} x={cx} y={y - 6} textAnchor="middle" fontSize={11} fill="hsl(var(--muted-foreground))">
+        <text
+          key={`m-${index}`}
+          x={cx}
+          y={y - 8}
+          textAnchor="middle"
+          fontSize={14}
+          fontWeight={700}
+          fill={value ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground) / 0.6)"}
+        >
           {value}
         </text>
       );
     }
+    const tagWidth = 104;
+    const tagHeight = 28;
+    const tagX = side > 0 ? cx + 40 : cx - 40 - tagWidth;
+    const tagY = y - 66;
+    const arrowFromX = side > 0 ? tagX + 6 : tagX + tagWidth - 6;
     return (
       <g key={`m-${index}`}>
-        <path d={`M ${cx + side * 13} ${y - 21} Q ${cx + side * 26} ${y - 36} ${cx + side * 40} ${y - 40}`} stroke="hsl(var(--primary))" strokeWidth={1.5} fill="none" />
-        <g transform={`translate(${side > 0 ? cx + 34 : cx - 118}, ${y - 60})`}>
-          <rect rx={11} ry={11} width={84} height={22} fill="hsl(var(--primary))" />
-          <text x={42} y={12} textAnchor="middle" dominantBaseline="central" fontSize={10.5} fontWeight={600} fill="#ffffff">
+        {/* Solid badge with a white ring, sitting just above the bar. */}
+        <circle
+          cx={cx}
+          cy={y - 20}
+          r={16}
+          fill="hsl(var(--primary))"
+          stroke="#ffffff"
+          strokeWidth={3}
+          style={{ filter: "drop-shadow(0 4px 8px hsl(var(--primary) / 0.35))" }}
+        />
+        <text x={cx} y={y - 20} textAnchor="middle" dominantBaseline="central" fontSize={15} fontWeight={800} fill="#ffffff">
+          {value}
+        </text>
+        <path
+          d={`M ${arrowFromX} ${tagY + tagHeight} Q ${arrowFromX} ${y - 22} ${cx + side * 22} ${y - 22}`}
+          stroke="hsl(var(--primary))"
+          strokeWidth={2}
+          strokeLinecap="round"
+          fill="none"
+          markerEnd="url(#peak-month-arrow)"
+        />
+        <g transform={`translate(${tagX}, ${tagY})`}>
+          <rect
+            rx={tagHeight / 2}
+            width={tagWidth}
+            height={tagHeight}
+            fill="hsl(var(--primary))"
+            style={{ filter: "drop-shadow(0 4px 10px hsl(var(--primary) / 0.4))" }}
+          />
+          <text x={tagWidth / 2} y={tagHeight / 2} textAnchor="middle" dominantBaseline="central" fontSize={12.5} fontWeight={700} fill="#ffffff">
             Peak Month
           </text>
         </g>
-        {/* Bottom of the circle sits 2px above the bar. */}
-        <circle cx={cx} cy={y - 14} r={12} fill="hsl(var(--primary))" />
-        <text x={cx} y={y - 14} textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={700} fill="#ffffff">
-          {value}
-        </text>
       </g>
     );
   };
@@ -850,6 +884,10 @@ export function DashboardContent() {
     0
   );
   const peakMonthValue = metrics.createdPerMonth[peakMonthIndex]?.count ?? 0;
+  // Four even whole-number steps with ~30% headroom above the peak bar for
+  // its badge and tag, e.g. a peak of 6 gives 0 · 2 · 4 · 6 · 8.
+  const monthAxisStep = Math.max(1, Math.ceil((peakMonthValue * 1.3) / 4));
+  const monthAxisTicks = [0, 1, 2, 3, 4].map((tick) => tick * monthAxisStep);
 
   return (
     <div
@@ -909,9 +947,39 @@ export function DashboardContent() {
 
       <ReportCard title={`Opportunities created per month (${metrics.fyLabel})`} icon={TrendingUp} delay={240}>
           <ChartContainer config={MONTH_CHART_CONFIG} className="aspect-auto h-[300px] w-full">
-            <BarChart data={metrics.createdPerMonth} margin={{ left: -16, top: 66 }}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis dataKey="month" tickLine={false} axisLine={false} interval={0} tick={{ fontSize: 12 }} tickMargin={10} />
+            <BarChart data={metrics.createdPerMonth} margin={{ left: 0, right: 12, top: 20 }} barCategoryGap="22%">
+              <defs>
+                <linearGradient id="peak-month-bar" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="hsl(224 80% 58%)" />
+                  <stop offset="100%" stopColor="hsl(224 76% 40%)" />
+                </linearGradient>
+                <linearGradient id="month-bar" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="hsl(var(--primary) / 0.55)" />
+                  <stop offset="100%" stopColor="hsl(var(--primary) / 0.35)" />
+                </linearGradient>
+                <marker id="peak-month-arrow" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="hsl(var(--primary))" />
+                </marker>
+              </defs>
+              <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="hsl(var(--border))" />
+              <XAxis
+                dataKey="month"
+                tickLine={false}
+                axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 1.5 }}
+                interval={0}
+                tick={{ fontSize: 13, fontWeight: 700, fill: "hsl(var(--foreground))" }}
+                tickMargin={12}
+              />
+              <YAxis
+                width={36}
+                allowDecimals={false}
+                tickLine={false}
+                axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 1.5 }}
+                tick={{ fontSize: 12.5, fontWeight: 700, fill: "hsl(var(--muted-foreground))" }}
+                tickMargin={8}
+                ticks={monthAxisTicks}
+                domain={[0, monthAxisTicks[monthAxisTicks.length - 1]]}
+              />
               <ChartTooltip
                 cursor={{ fill: "hsl(var(--muted))" }}
                 content={
@@ -933,13 +1001,21 @@ export function DashboardContent() {
               <Bar
                 dataKey="count"
                 fill="var(--color-count)"
-                radius={[4, 4, 0, 0]}
+                radius={[8, 8, 0, 0]}
                 isAnimationActive
                 animationDuration={700}
                 animationEasing="ease-out"
-                maxBarSize={48}
+                maxBarSize={64}
                 label={peakMonthValue > 0 ? monthBarLabel(peakMonthIndex, metrics.createdPerMonth.length) : undefined}
-              />
+              >
+                {/* Light bars, with the peak month in a strong gradient. */}
+                {metrics.createdPerMonth.map((month, index) => (
+                  <Cell
+                    key={month.month}
+                    fill={peakMonthValue > 0 && index === peakMonthIndex ? "url(#peak-month-bar)" : "url(#month-bar)"}
+                  />
+                ))}
+              </Bar>
             </BarChart>
           </ChartContainer>
       </ReportCard>

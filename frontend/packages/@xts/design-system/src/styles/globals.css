@@ -122,6 +122,15 @@
        measured height changes -> page grows a scrollbar again -> repeat. */
     scrollbar-gutter: stable;
   }
+  /* Radix menus/dialogs lock scroll via react-remove-scroll, which also adds
+     a scrollbar-width margin to <body>. The gutter above already reserves
+     that space, so the extra margin pushed the page left and left a blank
+     strip on the right whenever the user menu, notifications or a dialog
+     opened. `html body` outranks the library's injected `body[...]` rule. */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-family: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
