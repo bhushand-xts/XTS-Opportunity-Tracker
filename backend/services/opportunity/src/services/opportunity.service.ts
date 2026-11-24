@@ -285,7 +285,7 @@ async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunity
   )) {
     throw validationFailed("The selected proposal section IDs are invalid.");
   }
-  if (!input.client?.clientName?.trim() || !input.client.accountType?.trim() || !input.client.sector?.trim() ||
+  if (!input.client?.clientName?.trim() || !(Number.isInteger(input.client.accountTypeId) && input.client.accountTypeId > 0) || !(Number.isInteger(input.client.industryId) && input.client.industryId > 0) ||
       !input.client.city?.trim() || !input.client.state?.trim() || !input.client.country?.trim()) {
     throw validationFailed("Complete the client details before saving the opportunity.");
   }
@@ -331,7 +331,7 @@ async function updateRfpIntakeOpportunity(
     throw validationFailed("Select Questionnaire or Generic RFP.");
   }
   if (!input.opportunityName?.trim() || !input.client?.clientName?.trim() ||
-      !input.client.accountType?.trim() || !input.client.sector?.trim() ||
+      !(Number.isInteger(input.client.accountTypeId) && input.client.accountTypeId > 0) || !(Number.isInteger(input.client.industryId) && input.client.industryId > 0) ||
       !input.client.city?.trim() || !input.client.state?.trim() || !input.client.country?.trim()) {
     throw validationFailed("Complete the opportunity and client details before saving.");
   }
@@ -661,8 +661,7 @@ async function saveDirectoryClient(id: number | null, input: repository.RfpIntak
   const access = await accessFor(ctx), userId = access.userId;
   if (!(id === null ? access.create : access.edit)) throw conflict('You do not have permission to create or update clients.');
   const fields: [string, string | null | undefined, number, boolean][] = [
-    ['Client name', input.clientName, 255, true], ['Account type', input.accountType, 100, true],
-    ['Sector', input.sector, 100, true], ['Website', input.website, 500, false],
+    ['Client name', input.clientName, 255, true], ['Website', input.website, 500, false],
     ['City', input.city, 100, true], ['State', input.state, 100, true],
     ['Country', input.country, 100, true], ['Street address', input.streetAddress, 20, false],
   ];
@@ -671,6 +670,8 @@ async function saveDirectoryClient(id: number | null, input: repository.RfpIntak
       throw validationFailed(`${label} ${required ? 'is required and ' : ''}must be at most ${max} characters.`);
     }
   }
+  if (!Number.isInteger(input.accountTypeId) || input.accountTypeId <= 0) throw validationFailed('Account type is required.');
+  if (!Number.isInteger(input.industryId) || input.industryId <= 0) throw validationFailed('Sector is required.');
   if (input.website && !/^https?:\/\/\S+$/i.test(input.website.trim())) throw validationFailed("Enter a valid HTTP or HTTPS website URL.");
   if (!contacts.length) throw validationFailed("A primary contact is required.");
   const emails = new Set<string>();

@@ -4,8 +4,6 @@ import { validationFailed } from '../../../../shared/errors/graphqlErrors';
 // mst_client / tbl_client_contact_person tables exactly (checked against the
 // database directly — street_address really is this short, not a typo).
 const MAX_CLIENT_NAME = 255;
-const MAX_ACCOUNT_TYPE = 100;
-const MAX_SECTOR = 100;
 const MAX_WEBSITE = 500;
 const MAX_CITY = 100;
 const MAX_STATE = 100;
@@ -31,8 +29,8 @@ export interface ClientContactInputLike {
 
 export interface ClientInputLike {
   clientName?: string | null;
-  accountType?: string | null;
-  sector?: string | null;
+  accountTypeId?: number | null;
+  industryId?: number | null;
   website?: string | null;
   city?: string | null;
   state?: string | null;
@@ -69,11 +67,11 @@ function lengthErrors(input: ClientInputLike): string[] {
   if (input.clientName && input.clientName.trim().length > MAX_CLIENT_NAME) {
     errors.push(`Organization / account name must be at most ${MAX_CLIENT_NAME} characters`);
   }
-  if (input.accountType && input.accountType.trim().length > MAX_ACCOUNT_TYPE) {
-    errors.push(`Account type must be at most ${MAX_ACCOUNT_TYPE} characters`);
+  if (input.accountTypeId != null && (!Number.isInteger(input.accountTypeId) || input.accountTypeId <= 0)) {
+    errors.push('Account type is not valid');
   }
-  if (input.sector && input.sector.trim().length > MAX_SECTOR) {
-    errors.push(`Sector / industry must be at most ${MAX_SECTOR} characters`);
+  if (input.industryId != null && (!Number.isInteger(input.industryId) || input.industryId <= 0)) {
+    errors.push('Sector / industry is not valid');
   }
   if (input.website && input.website.trim().length > MAX_WEBSITE) {
     errors.push(`Website must be at most ${MAX_WEBSITE} characters`);

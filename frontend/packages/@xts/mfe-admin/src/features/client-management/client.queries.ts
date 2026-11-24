@@ -19,6 +19,8 @@ const CLIENT_FIELDS = gql`
   fragment ClientFields on Client {
     id
     clientName
+    accountTypeId
+    industryId
     accountType
     sector
     website
@@ -75,6 +77,8 @@ export const GET_CLIENT_HISTORY = gql`
       trackerId
       clientId
       clientName
+      accountTypeId
+      industryId
       accountType
       sector
       website

@@ -10,6 +10,9 @@ import { query, transaction } from '../config/db';
 export interface Client {
   id: number;
   clientName: string;
+  accountTypeId: number | null;
+  industryId: number | null;
+  /** Resolved from mst_account_type / mst_industry for display. */
   accountType: string | null;
   sector: string | null;
   website: string | null;
@@ -28,6 +31,9 @@ export interface ClientHistory {
   trackerId: number;
   clientId: number;
   clientName: string;
+  accountTypeId: number | null;
+  industryId: number | null;
+  /** Resolved from mst_account_type / mst_industry for display. */
   accountType: string | null;
   sector: string | null;
   website: string | null;
@@ -70,8 +76,8 @@ export interface ClientContactInput {
 
 export interface ClientInput {
   clientName: string;
-  accountType?: string | null;
-  sector?: string | null;
+  accountTypeId?: number | null;
+  industryId?: number | null;
   website?: string | null;
   city?: string | null;
   state?: string | null;
@@ -83,11 +89,21 @@ export interface ClientInput {
   updatedBy?: number | null;
 }
 
+// account_type_id / industry_id are integer references; the names are looked
+// up so every screen can keep displaying "accountType" / "sector".
+// The outer table is named explicitly: inside the sub-select an unqualified
+// account_type_id would resolve to the master's own column.
+const nameColumns = (table: 'mst_client' | 'mst_client_tracker') => `
+  ${table}.account_type_id AS "accountTypeId",
+  ${table}.industry_id AS "industryId",
+  (SELECT a.account_name FROM mst_account_type a WHERE a.account_type_id = ${table}.account_type_id) AS "accountType",
+  (SELECT i.industry_name FROM mst_industry i WHERE i.industry_id = ${table}.industry_id) AS sector
+`;
+
 const SELECT_COLUMNS = `
   client_id AS id,
   client_name AS "clientName",
-  account_type AS "accountType",
-  sector,
+  ${nameColumns('mst_client')},
   website,
   city,
   state,
@@ -162,8 +178,7 @@ async function findHistory(clientId: number): Promise<ClientHistory[]> {
        tracker_id AS "trackerId",
        client_id AS "clientId",
        client_name AS "clientName",
-       account_type AS "accountType",
-       sector,
+       ${nameColumns('mst_client_tracker')},
        website,
        city,
        state,
@@ -231,13 +246,13 @@ async function replaceContacts(
 async function create(input: ClientInput, userId: number | null): Promise<Client> {
   return transaction(async (client) => {
     const result = await client.query<Client>(
-      `INSERT INTO mst_client (client_name, account_type, sector, website, city, state, country, street_address, is_active, created_by)
+      `INSERT INTO mst_client (client_name, account_type_id, industry_id, website, city, state, country, street_address, is_active, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, TRUE), $10)
        RETURNING ${SELECT_COLUMNS}`,
       [
         input.clientName.trim(),
-        input.accountType?.trim() || null,
-        input.sector?.trim() || null,
+        input.accountTypeId ?? null,
+        input.industryId ?? null,
         input.website?.trim() || null,
         input.city?.trim() || null,
         input.state?.trim() || null,
@@ -261,8 +276,8 @@ async function update(id: number, input: Partial<ClientInput>, userId: number | 
     const result = await client.query<Client>(
       `UPDATE mst_client SET
          client_name = COALESCE($1, client_name),
-         account_type = CASE WHEN $2::boolean THEN $3 ELSE account_type END,
-         sector = CASE WHEN $4::boolean THEN $5 ELSE sector END,
+         account_type_id = CASE WHEN $2::boolean THEN $3::integer ELSE account_type_id END,
+         industry_id = CASE WHEN $4::boolean THEN $5::integer ELSE industry_id END,
          website = CASE WHEN $6::boolean THEN $7 ELSE website END,
          city = CASE WHEN $8::boolean THEN $9 ELSE city END,
          state = CASE WHEN $10::boolean THEN $11 ELSE state END,
@@ -275,10 +290,10 @@ async function update(id: number, input: Partial<ClientInput>, userId: number | 
        RETURNING ${SELECT_COLUMNS}`,
       [
         input.clientName?.trim() ?? null,
-        'accountType' in input,
-        input.accountType?.trim() || null,
-        'sector' in input,
-        input.sector?.trim() || null,
+        'accountTypeId' in input,
+        input.accountTypeId ?? null,
+        'industryId' in input,
+        input.industryId ?? null,
         'website' in input,
         input.website?.trim() || null,
         'city' in input,

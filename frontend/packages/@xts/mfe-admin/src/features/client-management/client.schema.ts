@@ -26,8 +26,8 @@ const contactSchema = z
 
 export const clientFormSchema = z.object({
   clientName: z.string().trim().min(1, "Organization / account name is required").max(255, "Must be at most 255 characters"),
-  accountType: z.string().trim().min(1, "Account type is required"),
-  sector: z.string().trim().min(1, "Sector / industry is required"),
+  accountTypeId: z.string().trim().min(1, "Account type is required"),
+  industryId: z.string().trim().min(1, "Sector / industry is required"),
   website: z.string().trim().max(500, "Website must be at most 500 characters").optional(),
   city: z.string().trim().min(1, "City is required").max(100, "City must be at most 100 characters"),
   state: z.string().trim().min(1, "State / province is required").max(100, "State / province must be at most 100 characters"),
@@ -51,8 +51,8 @@ export const EMPTY_CONTACT: ClientContactFormValues = {
 
 export const EMPTY_CLIENT_FORM: ClientFormValues = {
   clientName: "",
-  accountType: "",
-  sector: "",
+  accountTypeId: "",
+  industryId: "",
   website: "",
   city: "",
   state: "",

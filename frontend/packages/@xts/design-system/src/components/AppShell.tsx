@@ -2,6 +2,7 @@ import { useQuery } from "@apollo/client";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowUp,
+  BadgeCheck,
   Bell,
   Briefcase,
   Building2,
@@ -14,6 +15,7 @@ import {
   FileQuestion,
   FlaskConical,
   GitBranch,
+  Kanban,
   Key,
   KeyRound,
   Layers,
@@ -29,6 +31,7 @@ import {
   Share2,
   Shield,
   Table2,
+  UserCheck,
   UserCog,
   Users,
   Workflow,
@@ -230,11 +233,13 @@ function containsRoute(menu: NavMenuNode, pathname: string): boolean {
  * navigation moves into it. */
 function DynamicNavNode({
   menu,
+  colorIndex = 0,
   pathname,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: {
   menu: NavMenuNode;
+  colorIndex?: number;
   pathname: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -261,7 +266,7 @@ function DynamicNavNode({
             active ? "bg-sidebar-accent font-medium text-rail-active" : "text-sidebar-foreground hover:bg-sidebar-accent",
           )}
         >
-          <Icon className="size-4 shrink-0" />
+          <Icon className="size-4 shrink-0" style={navIconStyle(colorIndex)} />
           <span className="truncate">{menu.menuName}</span>
         </Link>
       </li>
@@ -276,15 +281,15 @@ function DynamicNavNode({
             type="button"
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] font-medium text-sidebar-foreground hover:bg-sidebar-accent"
           >
-            <Icon className="size-4 shrink-0" />
+            <Icon className="size-4 shrink-0" style={navIconStyle(colorIndex)} />
             <span className="flex-1 truncate text-left">{menu.menuName}</span>
             <ChevronDown className="size-3.5 shrink-0 transition-transform group-data-[state=open]/dyn-node:rotate-180" />
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <ul className="ml-3.5 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2.5">
-            {children.map((child) => (
-              <DynamicNavNode key={child.menuId} menu={child} pathname={pathname} />
+            {children.map((child, childIndex) => (
+              <DynamicNavNode key={child.menuId} menu={child} colorIndex={colorIndex + childIndex + 1} pathname={pathname} />
             ))}
           </ul>
         </CollapsibleContent>
@@ -323,7 +328,7 @@ function DynamicNavPreview({
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
           <SidebarMenuButton tooltip="Dynamic Nav (Preview)">
-            <FlaskConical />
+            <FlaskConical style={navIconStyle(3)} />
             <span>Dynamic Nav (Preview)</span>
             <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/dynnav:rotate-180" />
           </SidebarMenuButton>
@@ -335,10 +340,11 @@ function DynamicNavPreview({
                 Nothing to show — no menu has both a Route Path and a permission granted to this role yet.
               </li>
             )}
-            {tree.map((menu) => (
+            {tree.map((menu, index) => (
               <DynamicNavNode
                 key={menu.menuId}
                 menu={menu}
+                colorIndex={index}
                 pathname={pathname}
                 open={openTopMenuId === menu.menuId}
                 onOpenChange={(isOpen) => setOpenTopMenuId(isOpen ? menu.menuId : null)}
@@ -436,11 +442,13 @@ function MobileSidebarTrigger() {
 
 function AdminNavGroup({
   group,
+  colorIndex,
   pathname,
   open,
   onOpenChange,
 }: {
   group: NavGroup;
+  colorIndex: number;
   pathname: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -450,14 +458,14 @@ function AdminNavGroup({
       <SidebarMenuSubItem>
         <CollapsibleTrigger asChild>
           <SidebarMenuSubButton className="h-auto min-h-7 cursor-pointer py-1.5 text-[13px] font-medium tracking-tight">
-            <group.icon className="size-4 shrink-0" />
+            <group.icon className="size-4 shrink-0" style={navIconStyle(colorIndex)} />
             <span className="flex-1 truncate">{group.label}</span>
             <ChevronDown className="size-3.5 shrink-0 transition-transform group-data-[state=open]/nav-group:rotate-180" />
           </SidebarMenuSubButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <ul className="ml-3.5 mt-0.5 flex flex-col gap-0.5 border-l border-sidebar-border pl-2.5">
-            {group.items.map((item) => {
+            {group.items.map((item, itemIndex) => {
               const active = pathname === item.to;
               return (
                 <li key={item.to}>
@@ -470,7 +478,7 @@ function AdminNavGroup({
                         : "text-sidebar-foreground hover:bg-sidebar-accent",
                     )}
                   >
-                    <item.icon className="size-4 shrink-0" />
+                    <item.icon className="size-4 shrink-0" style={navIconStyle(colorIndex + itemIndex + 1)} />
                     <span className="truncate">{item.label}</span>
                   </Link>
                 </li>
@@ -518,18 +526,18 @@ function OpportunityMenuLink({
       <SidebarMenuButton
         isActive={onOpportunity}
         tooltip={menu.menuName}
-        className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
+        className={NAV_BUTTON_CLASS}
       >
-          <Icon />
+          <Icon style={navIconStyle(4, onOpportunity)} />
           <span>{menu.menuName}</span>
           <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/opportunities:rotate-180" />
       </SidebarMenuButton>
       </CollapsibleTrigger>
       <CollapsibleContent>
       <SidebarMenuSub>
-        {permissions.pipeline && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity"}><Link to="/opportunity">Pipeline</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
-        {permissions.work && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/work"}><Link to="/opportunity/work">My Work</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
-        {permissions.approvals && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/approvals"}><Link to="/opportunity/approvals">My Approvals</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+        {permissions.pipeline && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity"}><Link to="/opportunity"><Kanban className="size-4 shrink-0" style={navIconStyle(5)} />Pipeline</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+        {permissions.work && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/work"}><Link to="/opportunity/work"><UserCheck className="size-4 shrink-0" style={navIconStyle(6)} />My Work</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+        {permissions.approvals && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/approvals"}><Link to="/opportunity/approvals"><BadgeCheck className="size-4 shrink-0" style={navIconStyle(7)} />My Approvals</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
       </SidebarMenuSub>
       </CollapsibleContent>
     </SidebarMenuItem>
@@ -546,6 +554,26 @@ function OpportunityCreateShortcut() {
     <Link to="/opportunity/new"><Plus className="size-[18px]" /></Link>
   </Button>;
 }
+
+// Sidebar icons take colors from this list by position, so neighbors always
+// differ. Active items keep the button's own (white) icon instead.
+const NAV_ICON_COLORS = [
+  "hsl(var(--stage-1))",
+  "hsl(var(--stage-2))",
+  "hsl(var(--stage-3))",
+  "hsl(var(--stage-4))",
+  "hsl(var(--stage-5))",
+  "hsl(174 72% 38%)",
+  "hsl(38 92% 48%)",
+];
+function navIconStyle(index: number, active = false) {
+  return active ? undefined : { color: NAV_ICON_COLORS[index % NAV_ICON_COLORS.length] };
+}
+
+// Shared look for the top-level nav items: roomy, rounded, and a gradient
+// brand-blue pill with a soft glow when active.
+const NAV_BUTTON_CLASS =
+  "h-10 rounded-lg font-medium text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&>svg]:size-[18px] data-[active=true]:bg-gradient-to-r data-[active=true]:from-brand-from data-[active=true]:to-primary data-[active=true]:font-semibold data-[active=true]:text-sidebar-primary-foreground data-[active=true]:shadow-[0_6px_16px_-4px_hsl(var(--primary)/0.55)] data-[active=true]:hover:text-sidebar-primary-foreground";
 
 function AppSidebar({
   can,
@@ -573,7 +601,7 @@ function AppSidebar({
   }, [activeGroupLabel]);
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" className="border-sidebar-border shadow-[4px_0_24px_-12px_rgba(15,23,42,0.18)]">
       {/* No positioning wrapper here on purpose — absolute resolves against
           Sidebar's own outer `fixed inset-y-0` container, which is what
           spans the sidebar's full height. A wrapper div would have zero
@@ -586,25 +614,25 @@ function AppSidebar({
       <SidebarHeader className="flex h-14 flex-row items-center gap-2 border-b border-sidebar-border px-3 py-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
         <Link
           to="/dashboard"
-          className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-from text-[13px] font-bold text-brand-foreground"
+          className="grid size-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-from to-primary text-[13px] font-bold text-brand-foreground shadow-[0_4px_12px_-2px_hsl(var(--primary)/0.5)]"
         >
           XTS
         </Link>
-        <span className="truncate text-sm font-semibold text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+        <span className="truncate text-[15px] font-bold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
           XTS Opportunity Tracker
         </span>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarMenu className="px-2 pt-2">
+        <SidebarMenu className="gap-1 px-3 pt-4">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
               isActive={pathname.startsWith("/dashboard")}
               tooltip="Dashboard"
-              className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
+              className={NAV_BUTTON_CLASS}
             >
               <Link to="/dashboard">
-                <LayoutDashboard />
+                <LayoutDashboard style={navIconStyle(0, pathname.startsWith("/dashboard"))} />
                 <span>Dashboard</span>
               </Link>
             </SidebarMenuButton>
@@ -619,19 +647,20 @@ function AppSidebar({
                   <SidebarMenuButton
                     isActive={onAdmin}
                     tooltip="Administration"
-                    className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary"
+                    className={NAV_BUTTON_CLASS}
                   >
-                    <Settings />
+                    <Settings style={navIconStyle(1, onAdmin)} />
                     <span>Administration</span>
                     <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/admin:rotate-180" />
                   </SidebarMenuButton>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <SidebarMenuSub>
-                    {ADMIN_NAV.map((group) => (
+                    {ADMIN_NAV.map((group, index) => (
                       <AdminNavGroup
                         key={group.label}
                         group={group}
+                        colorIndex={index}
                         pathname={pathname}
                         open={openGroupLabel === group.label}
                         onOpenChange={(open) => setOpenGroupLabel(open ? group.label : null)}

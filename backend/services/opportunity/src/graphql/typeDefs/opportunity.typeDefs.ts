@@ -55,11 +55,15 @@ export const opportunityTypeDefs = `#graphql
 
     estimatedValue: Float
     estimatedValueUsd: Float
+    "Selected estimate submitted by the estimation team (USD); the CEO-approved value once past estimate review."
+    submittedEstimateUsd: Float
     currencyId: Int
     rfpType: Int
     workflowComment: String
     workflowReasonCodeId: Int
     clientName: String
+    accountTypeId: Int
+    industryId: Int
     accountType: String
     sector: String
     website: String
@@ -135,6 +139,8 @@ export const opportunityTypeDefs = `#graphql
   type OpportunityDirectoryClient {
     clientId: Int!
     clientName: String!
+    accountTypeId: Int
+    industryId: Int
     accountType: String
     sector: String
     website: String
@@ -147,8 +153,8 @@ export const opportunityTypeDefs = `#graphql
 
   input RfpIntakeClientInput {
     clientName: String!
-    accountType: String!
-    sector: String!
+    accountTypeId: Int!
+    industryId: Int!
     website: String
     city: String!
     state: String!

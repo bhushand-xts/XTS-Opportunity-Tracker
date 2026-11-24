@@ -80,13 +80,13 @@ interface BackendOpportunity {
   preBidMeeting: number | null; documentType: string | null; fileName: string | null; filePath: string | null; docSubmissionFormat: string | null;
   evaluationBasis: string | null; opportunityDescription: string | null; leadReceivedDate: string | null;
   proposalDueDate: string | null; estimatedValue: number | null; estimatedValueUsd?: number | null; currencyId: number | null; rfpType: number | null;
-  workflowComment: string | null; workflowReasonCodeId?: number | null; clientName: string | null; accountType: string | null; sector: string | null;
+  workflowComment: string | null; workflowReasonCodeId?: number | null; clientName: string | null; accountTypeId?: number | null; industryId?: number | null; accountType: string | null; sector: string | null;
   website: string | null; city: string | null; state: string | null; country: string | null; streetAddress: string | null;
   contacts: BackendContact[]; proposalQuestions: string[]; proposalQuestionIds: (number | null)[]; proposalQuestionCategories: (string | null)[];
   proposalQuestionnaireTypeIds?: (number | null)[];
 }
 interface BackendClient {
-  clientId: number; clientName: string; accountType: string | null; sector: string | null; website: string | null;
+  clientId: number; clientName: string; accountTypeId?: number | null; industryId?: number | null; accountType: string | null; sector: string | null; website: string | null;
   city: string | null; state: string | null; country: string | null; streetAddress: string | null; contacts: BackendContact[];
 }
 
@@ -133,8 +133,8 @@ function mapContact(contact: BackendContact, id?: string) {
 function mapClient(c: BackendClient): OpportunityClient {
   const [primary, ...additional] = c.contacts ?? [];
   return {
-    id: String(c.clientId), revision: 1, name: c.clientName ?? '', relationship: '', accountTypeId: c.accountType ?? '',
-    industryId: c.sector ?? '', website: c.website ?? '', address: c.streetAddress ?? '', country: c.country ?? '',
+    id: String(c.clientId), revision: 1, name: c.clientName ?? '', relationship: '', accountTypeId: c.accountTypeId != null ? String(c.accountTypeId) : '',
+    industryId: c.industryId != null ? String(c.industryId) : '', website: c.website ?? '', address: c.streetAddress ?? '', country: c.country ?? '',
     stateProvince: c.state ?? '', city: c.city ?? '', streetAddress: c.streetAddress ?? '',
     primaryContact: primary ? mapContact(primary, `${c.clientId}-primary`) : { name: '', title: '', email: '', phone: '', decisionRole: '' },
     additionalContacts: additional.map((contact, index) => mapContact(contact, `${c.clientId}-${index + 1}`)),
@@ -145,7 +145,7 @@ function mapOpportunity(o: BackendOpportunity, directory: DirectoryUser[], curre
   const currentState = state(o);
   const owner = user(o.ownerId, directory);
   const client = o.clientId ? mapClient({
-    clientId: o.clientId, clientName: o.clientName ?? '', accountType: o.accountType, sector: o.sector, website: o.website,
+    clientId: o.clientId, clientName: o.clientName ?? '', accountTypeId: o.accountTypeId, industryId: o.industryId, accountType: o.accountType, sector: o.sector, website: o.website,
     city: o.city, state: o.state, country: o.country, streetAddress: o.streetAddress, contacts: o.contacts ?? [],
   }) : null;
   const questions = (o.proposalQuestions ?? []).map((text, index) => ({
@@ -271,9 +271,9 @@ export const productionOpportunityService: OpportunityService = {
   async saveClient(command) {
     const form = command.form;
     const lookups = await productionOpportunityService.lookups();
-    const accountType = lookups.accountTypes.find(option => option.id === form.accountTypeId)?.label;
-    const sector = lookups.industries.find(option => option.id === form.industryId)?.label;
-    if (!accountType || !sector) throw new Error('Select a valid account type and sector.');
+    const accountTypeId = Number(lookups.accountTypes.find(option => option.id === form.accountTypeId)?.id);
+    const industryId = Number(lookups.industries.find(option => option.id === form.industryId)?.id);
+    if (!accountTypeId || !industryId) throw new Error('Select a valid account type and sector.');
     const roles = DECISION_ROLE_IDS;
     const contacts = [form.primaryContact, ...form.additionalContacts].map(contact => ({
       fullName: contact.name, titleRole: contact.title, email: contact.email, phone: contact.phone,
@@ -283,7 +283,7 @@ export const productionOpportunityService: OpportunityService = {
     const { data } = await getApolloClient().mutate<{ createOpportunityClient?: BackendClient; updateOpportunityClient?: BackendClient }>({
       mutation: command.id ? UPDATE_OPPORTUNITY_CLIENT : CREATE_OPPORTUNITY_CLIENT, variables: {
         ...(command.id ? { clientId: Number(command.id) } : {}),
-        client: { clientName: form.name, accountType, sector, website: form.website || null, city: form.city,
+        client: { clientName: form.name, accountTypeId, industryId, website: form.website || null, city: form.city,
           state: form.stateProvince, country: form.country, streetAddress: form.streetAddress || form.address || null },
         contacts,
       }, errorPolicy: 'none',

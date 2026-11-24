@@ -69,7 +69,7 @@ test('an answer save racing CEO approval rechecks the locked parent before readi
 const question = { questionId: 21, question: 'Describe delivery.', category: 'Technical', questionnaireTypeId: 1 };
 const intake: RfpIntakeOpportunityUpdateInput = {
   opportunityName: 'Other details updated', ownerId: 7, currencyId: 1, estimatedValue: 100, sourceTypeId: 1, rfpType: 1,
-  client: { clientName: 'Client', accountType: 'Enterprise', sector: 'Technology', city: 'Pune', state: 'Maharashtra', country: 'India' },
+  client: { clientName: 'Client', accountTypeId: 1, industryId: 1, city: 'Pune', state: 'Maharashtra', country: 'India' },
   contacts: [], questions: [question.question], questionSelections: [question],
 };
 
