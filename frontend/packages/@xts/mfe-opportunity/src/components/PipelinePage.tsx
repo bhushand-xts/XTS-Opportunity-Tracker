@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2, CircleX, Trophy } from 'lucide-react';
+import { Activity, Ban, Briefcase, ChevronLeft, ChevronRight, Clock, Plus, Search, CheckCircle2, CircleX, Trophy } from 'lucide-react';
 import { Avatar, AvatarFallback, Badge, Button, Card, cn, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, useSetPageTitle } from '@xts/design-system';
 import type { ListFilter, OpportunitySummary, OpportunityState } from '@xts/api-contracts';
 import { useOpportunityService } from '../services/OpportunityService';
@@ -136,10 +136,8 @@ function OpportunityBoard({ opportunities, savedId, showAllStages, stageIds }: {
     };
     measure();
     window.addEventListener('resize', measure);
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
-    observer?.observe(page);
-    return () => { window.removeEventListener('resize', measure); observer?.disconnect(); };
-  }, []);
+    return () => { window.removeEventListener('resize', measure); };
+  }, [opportunities.length, showAllStages, stageIds?.join(',')]);
   type Lane = { key: string; label: string; state: OpportunityState; order: number; items: OpportunitySummary[] };
   const lanes = new Map<string, Lane>();
   const initialStages = stageIds ?? (showAllStages && opportunities.some(o => o.stageId != null) ? PIPELINE_STAGE_IDS : []);
@@ -197,7 +195,7 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
   const title = queue === 'MY_APPROVALS' ? 'My Pending Work' : queue === 'MY_WORK' ? 'My Opportunities' : 'All Opportunities';
   useSetPageTitle(title);
   const list = resource.data?.nodes ?? [];
-  const boardStageIds = queue === 'MY_APPROVALS' ? access.approvalStageIds : undefined;
+  const boardStageIds = queue === 'MY_APPROVALS' ? access.approvalStageIds?.filter(stageId => stageId !== 10) : undefined;
   const showEmptyBoard = view === 'board' && Boolean(boardStageIds?.length);
   const emptyTitle = query ? 'No matching opportunities' : queue === 'MY_APPROVALS' ? 'No pending work' : queue === 'MY_WORK' ? 'No opportunities created yet' : 'Your pipeline starts here';
   const emptyDescription = query ? 'Try a different search.' : queue === 'MY_APPROVALS' ? 'There are no opportunities waiting for action from you or your role.' : queue === 'MY_WORK' ? 'Opportunities you create will appear here.' : 'No opportunities were returned for your permitted scope.';
@@ -209,11 +207,13 @@ export function PipelinePage({ queue = 'PIPELINE' }: { queue?: ListFilter['queue
   return <div className="opp-page opp-pipeline-page" aria-busy={resource.refreshing}>
     <div className="opp-heading"><div><h2>{title}</h2><p className="text-sm text-muted-foreground">{queue === 'MY_APPROVALS' ? 'Opportunities waiting for action from you or your role.' : queue === 'MY_WORK' ? 'Opportunities you created, across their current stages.' : 'Track every opportunity through approvals, estimation, proposal, negotiation and outcome.'}</p></div>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new"><Plus className="size-4" />Add Opportunity</Link></Button>}</div>
     {resource.loading ? <Loading label="Loading permitted opportunities…" /> : resource.error ? <Notice error={resource.error} retry={resource.reload} title="Pipeline unavailable" /> : resource.data && <>
-      <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-3">{[
+      {queue !== 'MY_APPROVALS' && <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{[
         { title: 'Total opportunities', value: resource.data.totalCount, icon: Briefcase, tone: 'border-t-primary', iconTone: 'text-primary', wash: 'to-primary/5' },
         { title: 'Won opportunities', value: list.filter(o => o.stageId === 7 && o.subStageId === 13).length, icon: Trophy, tone: 'border-t-emerald-600', iconTone: 'text-emerald-700', wash: 'to-emerald-500/5' },
         { title: 'Lost opportunities', value: list.filter(o => o.stageId === 8 && o.subStageId === 14).length, icon: CircleX, tone: 'border-t-rose-600', iconTone: 'text-rose-700', wash: 'to-rose-500/5' },
-      ].map(stat => <Card key={stat.title} className={cn('min-w-0 border-t-[3px] bg-gradient-to-br from-card from-50% shadow-sm', stat.tone, stat.wash)}><section className="px-3 py-2.5"><div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">{stat.title}<stat.icon className={cn('size-4 shrink-0', stat.iconTone)} /></div><strong className="my-0.5 block break-words text-xl font-semibold">{stat.value}</strong></section></Card>)}</div>
+        { title: 'In progress', value: list.filter(o => o.stageId !== 7 && o.stageId !== 8 && o.stageId !== 9).length, icon: Activity, tone: 'border-t-sky-600', iconTone: 'text-sky-700', wash: 'to-sky-500/5' },
+        { title: 'No-Bid / Declined', value: list.filter(o => o.stageId === 9).length, icon: Ban, tone: 'border-t-slate-500', iconTone: 'text-slate-600', wash: 'to-slate-500/5' },
+      ].map(stat => <Card key={stat.title} className={cn('min-w-0 border-t-[3px] bg-gradient-to-br from-card from-50% shadow-sm', stat.tone, stat.wash)}><section className="px-3 py-2.5"><div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">{stat.title}<stat.icon className={cn('size-4 shrink-0', stat.iconTone)} /></div><strong className="my-0.5 block break-words text-xl font-semibold">{stat.value}</strong></section></Card>)}</div>}
     </>}
     <div className="my-3 flex flex-wrap items-center justify-between gap-3"><div className="relative w-full sm:max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input className="border-slate-200 bg-white pl-9 shadow-sm placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-primary/30" aria-label="Search opportunities" placeholder="Search opportunity, client or reference…" value={search} onChange={e => { setSearch(e.target.value); setAfter(null); }} /></div><div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Pipeline view">{(['board', 'list'] as const).map(v => <Button key={v} size="sm" variant={view === v ? 'secondary' : 'ghost'} aria-pressed={view === v} onClick={() => setView(v)}>{v === 'board' ? 'Board' : 'List'}</Button>)}</div></div>
     {resource.data && !resource.loading && !resource.error && (list.length === 0 && !showEmptyBoard ? <section className="opp-empty"><Briefcase className="mx-auto mb-4 size-8 text-primary" /><h3 className="text-xl font-semibold">{emptyTitle}</h3><p className="my-3 text-sm text-muted-foreground">{emptyDescription}</p>{access.add && queue === 'PIPELINE' && <Button asChild><Link to="/opportunity/new">Add Opportunity</Link></Button>}</section> : view === 'board' ? <TooltipProvider delayDuration={150}><OpportunityBoard opportunities={list} savedId={params.get('saved')} showAllStages={queue !== 'MY_APPROVALS' || !boardStageIds?.length} stageIds={boardStageIds} /></TooltipProvider> : <div className="space-y-3">{/* Stacked list remains usable on mobile without page overflow. */}<TooltipProvider delayDuration={150}><div className="hidden overflow-hidden rounded-xl border bg-card md:block"><Table><TableHeader className="bg-muted/50"><TableRow className="hover:bg-transparent"><TableHead className="h-9 text-[11px] uppercase tracking-wide">Opportunity</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Client</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Owner</TableHead><TableHead className="hidden h-9 text-[11px] uppercase tracking-wide lg:table-cell">Due</TableHead><TableHead className="h-9 text-right text-[11px] uppercase tracking-wide">Value · USD</TableHead><TableHead className="h-9 text-[11px] uppercase tracking-wide">Stage</TableHead></TableRow></TableHeader><TableBody>{list.map(o => <OpportunityRow key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</TableBody></Table></div><div className="grid gap-2 md:hidden">{list.map(o => <OpportunityCard key={o.id} opportunity={o} highlight={params.get('saved') === o.id} />)}</div></TooltipProvider></div>)}
