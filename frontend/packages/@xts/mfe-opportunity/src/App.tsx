@@ -21,6 +21,13 @@ function OpportunityRoutes() {
             <Route index element={<PipelinePage />} />
             <Route path="work" element={<PipelinePage queue="MY_WORK" />} />
             <Route path="approvals" element={<PipelinePage queue="MY_APPROVALS" />} />
+            {/* Route paths stored in mst_menus for the dynamic nav. They render
+                the same queues as the static nav's paths above instead of
+                falling through to the catch-all, which sent every one of them
+                to the Pipeline. */}
+            <Route path="pipeline" element={<PipelinePage />} />
+            <Route path="my_work" element={<PipelinePage queue="MY_WORK" />} />
+            <Route path="my_approvals" element={<PipelinePage queue="MY_APPROVALS" />} />
             <Route path="new" element={<OpportunityFormPage />} />
             <Route path=":id/edit" element={<OpportunityFormPage />} />
             <Route path=":id/details" element={<OpportunityDetailsPage />} />

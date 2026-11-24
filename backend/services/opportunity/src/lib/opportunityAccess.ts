@@ -7,6 +7,8 @@ export interface WorkflowRole { id: number; roleName: string; roleCode: string |
 export interface WorkflowRecord { stageId: number | null; subStageId: number | null; createdBy: number | null; ownerId: number | null; assignedTo: number | null; }
 type Area = 'opportunities' | 'pipeline' | 'work' | 'approvals' | 'gate' | 'estimation' | 'reestimation';
 const normalize = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+const ACTIONABLE_QUEUE_STATES = new Set(['1:1', '1:2', '1:3', '2:4', '2:5', '2:6', '3:7', '4:5', '4:8', '4:9', '4:17',
+  '5:10', '5:11', '6:12', '10:19', '10:20']);
 const areas: Record<Area, string[]> = {
   opportunities: ['opportunity', 'opportunities', 'opportunity_management', 'opportunity_tracking'],
   pipeline: ['pipeline'], work: ['my_work'], approvals: ['my_approvals'],
@@ -67,6 +69,7 @@ export function opportunityAccess(userId: number, menus: AccessMenu[], grants: A
   const pipelineView = parentView && has(['pipeline'], 'view');
   const workView = parentView && has(['work'], 'view');
   const approvalsView = parentView && has(['approvals'], 'view');
+  const personalQueueView = workView || approvalsView;
   const create = parentView && has(['opportunities'], 'add');
   const edit = parentView && has(['opportunities'], 'edit');
   const readClients = parentView;
@@ -76,27 +79,40 @@ export function opportunityAccess(userId: number, menus: AccessMenu[], grants: A
   const salesRepresentative = roleKeys.some(key => ['sales_executive', 'sales_representative'].includes(key));
   const estimate = workView && roleKeys.some(key => key === 'estimation_team');
   const own = (record: WorkflowRecord) => record.createdBy === userId || record.ownerId === userId || record.assignedTo === userId;
+  const hasActionableStatus = (record: WorkflowRecord) => {
+    const key = `${record.stageId}:${record.subStageId}`;
+    return ACTIONABLE_QUEUE_STATES.has(key);
+  };
   function canListQueue(queue: string) {
     if (queue === 'PIPELINE') return pipelineView;
-    if (queue === 'MY_WORK') return workView;
-    if (queue === 'MY_APPROVALS') return approvalsView;
+    if (queue === 'MY_WORK' || queue === 'MY_APPROVALS') return personalQueueView;
     return false;
   }
   function canViewInQueue(record: WorkflowRecord, queue: string) {
     if (!canListQueue(queue)) return false;
     if (queue === 'MY_WORK') {
-      const inEstimation = record.stageId === 3 && record.subStageId === 7;
-      if (estimate) return inEstimation;
-      return own(record) || (inEstimation && has(['estimation'], 'view'));
+      return record.createdBy === userId;
     }
-    if (queue === 'MY_APPROVALS') return (review && [1, 5, 6].includes(record.stageId ?? 0)) ||
-      (gateReview && [2, 4].includes(record.stageId ?? 0));
+    if (queue === 'MY_APPROVALS') {
+      if (!hasActionableStatus(record)) return false;
+      // Explicit assignment takes precedence over the role's general work queue.
+      if (record.assignedTo !== null && record.assignedTo !== undefined) return record.assignedTo === userId;
+      if (salesRepresentative) return record.stageId === 1 && record.subStageId === 2 && record.createdBy === userId;
+      if (estimate) return record.stageId === 3 && record.subStageId === 7;
+      if (review) return record.stageId === 1 && [1, 3].includes(record.subStageId ?? 0) ||
+        record.stageId === 2 && record.subStageId === 5 || record.stageId === 5 && [10, 11].includes(record.subStageId ?? 0) ||
+        record.stageId === 6 && record.subStageId === 12 || record.stageId === 10 && [19, 20].includes(record.subStageId ?? 0);
+      if (gateReview) return record.stageId === 2 && [4, 6].includes(record.subStageId ?? 0) ||
+        record.stageId === 4 && [5, 8, 9].includes(record.subStageId ?? 0);
+      return false;
+    }
     return true;
   }
   function canView(record: WorkflowRecord) {
     if (!parentView) return false;
-    if (pipelineView || review || gateReview || (own(record) && (create || edit || workView))) return true;
-    if (!workView && !approvalsView) return false;
+    if (pipelineView || review || gateReview || (own(record) && (create || edit || workView || approvalsView))) return true;
+    if (personalQueueView && canViewInQueue(record, 'MY_APPROVALS')) return true;
+    if (!personalQueueView) return false;
     if (record.stageId === 1) return review;
     if (record.stageId === 2) return has(['gate'], 'view') || gateReview || (review && record.subStageId === 5);
     if ([3, 4, 5, 6, 7, 8, 10].includes(record.stageId ?? 0)) return has(['gate', 'estimation', 'reestimation'], 'view') || estimate || gateReview;

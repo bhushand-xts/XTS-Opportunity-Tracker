@@ -535,9 +535,9 @@ function OpportunityMenuLink({
       </CollapsibleTrigger>
       <CollapsibleContent>
       <SidebarMenuSub>
-        {permissions.pipeline && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity"}><Link to="/opportunity"><Kanban className="size-4 shrink-0" style={navIconStyle(5)} />Pipeline</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
-        {permissions.work && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/work"}><Link to="/opportunity/work"><UserCheck className="size-4 shrink-0" style={navIconStyle(6)} />My Work</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
-        {permissions.approvals && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/approvals"}><Link to="/opportunity/approvals"><BadgeCheck className="size-4 shrink-0" style={navIconStyle(7)} />My Approvals</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+        {permissions.pipeline && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity"}><Link to="/opportunity"><Kanban className="size-4 shrink-0" style={navIconStyle(5)} />All Opportunities</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+        {(permissions.work || permissions.approvals) && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/work"}><Link to="/opportunity/work"><UserCheck className="size-4 shrink-0" style={navIconStyle(6)} />My Opportunities</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
+        {(permissions.approvals || permissions.work) && <SidebarMenuSubItem><SidebarMenuSubButton asChild isActive={pathname === "/opportunity/approvals"}><Link to="/opportunity/approvals"><BadgeCheck className="size-4 shrink-0" style={navIconStyle(7)} />My Pending Work</Link></SidebarMenuSubButton></SidebarMenuSubItem>}
       </SidebarMenuSub>
       </CollapsibleContent>
     </SidebarMenuItem>
