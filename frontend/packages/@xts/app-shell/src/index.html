@@ -13,8 +13,10 @@
        scrollbar: no matter which component is wider than the viewport (a
        pipeline board, a table, anything), it gets clipped here instead of
        widening the document. Nothing in this app relies on body overflowing
-       horizontally. */
-    html, body { margin: 0; overflow-x: hidden; }
+       horizontally. `clip`, not `hidden`: hidden turns <body> into a scroll
+       container, which stops the sticky top header from sticking to the
+       window; clip cuts off the overflow the same way without that. */
+    html, body { margin: 0; overflow-x: clip; }
   </style>
 </head>
 <body>
