@@ -1,5 +1,6 @@
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { gql, useQuery } from "@apollo/client";
+import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
 import {
   type LucideIcon,
@@ -404,6 +405,7 @@ function StatTile({
   accent,
   subValue,
   subLabel,
+  to,
   delay = 0,
 }: {
   label: string;
@@ -413,16 +415,15 @@ function StatTile({
   /** A secondary figure under the main number, e.g. the dollar value behind a count. */
   subValue?: string;
   subLabel?: string;
+  to?: string;
   delay?: number;
 }) {
-  return (
-    <div
-      className={`${TILE_ROOT} ${CARD_SHADOW}`}
-      style={{
-        animationDelay: `${delay}ms`,
-        background: `linear-gradient(135deg, ${accent.bg}, hsl(var(--card)) 75%)`,
-      }}
-    >
+  const className = `${TILE_ROOT} ${CARD_SHADOW}${to ? " cursor-pointer transition-shadow hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" : ""}`;
+  const style = {
+    animationDelay: `${delay}ms`,
+    background: `linear-gradient(135deg, ${accent.bg}, hsl(var(--card)) 75%)`,
+  };
+  const content = <>
       <TileHeader label={label} icon={Icon} accent={accent} />
       <div className="flex flex-1 flex-col items-center justify-center pt-3 text-center">
         <p className="text-[28px] font-semibold leading-none tracking-tight tabular-nums">{value}</p>
@@ -436,8 +437,9 @@ function StatTile({
           </div>
         )}
       </div>
-    </div>
-  );
+    </>;
+  return to ? <Link to={to} className={className} style={style} aria-label={`${label}: ${value}. Open Opportunity Summary Report`}>{content}</Link>
+    : <div className={className} style={style}>{content}</div>;
 }
 
 // Breakdown rows: stage in blue, sub-stage as a purple tag, count in the
@@ -939,7 +941,7 @@ export function DashboardContent() {
       style={{ background: "linear-gradient(160deg, hsl(var(--stage-1) / 0.05), transparent 35%, hsl(var(--stage-5) / 0.05))" }}
     >
       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Total opportunities" value={String(metrics.total)} icon={Handshake} accent={ACCENT.blue} delay={0} />
+        <StatTile label="Total opportunities" value={String(metrics.total)} icon={Handshake} accent={ACCENT.blue} delay={0} to="/opportunity/reports/summary" />
         <StatTile label="Won" value={String(metrics.wonCount)} icon={Trophy} accent={ACCENT.green} delay={40} />
         <StatTile label="Lost" value={String(metrics.lostCount)} icon={XCircle} accent={ACCENT.red} delay={80} />
         <BreakdownStatTile

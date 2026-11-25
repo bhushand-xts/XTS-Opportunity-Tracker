@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Contact,
   FileQuestion,
+  FileText,
   FlaskConical,
   GitBranch,
   Kanban,
@@ -503,12 +504,6 @@ function OpportunityMenuLink({
   onOpenChange: (open: boolean) => void;
 }) {
   const { hasPermission } = useAuth();
-  const onOpportunity = pathname === "/opportunity" || pathname.startsWith("/opportunity/");
-  const { data, error, loading, refetch } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, {
-    fetchPolicy: "cache-and-network",
-  });
-  const menus = resolveOpportunityMenus(data?.menus ?? []);
-  const permissions = opportunityMenuPermissions(data?.menus ?? [], hasPermission);
   const menu = permissions.view ? menus.find(record => opportunityMenuArea(record) === 'opportunities' && hasPermission(record.menuKey, 'view')) : undefined;
   if (error && !menu) return (
     <SidebarMenuItem>
@@ -564,7 +559,8 @@ function ReportsMenuLink({
   const reportsMenu = (data?.menus ?? []).find((menu) => menu.menuKey === "reports");
   const tree = reportsMenu ? filterAccessibleTree(reportsMenu, hasMenuAccess) : null;
   const reports = tree?.children ?? [];
-  if (!tree || reports.length === 0) return null;
+  const hasSummaryReport = reports.some((report) => report.routePath === "/opportunity/reports/summary");
+  if (!tree) return null;
 
   return (
     <Collapsible open={reportsOpen} onOpenChange={setReportsOpen} className="group/reports">
@@ -591,6 +587,14 @@ function ReportsMenuLink({
                 </SidebarMenuSubItem>
               );
             })}
+            {!hasSummaryReport && <SidebarMenuSubItem>
+              <SidebarMenuSubButton asChild isActive={pathname === "/opportunity/reports/summary"}>
+                <Link to="/opportunity/reports/summary" title="Opportunity Summary Report">
+                  <FileText className="size-4 shrink-0" style={navIconStyle(3 + reports.length)} />
+                  <span>Opportunity Summary Report</span>
+                </Link>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>}
           </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuItem>
@@ -644,10 +648,10 @@ function AppSidebar({
   // own section and closes the others; opening one by hand closes the rest.
   type SidebarSection = "opportunities" | "reports" | "admin";
   const routeSection: SidebarSection | null =
-    pathname === "/opportunity" || pathname.startsWith("/opportunity/")
-      ? "opportunities"
-      : pathname === "/reports" || pathname.startsWith("/reports/")
-        ? "reports"
+    pathname.startsWith("/opportunity/reports/") || pathname === "/reports" || pathname.startsWith("/reports/")
+      ? "reports"
+      : pathname === "/opportunity" || pathname.startsWith("/opportunity/")
+        ? "opportunities"
         : onAdmin
           ? "admin"
           : null;
