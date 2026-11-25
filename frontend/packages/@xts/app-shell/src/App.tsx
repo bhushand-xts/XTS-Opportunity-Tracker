@@ -2,7 +2,19 @@ import React, { Suspense } from "react";
 import { ApolloProvider } from "@apollo/client";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { getApolloClient } from "@xts/api-client";
-import { AppShell, AuthGate, DashboardContent, OpportunityRouteAlias, Spinner } from "@xts/design-system";
+import {
+  AppShell,
+  AuthGate,
+  DashboardContent,
+  OpportunityClientReport,
+  OpportunityIndustryReport,
+  OpportunityOwnerReport,
+  OpportunityPipelineReport,
+  OpportunityRouteAlias,
+  SalesConversionReport,
+  Spinner,
+  WinLossAnalysisReport,
+} from "@xts/design-system";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 // Remote MFEs are loaded on demand via Module Federation (see webpack.config.js).
@@ -28,6 +40,12 @@ export function App() {
               <Suspense fallback={<LoadingFallback label="Loading module…" />}>
                 <Routes>
                   <Route path="/dashboard" element={<DashboardContent />} />
+                  <Route path="/reports/sales-conversion" element={<SalesConversionReport />} />
+                  <Route path="/reports/opportunity-pipeline" element={<OpportunityPipelineReport />} />
+                  <Route path="/reports/opportunity-industry" element={<OpportunityIndustryReport />} />
+                  <Route path="/reports/opportunity-owner" element={<OpportunityOwnerReport />} />
+                  <Route path="/reports/opportunity-client" element={<OpportunityClientReport />} />
+                  <Route path="/reports/win-loss-analysis" element={<WinLossAnalysisReport />} />
                   <Route path="/admin/*" element={<AdminMFE />} />
                   <Route path="/opportunity/*" element={<OpportunityMFE />} />
                   <Route path="/opportunities/*" element={<OpportunityRouteAlias />} />
