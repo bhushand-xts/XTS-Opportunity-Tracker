@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { gql, useQuery } from "@apollo/client";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
 import {
@@ -24,8 +24,15 @@ import { Progress } from "./ui/progress";
 import { ScrollArea } from "./ui/scroll-area";
 import { Skeleton } from "./ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/lib/auth";
 import { useSetPageTitle } from "@/lib/pageTitle";
 import { formatMoney } from "@/lib/store";
+import { OPPORTUNITY_PIPELINE_REPORT_MENU_KEY, OPPORTUNITY_PIPELINE_REPORT_PATH } from "./OpportunityPipelineReport";
+import { OPPORTUNITY_INDUSTRY_REPORT_MENU_KEY, OPPORTUNITY_INDUSTRY_REPORT_PATH } from "./OpportunityIndustryReport";
+import { OPPORTUNITY_OWNER_REPORT_MENU_KEY, OPPORTUNITY_OWNER_REPORT_PATH } from "./OpportunityOwnerReport";
+import { OPPORTUNITY_CLIENT_REPORT_MENU_KEY, OPPORTUNITY_CLIENT_REPORT_PATH } from "./OpportunityClientReport";
+import { WIN_LOSS_REPORT_MENU_KEY, WIN_LOSS_REPORT_PATH } from "./WinLossAnalysisReport";
 
 // stageHistory is a per-opportunity field resolver (see
 // opportunity.resolver.ts), so it works on the bulk `opportunities` query
@@ -507,6 +514,8 @@ function ReportCard({
   delay = 0,
   expanded,
   onToggleExpanded,
+  onOpen,
+  openLabel,
 }: {
   title: string;
   icon?: LucideIcon;
@@ -516,11 +525,24 @@ function ReportCard({
   /** When provided, the header shows a "View details" toggle for this card's own list. */
   expanded?: boolean;
   onToggleExpanded?: () => void;
+  /** When provided, clicking the card opens its full report. */
+  onOpen?: () => void;
+  openLabel?: string;
 }) {
   return (
     <div
-      className={`card-surface animate-in fade-in slide-in-from-bottom-2 flex flex-col overflow-hidden duration-500 fill-mode-both ${CARD_SHADOW} ${className ?? ""}`}
+      className={`card-surface animate-in fade-in slide-in-from-bottom-2 flex flex-col overflow-hidden duration-500 fill-mode-both ${CARD_SHADOW} ${onOpen ? "cursor-pointer" : ""} ${className ?? ""}`}
       style={{ animationDelay: `${delay}ms` }}
+      {...(onOpen && {
+        role: "link",
+        tabIndex: 0,
+        title: openLabel,
+        "aria-label": openLabel,
+        onClick: onOpen,
+        onKeyDown: (event: KeyboardEvent) => {
+          if (event.key === "Enter") onOpen();
+        },
+      })}
     >
       <div className="flex shrink-0 items-center gap-2 px-6 py-3.5" style={CARD_HEADER_STYLE}>
         {Icon && <Icon className="size-5 shrink-0 text-white" strokeWidth={2.5} fill="currentColor" fillOpacity={0.25} />}
@@ -528,7 +550,11 @@ function ReportCard({
         {onToggleExpanded && (
           <button
             type="button"
-            onClick={onToggleExpanded}
+            onClick={(event) => {
+              // Don't let "View details" also open the card's report.
+              event.stopPropagation();
+              onToggleExpanded();
+            }}
             className="flex shrink-0 items-center gap-1 text-xs font-medium text-white/90 transition-colors hover:text-white"
           >
             {expanded ? "Show less" : "View details"}
@@ -550,6 +576,8 @@ function DonutReportCard({
   itemHeading,
   valueHeading = "Value",
   delay = 0,
+  onOpen,
+  openLabel,
 }: {
   title: string;
   icon?: LucideIcon;
@@ -558,10 +586,12 @@ function DonutReportCard({
   itemHeading: string;
   valueHeading?: string;
   delay?: number;
+  onOpen?: () => void;
+  openLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <ReportCard title={title} icon={icon} delay={delay} className={`sm:col-span-2 ${expanded ? "" : CARD_HEIGHT}`} expanded={expanded} onToggleExpanded={() => setExpanded((value) => !value)}>
+    <ReportCard title={title} icon={icon} delay={delay} className={`sm:col-span-2 ${expanded ? "" : CARD_HEIGHT}`} expanded={expanded} onToggleExpanded={() => setExpanded((value) => !value)} onOpen={onOpen} openLabel={openLabel}>
       <div className="flex min-h-0 flex-1 flex-col items-center gap-6 md:flex-row md:items-start">
         <div className="w-[160px] shrink-0">
           <DonutChart data={data} centerLabel="Total" />
@@ -614,6 +644,8 @@ function WinLossCard({
   wonDeals,
   lostDeals,
   delay = 0,
+  onOpen,
+  openLabel,
 }: {
   wonCount: number;
   lostCount: number;
@@ -622,6 +654,8 @@ function WinLossCard({
   wonDeals: WinLossDeal[];
   lostDeals: WinLossDeal[];
   delay?: number;
+  onOpen?: () => void;
+  openLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const closedValue = wonValue + lostValue;
@@ -638,6 +672,8 @@ function WinLossCard({
       className={expanded ? "" : CARD_HEIGHT}
       expanded={expanded}
       onToggleExpanded={() => setExpanded((value) => !value)}
+      onOpen={onOpen}
+      openLabel={openLabel}
     >
       <div className="flex min-h-0 flex-1 flex-col items-center gap-4">
         <div className="w-[140px] shrink-0">
@@ -705,6 +741,8 @@ function BarListCard({
   valueFormatter,
   barClassName,
   delay = 0,
+  onOpen,
+  openLabel,
 }: {
   title: string;
   icon?: LucideIcon;
@@ -713,11 +751,13 @@ function BarListCard({
   /** Recolors the bars, e.g. green for won opportunities. */
   barClassName?: string;
   delay?: number;
+  onOpen?: () => void;
+  openLabel?: string;
 }) {
   const max = Math.max(1, ...rows.map((row) => row.value));
   const [expanded, setExpanded] = useState(false);
   return (
-    <ReportCard title={title} icon={icon} delay={delay} className={expanded ? "" : CARD_HEIGHT} expanded={expanded} onToggleExpanded={() => setExpanded((value) => !value)}>
+    <ReportCard title={title} icon={icon} delay={delay} className={expanded ? "" : CARD_HEIGHT} expanded={expanded} onToggleExpanded={() => setExpanded((value) => !value)} onOpen={onOpen} openLabel={openLabel}>
       {rows.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">No data yet.</p>
       ) : (
@@ -858,6 +898,8 @@ function monthBarLabel(peakIndex: number, barCount: number) {
 
 export function DashboardContent() {
   const { data, loading, error } = useQuery(REPORTS_QUERY, { fetchPolicy: "cache-and-network" });
+  const navigate = useNavigate();
+  const { hasMenuAccess } = useAuth();
 
   const metrics = useMemo(
     () => buildReportMetrics(data?.opportunities ?? [], data?.userList ?? [], data?.stagesList ?? []),
@@ -919,8 +961,30 @@ export function DashboardContent() {
 
       {/* 5 columns at xl: Stage 2 + Industry 2 + compact Win / loss 1. */}
       <div className="grid items-start gap-5 sm:grid-cols-2 xl:grid-cols-5">
-        <DonutReportCard title="Opportunities by stage" icon={Layers} data={metrics.byStage} itemHeading="Stage" valueHeading="Opportunities" delay={0} />
-        <DonutReportCard title="Opportunities by industry" icon={BarChart3} data={metrics.byIndustry} itemHeading="Industry" valueHeading="Opportunities" delay={60} />
+        <DonutReportCard
+          title="Opportunities by stage"
+          icon={Layers}
+          data={metrics.byStage}
+          itemHeading="Stage"
+          valueHeading="Opportunities"
+          delay={0}
+          {...(hasMenuAccess(OPPORTUNITY_PIPELINE_REPORT_MENU_KEY) && {
+            onOpen: () => navigate(OPPORTUNITY_PIPELINE_REPORT_PATH),
+            openLabel: "Open the Opportunity Pipeline Report",
+          })}
+        />
+        <DonutReportCard
+          title="Opportunities by industry"
+          icon={BarChart3}
+          data={metrics.byIndustry}
+          itemHeading="Industry"
+          valueHeading="Opportunities"
+          delay={60}
+          {...(hasMenuAccess(OPPORTUNITY_INDUSTRY_REPORT_MENU_KEY) && {
+            onOpen: () => navigate(OPPORTUNITY_INDUSTRY_REPORT_PATH),
+            openLabel: "Open the Opportunity by Industry Report",
+          })}
+        />
         <WinLossCard
           wonCount={metrics.wonCount}
           lostCount={metrics.lostCount}
@@ -929,12 +993,38 @@ export function DashboardContent() {
           wonDeals={metrics.wonDeals}
           lostDeals={metrics.lostDeals}
           delay={120}
+          {...(hasMenuAccess(WIN_LOSS_REPORT_MENU_KEY) && {
+            onOpen: () => navigate(WIN_LOSS_REPORT_PATH),
+            openLabel: "Open the Win/Loss Analysis Report",
+          })}
         />
       </div>
 
       <div className="grid items-start gap-5 sm:grid-cols-2 xl:grid-cols-4">
-        <BarListCard title="Value by owner (won opportunities)" icon={User} rows={metrics.valueByOwner} valueFormatter={formatMoney} barClassName={WON_BAR_CLASS} delay={0} />
-        <BarListCard title="Top clients by value (won opportunities)" icon={Building2} rows={metrics.topClients} valueFormatter={formatMoney} barClassName={WON_BAR_CLASS} delay={60} />
+        <BarListCard
+          title="Value by owner (won opportunities)"
+          icon={User}
+          rows={metrics.valueByOwner}
+          valueFormatter={formatMoney}
+          barClassName={WON_BAR_CLASS}
+          delay={0}
+          {...(hasMenuAccess(OPPORTUNITY_OWNER_REPORT_MENU_KEY) && {
+            onOpen: () => navigate(OPPORTUNITY_OWNER_REPORT_PATH),
+            openLabel: "Open the Opportunity by Owner Report",
+          })}
+        />
+        <BarListCard
+          title="Top clients by value (won opportunities)"
+          icon={Building2}
+          rows={metrics.topClients}
+          valueFormatter={formatMoney}
+          barClassName={WON_BAR_CLASS}
+          delay={60}
+          {...(hasMenuAccess(OPPORTUNITY_CLIENT_REPORT_MENU_KEY) && {
+            onOpen: () => navigate(OPPORTUNITY_CLIENT_REPORT_PATH),
+            openLabel: "Open the Opportunity by Client Report",
+          })}
+        />
         <BarListCard
           title="Conversion % by owner"
           icon={Target}

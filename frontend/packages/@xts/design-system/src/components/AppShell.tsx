@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowUp,
   BadgeCheck,
+  BarChart3,
   Bell,
   Briefcase,
   Building2,
@@ -494,15 +495,15 @@ function AdminNavGroup({
 // Opportunity navigation requires the parent and each child's own View grant.
 function OpportunityMenuLink({
   pathname,
+  open: opportunityOpen,
+  onOpenChange: setOpportunityOpen,
 }: {
   pathname: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const { hasPermission } = useAuth();
   const onOpportunity = pathname === "/opportunity" || pathname.startsWith("/opportunity/");
-  const [opportunityOpen, setOpportunityOpen] = useState(onOpportunity);
-  useEffect(() => {
-    if (onOpportunity) setOpportunityOpen(true);
-  }, [pathname, onOpportunity]);
   const { data, error, loading, refetch } = useQuery<{ menus: OpportunityMenuRecord[] }>(GET_OPPORTUNITY_MENUS, {
     fetchPolicy: "cache-and-network",
   });
@@ -541,6 +542,58 @@ function OpportunityMenuLink({
       </SidebarMenuSub>
       </CollapsibleContent>
     </SidebarMenuItem>
+    </Collapsible>
+  );
+}
+
+// Reports group: its submenus come from mst_menus (children of the "reports"
+// menu), so a new report only needs a Menu Master row with a Route Path plus
+// a role grant. Hidden when the role can see none of them.
+function ReportsMenuLink({
+  pathname,
+  hasMenuAccess,
+  open: reportsOpen,
+  onOpenChange: setReportsOpen,
+}: {
+  pathname: string;
+  hasMenuAccess: (menuKey: string) => boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { data } = useQuery<{ menus: NavMenuNode[] }>(GET_NAV_MENUS, { fetchPolicy: "cache-and-network" });
+  const reportsMenu = (data?.menus ?? []).find((menu) => menu.menuKey === "reports");
+  const tree = reportsMenu ? filterAccessibleTree(reportsMenu, hasMenuAccess) : null;
+  const reports = tree?.children ?? [];
+  if (!tree || reports.length === 0) return null;
+
+  return (
+    <Collapsible open={reportsOpen} onOpenChange={setReportsOpen} className="group/reports">
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuButton tooltip={tree.menuName} className={NAV_BUTTON_CLASS}>
+            <BarChart3 style={navIconStyle(2)} />
+            <span>{tree.menuName}</span>
+            <ChevronDown className="ml-auto size-4 shrink-0 transition-transform group-data-[state=open]/reports:rotate-180" />
+          </SidebarMenuButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {reports.map((report, index) => {
+              const Icon = resolveDynamicNavIcon(report.icon);
+              return (
+                <SidebarMenuSubItem key={report.menuId}>
+                  <SidebarMenuSubButton asChild isActive={pathname === report.routePath}>
+                    <Link to={report.routePath ?? "#"} title={report.menuName}>
+                      <Icon className="size-4 shrink-0" style={navIconStyle(3 + index)} />
+                      <span>{report.menuName}</span>
+                    </Link>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              );
+            })}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
     </Collapsible>
   );
 }
@@ -585,10 +638,29 @@ function AppSidebar({
   pathname: string;
 }) {
   const onAdmin = pathname.startsWith("/admin");
-  const [adminOpen, setAdminOpen] = useState(onAdmin);
+
+  // Accordion across the top-level sections: only one of Opportunities,
+  // Reports and Administration is open at a time. Going to a page opens its
+  // own section and closes the others; opening one by hand closes the rest.
+  type SidebarSection = "opportunities" | "reports" | "admin";
+  const routeSection: SidebarSection | null =
+    pathname === "/opportunity" || pathname.startsWith("/opportunity/")
+      ? "opportunities"
+      : pathname === "/reports" || pathname.startsWith("/reports/")
+        ? "reports"
+        : onAdmin
+          ? "admin"
+          : null;
+  const [openSection, setOpenSection] = useState<SidebarSection | null>(routeSection);
   useEffect(() => {
-    if (onAdmin) setAdminOpen(true);
-  }, [onAdmin]);
+    setOpenSection(routeSection);
+  }, [routeSection]);
+  const sectionProps = (section: SidebarSection) => ({
+    open: openSection === section,
+    onOpenChange: (open: boolean) => setOpenSection(open ? section : null),
+  });
+  const adminOpen = openSection === "admin";
+  const setAdminOpen = sectionProps("admin").onOpenChange;
   const showDynamicPreview = useDevNavPreview();
 
   // Accordion: at most one Administration sub-group open at a time. Landing
@@ -638,7 +710,9 @@ function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
 
-          <OpportunityMenuLink pathname={pathname} />
+          <OpportunityMenuLink pathname={pathname} {...sectionProps("opportunities")} />
+
+          <ReportsMenuLink pathname={pathname} hasMenuAccess={hasMenuAccess} {...sectionProps("reports")} />
 
           {can("admin") && (
             <Collapsible open={adminOpen} onOpenChange={setAdminOpen} className="group/admin">
