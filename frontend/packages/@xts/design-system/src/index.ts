@@ -77,6 +77,8 @@ export * from "./components/OpportunityIndustryReport";
 export * from "./components/OpportunityOwnerReport";
 export * from "./components/OpportunityClientReport";
 export * from "./components/WinLossAnalysisReport";
+export * from "./components/ReportFilters";
+export * from "./lib/reportExport";
 export * from "./components/LogActivityModal";
 export * from "./components/AuthGate";
 export * from "./components/LoginGate";

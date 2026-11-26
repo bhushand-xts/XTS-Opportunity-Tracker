@@ -214,7 +214,7 @@ CREATE UNIQUE INDEX ux_mst_industry_industry_name ON mst_industry (LOWER(industr
 
 -- Client (Client Master) — a client/account and its contact people. Was
 -- already live (predates this documentation) — definitions here match the
--- live database exactly, including street_address's unusually short limit.
+-- live database exactly.
 -- Same tracker convention as tbl_reason_codes: archive the previous row on
 -- update/delete. No foreign key back to the master, so history survives deletion.
 CREATE TABLE mst_client (
@@ -226,7 +226,7 @@ CREATE TABLE mst_client (
   city VARCHAR(100),
   state VARCHAR(100),
   country VARCHAR(100),
-  street_address VARCHAR(20),
+  street_address VARCHAR(500),
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,
@@ -246,7 +246,7 @@ CREATE TABLE mst_client_tracker (
   city VARCHAR(100),
   state VARCHAR(100),
   country VARCHAR(100),
-  street_address VARCHAR(20),
+  street_address VARCHAR(500),
   created_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_by INTEGER,
   updated_dt TIMESTAMP,

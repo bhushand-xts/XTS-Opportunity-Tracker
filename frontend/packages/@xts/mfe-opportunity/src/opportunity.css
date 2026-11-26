@@ -9,6 +9,7 @@
    still clips anything that slips past that and would otherwise create a
    second, page-level horizontal scrollbar alongside .opp-board's own. */
 .opportunity-root { min-width: 0; overflow-x: clip; color: hsl(var(--foreground)); background: #f5f5fc; min-height: calc(100dvh - 56px); display: flex; flex-direction: column; }
+.opportunity-root.opportunity-summary-root { height: 100%; min-height: 0; flex: 1 1 0; overflow: hidden; }
 .opportunity-root > .opp-page { flex: 1 1 auto; min-height: 0; }
 .opp-page { padding: 14px 20px; width: 100%; margin-inline: auto; min-width: 0; }
 /* The board measures the space below the header and filters; each lane owns
@@ -203,6 +204,8 @@
 }
 @container (max-width: 700px) { .opp-detail-workspace .opp-overview, .opp-detail-workspace .opp-assignment { grid-template-columns: minmax(0,1fr); } }
 .opp-values { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px 12px; margin-top: 8px; }.opp-values dt { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 2px; }.opp-values dd { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.opp-scope-summary .opp-values:first-of-type > div:first-child { grid-column: 1 / -1; min-width: 0; }
+.opp-scope-summary .opp-values:first-of-type > div:first-child dd { display: -webkit-box; height: 4.5em; max-height: 4.5em; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 /* Use the panel's width, rather than the viewport, to keep the solicitation compact. */
 .opp-solicitation { container: opp-solicitation / inline-size; }
 .opp-panel.opp-solicitation > :first-child { padding: 8px 12px; }

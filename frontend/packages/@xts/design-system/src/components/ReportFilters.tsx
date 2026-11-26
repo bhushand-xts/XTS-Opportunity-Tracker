@@ -191,10 +191,13 @@ export function ReportFiltersCard({
   idPrefix,
   owners,
   clients,
+  showOwner = true,
   onApply,
 }: {
   idPrefix: string;
   owners: ReportOwnerOption[];
+  /** Hide Owner for reports whose only filter is the date range. */
+  showOwner?: boolean;
   /** When given, a Client multi-select is shown after Owner. */
   clients?: ReportClientOption[];
   onApply: (filters: ReportFilterValues) => void;
@@ -257,7 +260,7 @@ export function ReportFiltersCard({
           </>
         )}
 
-        <div className="grid w-full gap-1.5 sm:w-64">
+        {showOwner && <div className="grid w-full gap-1.5 sm:w-64">
           <Label>Owner</Label>
           <MultiSelectFilter
             options={owners}
@@ -266,7 +269,7 @@ export function ReportFiltersCard({
             allLabel="All Owners"
             noun="owners"
           />
-        </div>
+        </div>}
 
         {clients && (
           <div className="grid w-full gap-1.5 sm:w-64">

@@ -438,12 +438,12 @@ export function SalesConversionReport() {
               <TableRow className="bg-muted/50">
                 <TableHead className="w-16 pl-6">Sr. No.</TableHead>
                 <TableHead>Owner</TableHead>
-                <TableHead className="text-right">Total Opportunities</TableHead>
-                <TableHead className="text-right">Open</TableHead>
-                <TableHead className="text-right">Won</TableHead>
-                <TableHead className="text-right">Lost</TableHead>
-                <TableHead className="text-right">No-Bid / Declined</TableHead>
-                <TableHead className="pr-6 text-right">Conversion %</TableHead>
+                <TableHead className="text-center">Total Opportunities</TableHead>
+                <TableHead className="text-center">Open</TableHead>
+                <TableHead className="text-center">Won</TableHead>
+                <TableHead className="text-center">Lost</TableHead>
+                <TableHead className="text-center">No-Bid / Declined</TableHead>
+                <TableHead className="pr-6 text-center">Conversion %</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -451,13 +451,13 @@ export function SalesConversionReport() {
                 <TableRow key={row.ownerId}>
                   <TableCell className="pl-6 text-muted-foreground">{index + 1}</TableCell>
                   <TableCell className="font-medium">{row.owner}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.total}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.open}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.won}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.lost}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.declined}</TableCell>
+                  <TableCell className="text-center tabular-nums">{row.total}</TableCell>
+                  <TableCell className="text-center tabular-nums">{row.open}</TableCell>
+                  <TableCell className="text-center tabular-nums">{row.won}</TableCell>
+                  <TableCell className="text-center tabular-nums">{row.lost}</TableCell>
+                  <TableCell className="text-center tabular-nums">{row.declined}</TableCell>
                   <TableCell
-                    className="pr-6 text-right font-semibold tabular-nums"
+                    className="pr-6 text-center font-semibold tabular-nums"
                     title={row.won + row.lost ? undefined : "No won or lost opportunities yet"}
                   >
                     {formatPercent(conversionPercent(row.won, row.lost))}
@@ -469,12 +469,12 @@ export function SalesConversionReport() {
               <TableRow>
                 <TableCell className="pl-6" />
                 <TableCell className="font-semibold">Total</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{totals.total}</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{totals.open}</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{totals.won}</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{totals.lost}</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{totals.declined}</TableCell>
-                <TableCell className="pr-6 text-right font-semibold tabular-nums">
+                <TableCell className="text-center font-semibold tabular-nums">{totals.total}</TableCell>
+                <TableCell className="text-center font-semibold tabular-nums">{totals.open}</TableCell>
+                <TableCell className="text-center font-semibold tabular-nums">{totals.won}</TableCell>
+                <TableCell className="text-center font-semibold tabular-nums">{totals.lost}</TableCell>
+                <TableCell className="text-center font-semibold tabular-nums">{totals.declined}</TableCell>
+                <TableCell className="pr-6 text-center font-semibold tabular-nums">
                   {formatPercent(conversionPercent(totals.won, totals.lost))}
                 </TableCell>
               </TableRow>

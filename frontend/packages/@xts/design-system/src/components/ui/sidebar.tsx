@@ -147,7 +147,7 @@ const SidebarProvider = React.forwardRef<
               } as React.CSSProperties
             }
             className={cn(
-              "group/sidebar-wrapper flex min-h-svh w-full has-[[data-variant=inset]]:bg-sidebar",
+              "group/sidebar-wrapper flex h-svh min-h-0 w-full overflow-hidden has-[[data-variant=inset]]:bg-sidebar",
               className
             )}
             ref={ref}
@@ -336,7 +336,7 @@ const SidebarInset = React.forwardRef<
         // page with wide, non-shrinking content (e.g. a horizontally-scrolling board)
         // forces this whole flex row wider than the viewport instead of scrolling
         // internally, dragging the sidebar itself off-screen.
-        "relative flex w-full min-w-0 flex-1 flex-col bg-background",
+        "relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col bg-background",
         "md:peer-data-[variant=inset]:m-2 md:peer-data-[state=collapsed]:peer-data-[variant=inset]:ml-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow",
         className
       )}

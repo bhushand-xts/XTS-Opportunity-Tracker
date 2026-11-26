@@ -34,6 +34,7 @@ import { OPPORTUNITY_INDUSTRY_REPORT_MENU_KEY, OPPORTUNITY_INDUSTRY_REPORT_PATH 
 import { OPPORTUNITY_OWNER_REPORT_MENU_KEY, OPPORTUNITY_OWNER_REPORT_PATH } from "./OpportunityOwnerReport";
 import { OPPORTUNITY_CLIENT_REPORT_MENU_KEY, OPPORTUNITY_CLIENT_REPORT_PATH } from "./OpportunityClientReport";
 import { WIN_LOSS_REPORT_MENU_KEY, WIN_LOSS_REPORT_PATH } from "./WinLossAnalysisReport";
+import { SALES_CONVERSION_REPORT_MENU_KEY } from "./SalesConversionReport";
 
 // stageHistory is a per-opportunity field resolver (see
 // opportunity.resolver.ts), so it works on the bulk `opportunities` query
@@ -172,9 +173,14 @@ function isAtApprovalGate(opportunity: ReportOpportunity) {
 
 function daysSince(dateString: string | null) {
   if (!dateString) return 0;
-  const timestamp = new Date(dateString).getTime();
-  if (Number.isNaN(timestamp)) return 0;
-  return Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
+  const reachedAt = new Date(dateString);
+  if (Number.isNaN(reachedAt.getTime())) return 0;
+  const now = new Date();
+  // Count local calendar-day boundaries, not completed 24-hour periods.
+  // For example, an approval sent yesterday at 6 PM is 1 day pending today.
+  const reachedDay = Date.UTC(reachedAt.getFullYear(), reachedAt.getMonth(), reachedAt.getDate());
+  const currentDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.floor((currentDay - reachedDay) / 86_400_000));
 }
 
 function ownerName(users: ReportUser[], ownerId: number | null) {
@@ -784,9 +790,13 @@ function BarListCard({
 function PendingApprovalsCard({
   rows,
   delay = 0,
+  onOpen,
+  openLabel,
 }: {
   rows: Array<{ opportunityId: number; name: string; daysWaiting: number }>;
   delay?: number;
+  onOpen?: () => void;
+  openLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -797,6 +807,8 @@ function PendingApprovalsCard({
       className={expanded ? "" : CARD_HEIGHT}
       expanded={expanded}
       onToggleExpanded={() => setExpanded((value) => !value)}
+      onOpen={onOpen}
+      openLabel={openLabel}
     >
       {rows.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">Nothing waiting right now.</p>
@@ -941,7 +953,7 @@ export function DashboardContent() {
       style={{ background: "linear-gradient(160deg, hsl(var(--stage-1) / 0.05), transparent 35%, hsl(var(--stage-5) / 0.05))" }}
     >
       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Total opportunities" value={String(metrics.total)} icon={Handshake} accent={ACCENT.blue} delay={0} to="/opportunity/reports/summary" />
+        <StatTile label="Total opportunities" value={String(metrics.total)} icon={Handshake} accent={ACCENT.blue} delay={0} to="/reports/opportunity_summary" />
         <StatTile label="Won" value={String(metrics.wonCount)} icon={Trophy} accent={ACCENT.green} delay={40} />
         <StatTile label="Lost" value={String(metrics.lostCount)} icon={XCircle} accent={ACCENT.red} delay={80} />
         <BreakdownStatTile
@@ -1035,11 +1047,20 @@ export function DashboardContent() {
           rows={metrics.conversionByOwner}
           valueFormatter={(value) => `${value.toFixed(1)}%`}
           delay={120}
+          {...(hasMenuAccess(SALES_CONVERSION_REPORT_MENU_KEY) && {
+            onOpen: () => navigate("/reports/sales-conversion"),
+            openLabel: "Open the Sales Conversion Report",
+          })}
         />
-        <PendingApprovalsCard rows={metrics.pendingWithWait} delay={180} />
+        <PendingApprovalsCard
+          rows={metrics.pendingWithWait}
+          delay={180}
+          onOpen={() => navigate('/reports/opportunity_pending_approval')}
+          openLabel="Open the Pending Approvals Report"
+        />
       </div>
 
-      <ReportCard title={`Opportunities created per month (${metrics.fyLabel})`} icon={TrendingUp} delay={240}>
+      <ReportCard title={`Opportunities created per month (${metrics.fyLabel})`} icon={TrendingUp} delay={240} onOpen={() => navigate('/reports/trend_report')} openLabel="Open the Trend Report">
           <ChartContainer config={MONTH_CHART_CONFIG} className="aspect-auto h-[300px] w-full">
             <BarChart data={metrics.createdPerMonth} margin={{ left: 0, right: 12, top: 20 }} barCategoryGap="22%">
               <defs>

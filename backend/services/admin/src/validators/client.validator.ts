@@ -1,14 +1,13 @@
 import { validationFailed } from '../../../../shared/errors/graphqlErrors';
 
 // Input and business validation for clients. Column sizes mirror the live
-// mst_client / tbl_client_contact_person tables exactly (checked against the
-// database directly — street_address really is this short, not a typo).
+// mst_client / tbl_client_contact_person tables exactly.
 const MAX_CLIENT_NAME = 255;
 const MAX_WEBSITE = 500;
 const MAX_CITY = 100;
 const MAX_STATE = 100;
 const MAX_COUNTRY = 100;
-const MAX_STREET_ADDRESS = 20;
+const MAX_STREET_ADDRESS = 500;
 
 const MAX_CONTACT_NAME = 255;
 const MAX_TITLE_ROLE = 150;

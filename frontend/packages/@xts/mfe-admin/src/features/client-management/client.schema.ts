@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { ROLE_IN_DECISION_OTHER } from "@xts/api-contracts";
 
-// Limits match the live column sizes of mst_client / tbl_client_contact_person
-// (checked directly against the database — street_address really is this short).
+// Limits match the live column sizes of mst_client / tbl_client_contact_person.
 // Every field is required except website; roleInDecisionOther is required
 // only when "Other" is the selected role (enforced below via refine).
 const contactSchema = z
@@ -32,7 +31,7 @@ export const clientFormSchema = z.object({
   city: z.string().trim().min(1, "City is required").max(100, "City must be at most 100 characters"),
   state: z.string().trim().min(1, "State / province is required").max(100, "State / province must be at most 100 characters"),
   country: z.string().trim().min(1, "Country is required").max(100, "Country must be at most 100 characters"),
-  streetAddress: z.string().trim().min(1, "Street address is required").max(20, "Street address must be at most 20 characters"),
+  streetAddress: z.string().trim().min(1, "Street address is required").max(500, "Street address must be at most 500 characters"),
   isActive: z.boolean(),
   contacts: z.array(contactSchema).min(1, "At least one contact is required"),
 });

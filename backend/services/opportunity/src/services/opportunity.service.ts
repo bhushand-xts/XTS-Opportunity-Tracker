@@ -290,8 +290,8 @@ async function createRfpIntakeOpportunity(input: repository.RfpIntakeOpportunity
       !input.client.city?.trim() || !input.client.state?.trim() || !input.client.country?.trim()) {
     throw validationFailed("Complete the client details before saving the opportunity.");
   }
-  if ((input.client.streetAddress?.length ?? 0) > 20) {
-    throw validationFailed("Client street address must be 20 characters or fewer.");
+  if ((input.client.streetAddress?.length ?? 0) > 500) {
+    throw validationFailed("Client street address must be 500 characters or fewer.");
   }
   if (!Array.isArray(input.contacts) || input.contacts.length === 0 || input.contacts.some((contact) =>
     !contact.fullName?.trim() || !contact.titleRole?.trim() || !contact.email?.trim() ||
@@ -337,8 +337,8 @@ async function updateRfpIntakeOpportunity(
       !input.client.city?.trim() || !input.client.state?.trim() || !input.client.country?.trim()) {
     throw validationFailed("Complete the opportunity and client details before saving.");
   }
-  if ((input.client.streetAddress?.length ?? 0) > 20) {
-    throw validationFailed("Client street address must be 20 characters or fewer.");
+  if ((input.client.streetAddress?.length ?? 0) > 500) {
+    throw validationFailed("Client street address must be 500 characters or fewer.");
   }
   if (!Array.isArray(input.contacts) || input.contacts.length === 0 || input.contacts.some((contact) =>
     !contact.fullName?.trim() || !contact.titleRole?.trim() || !contact.email?.trim() ||
@@ -669,16 +669,15 @@ async function saveDirectoryClient(id: number | null, input: repository.RfpIntak
   const fields: [string, string | null | undefined, number, boolean][] = [
     ['Client name', input.clientName, 255, true], ['Website', input.website, 500, false],
     ['City', input.city, 100, true], ['State', input.state, 100, true],
-    ['Country', input.country, 100, true], ['Street address', input.streetAddress, 20, false],
+    ['Country', input.country, 100, true], ['Street address', input.streetAddress, 500, false],
   ];
   for (const [label, value, max, required] of fields) {
     if ((required && !value?.trim()) || (value?.trim().length ?? 0) > max) {
       throw validationFailed(`${label} ${required ? 'is required and ' : ''}must be at most ${max} characters.`);
     }
   }
-  if (!Number.isInteger(input.accountTypeId) || input.accountTypeId <= 0) throw validationFailed('Account type is required.');
-  if (!Number.isInteger(input.industryId) || input.industryId <= 0) throw validationFailed('Sector is required.');
-  if (input.website && !/^https?:\/\/\S+$/i.test(input.website.trim())) throw validationFailed("Enter a valid HTTP or HTTPS website URL.");
+  if (!Number.isInteger(input.accountTypeId) || Number(input.accountTypeId) <= 0) throw validationFailed('Account type is required.');
+  if (!Number.isInteger(input.industryId) || Number(input.industryId) <= 0) throw validationFailed('Sector is required.');
   if (!contacts.length) throw validationFailed("A primary contact is required.");
   const emails = new Set<string>();
   for (const contact of contacts) {

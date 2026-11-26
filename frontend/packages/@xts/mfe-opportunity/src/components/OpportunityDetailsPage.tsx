@@ -102,7 +102,7 @@ function SolicitationPanel({ opportunity: o }: { opportunity: OpportunityDetail 
 /** Compact scope card; full summary text plus the styled Alignment/Risks lists (same look as the Scope tab) live in the drawer. */
 function ScopeSummaryPanel({ o }: { o: OpportunityDetail }) {
   const scope = o.scope;
-  return <Panel title="Saved scope summary" tone="rose" accentIcon headerRight={<div className="flex shrink-0 items-center gap-2">
+  return <Panel title="Saved scope summary" tone="rose" accentIcon className="opp-scope-summary" headerRight={<div className="flex shrink-0 items-center gap-2">
     {scope && <DetailDrawer title="Scope & assessment" description="Full scope summary, alignment and risk items as saved.">
       <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon><p className="whitespace-pre-wrap break-words text-sm">{scope.summary || 'Not provided'}</p></Panel><div className="mt-4"><ScopeReadOnly scope={scope} /></div>
     </DetailDrawer>}
