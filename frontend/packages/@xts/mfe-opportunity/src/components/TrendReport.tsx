@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
 import {
   ReportCardHeader,
+  filterReportRows,
   ReportFiltersCard,
   REPORT_CARD_SHADOW,
   Skeleton,
@@ -84,7 +85,9 @@ export function TrendReport() {
   const report = useQuery<{ opportunities: TrendOpportunity[] }>(TREND_REPORT_QUERY, { fetchPolicy: 'cache-and-network' });
   const [applied, setApplied] = useState<ReportFilterValues>({ range: 'this_year', startDate: '', endDate: '', ownerIds: [], clientIds: [] });
   const period = useMemo(() => resolveReportRange(applied), [applied]);
-  const rows = useMemo(() => trendRows(report.data?.opportunities ?? [], applied), [report.data, applied]);
+  const [search, setSearch] = useState('');
+  const allRows = useMemo(() => trendRows(report.data?.opportunities ?? [], applied), [report.data, applied]);
+  const rows = useMemo(() => filterReportRows(allRows, search, row => `${row.month} ${row.quarter}`), [allRows, search]);
   const exportTable = (): ExportTable => ({
     title: 'Trend Report',
     subtitle: [`Range: ${applied.range.replace(/_/g, ' ')} (${formatReportDate(period.start)} – ${formatReportDate(period.end)})`],
@@ -99,7 +102,7 @@ export function TrendReport() {
   return <div className="flex h-full min-h-0 flex-col gap-6 overflow-hidden p-6 lg:p-8">
     <div className="shrink-0"><ReportFiltersCard idPrefix="trend-report" owners={[]} showOwner={false} onApply={setApplied} /></div>
     <div className={`flex min-h-0 flex-1 flex-col overflow-hidden card-surface ${REPORT_CARD_SHADOW}`}>
-      <ReportCardHeader icon={BarChart3} title="Opportunities Created by Month" period={period} onExcel={() => downloadExcel(exportTable())} onPdf={() => downloadPdf(exportTable())} exportDisabled={rows.length === 0} />
+      <ReportCardHeader icon={BarChart3} title="Opportunities Created by Month" period={period} onExcel={() => downloadExcel(exportTable())} onPdf={() => downloadPdf(exportTable())} exportDisabled={rows.length === 0} search={{ value: search, onChange: setSearch, placeholder: 'Search month or quarter' }} />
       {report.error ? <div className="p-6"><Notice error={report.error.message} retry={() => void report.refetch()} /></div> : report.loading && !report.data ? <div className="space-y-2 p-6">{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-10 w-full" />)}</div> : <div className="min-h-0 flex-1 overflow-auto">
         <Table className="min-w-[560px]">
           <TableHeader className="sticky top-0 z-10 bg-muted/70"><TableRow>

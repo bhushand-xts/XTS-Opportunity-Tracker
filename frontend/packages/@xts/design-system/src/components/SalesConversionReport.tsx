@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Skeleton } from "./ui/skeleton";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "./ui/table";
+import { filterReportRows, ReportSearch } from "./ReportFilters";
 import { useAuth } from "@/lib/auth";
 import { useSetPageTitle } from "@/lib/pageTitle";
 import { downloadExcel, downloadPdf, type ExportColumn, type ExportTable } from "@/lib/reportExport";
@@ -213,6 +214,7 @@ export function SalesConversionReport() {
 
   const [draft, setDraft] = useState<AppliedFilters>({ range: "this_year", startDate: "", endDate: "", ownerIds: [] });
   const [applied, setApplied] = useState<AppliedFilters>(draft);
+  const [search, setSearch] = useState("");
 
   const opportunities = useMemo(
     () => (data?.opportunities ?? []).filter((opportunity) => opportunity.isActive !== false),
@@ -239,7 +241,7 @@ export function SalesConversionReport() {
 
   const period = resolveRange(applied);
 
-  const rows = useMemo<OwnerRow[]>(() => {
+  const allRows = useMemo<OwnerRow[]>(() => {
     const users = data?.userList ?? [];
     const byOwner = new Map<number, OwnerRow>();
     for (const opportunity of opportunities) {
@@ -268,6 +270,9 @@ export function SalesConversionReport() {
     // period is derived from `applied`, so `applied` covers it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opportunities, data, applied]);
+
+  // Live search narrows the grid, its totals and the downloads together.
+  const rows = useMemo(() => filterReportRows(allRows, search, (row) => row.owner), [allRows, search]);
 
   const totals = rows.reduce(
     (sum, row) => ({
@@ -387,6 +392,9 @@ export function SalesConversionReport() {
         <div className="flex flex-wrap items-center gap-2 px-6 py-3.5" style={CARD_HEADER_STYLE}>
           <Table2 className="size-5 shrink-0 text-primary" strokeWidth={2.5} fill="currentColor" fillOpacity={0.2} />
           <h2 className="flex-1 text-[15px] font-semibold tracking-tight text-foreground">Owner-wise Sales Conversion</h2>
+          <div className="mr-2 w-full sm:w-auto">
+            <ReportSearch value={search} onChange={setSearch} placeholder="Search owner" />
+          </div>
           <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <CalendarRange className="size-3.5" />
             {formatDate(period.start)} – {formatDate(period.end)}

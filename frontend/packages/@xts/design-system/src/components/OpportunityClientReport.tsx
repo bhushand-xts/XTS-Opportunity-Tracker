@@ -7,6 +7,7 @@ import {
   DEFAULT_REPORT_FILTERS,
   REPORT_CARD_SHADOW,
   ReportCardHeader,
+  filterReportRows,
   ReportFiltersCard,
   isWithinReportRange,
   isoReportDate,
@@ -108,6 +109,7 @@ export function OpportunityClientReport() {
   });
 
   const [applied, setApplied] = useState<ReportFilterValues>(DEFAULT_REPORT_FILTERS);
+  const [search, setSearch] = useState("");
 
   const opportunities = useMemo(
     () => (data?.opportunities ?? []).filter((opportunity) => opportunity.isActive !== false),
@@ -129,7 +131,7 @@ export function OpportunityClientReport() {
     return [...byId].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [clientData, opportunities]);
 
-  const rows = useMemo<ClientRow[]>(() => {
+  const allRows = useMemo<ClientRow[]>(() => {
     const byClient = new Map<number, ClientRow>();
     for (const opportunity of opportunities) {
       if (opportunity.clientId == null) continue;
@@ -165,6 +167,9 @@ export function OpportunityClientReport() {
     // Top clients by won value first, like the dashboard card.
     return [...byClient.values()].sort((a, b) => b.wonValue - a.wonValue || a.client.localeCompare(b.client));
   }, [opportunities, applied, period]);
+
+  // Live search narrows the grid, its totals and the downloads together.
+  const rows = useMemo(() => filterReportRows(allRows, search, row => row.client), [allRows, search]);
 
   const totals = rows.reduce(
     (sum, row) => ({
@@ -214,6 +219,7 @@ export function OpportunityClientReport() {
           onExcel={() => downloadExcel(buildExport())}
           onPdf={() => downloadPdf(buildExport())}
           exportDisabled={rows.length === 0}
+          search={{ value: search, onChange: setSearch, placeholder: "Search client" }}
         />
 
         {error ? (

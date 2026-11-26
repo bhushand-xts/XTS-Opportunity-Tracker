@@ -7,6 +7,7 @@ import {
   DEFAULT_REPORT_FILTERS,
   REPORT_CARD_SHADOW,
   ReportCardHeader,
+  filterReportRows,
   ReportFiltersCard,
   isWithinReportRange,
   isoReportDate,
@@ -95,6 +96,7 @@ export function OpportunityPipelineReport() {
   }>(PIPELINE_REPORT_QUERY, { fetchPolicy: "cache-and-network" });
 
   const [applied, setApplied] = useState<ReportFilterValues>(DEFAULT_REPORT_FILTERS);
+  const [search, setSearch] = useState("");
 
   const opportunities = useMemo(
     () => (data?.opportunities ?? []).filter((opportunity) => opportunity.isActive !== false),
@@ -103,7 +105,7 @@ export function OpportunityPipelineReport() {
   const owners = useMemo(() => reportOwnerOptions(opportunities, data?.userList ?? []), [opportunities, data]);
   const period = useMemo(() => resolveReportRange(applied), [applied]);
 
-  const rows = useMemo<PipelineRow[]>(() => {
+  const allRows = useMemo<PipelineRow[]>(() => {
     // Stages in the stage master's pipeline order; sub-stages by id.
     const stageOrder = new Map<number, number>();
     for (const stage of data?.stagesList ?? []) stageOrder.set(stage.id, stage.displayOrder ?? stage.id);
@@ -129,6 +131,9 @@ export function OpportunityPipelineReport() {
     }
     return [...buckets.values()].sort((a, b) => a.order - b.order || a.subOrder - b.subOrder);
   }, [opportunities, data, applied, period]);
+
+  // Live search narrows the grid, its totals and the downloads together.
+  const rows = useMemo(() => filterReportRows(allRows, search, row => `${row.stage} ${row.subStage}`), [allRows, search]);
 
   // Rows grouped by stage so the Stage cell spans its sub-stages in the grid.
   const groups = useMemo<StageGroup[]>(() => {
@@ -179,6 +184,7 @@ export function OpportunityPipelineReport() {
           onExcel={() => downloadExcel(buildExport())}
           onPdf={() => downloadPdf(buildExport())}
           exportDisabled={rows.length === 0}
+          search={{ value: search, onChange: setSearch, placeholder: "Search stage or substage" }}
         />
 
         {error ? (

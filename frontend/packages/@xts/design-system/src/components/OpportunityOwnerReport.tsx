@@ -7,6 +7,7 @@ import {
   DEFAULT_REPORT_FILTERS,
   REPORT_CARD_SHADOW,
   ReportCardHeader,
+  filterReportRows,
   ReportFiltersCard,
   isWithinReportRange,
   isoReportDate,
@@ -92,6 +93,7 @@ export function OpportunityOwnerReport() {
   );
 
   const [applied, setApplied] = useState<ReportFilterValues>(DEFAULT_REPORT_FILTERS);
+  const [search, setSearch] = useState("");
 
   const opportunities = useMemo(
     () => (data?.opportunities ?? []).filter((opportunity) => opportunity.isActive !== false),
@@ -100,7 +102,7 @@ export function OpportunityOwnerReport() {
   const owners = useMemo(() => reportOwnerOptions(opportunities, data?.userList ?? []), [opportunities, data]);
   const period = useMemo(() => resolveReportRange(applied), [applied]);
 
-  const rows = useMemo<OwnerRow[]>(() => {
+  const allRows = useMemo<OwnerRow[]>(() => {
     const users = data?.userList ?? [];
     const byOwner = new Map<number, OwnerRow>();
     for (const opportunity of opportunities) {
@@ -135,6 +137,9 @@ export function OpportunityOwnerReport() {
     }
     return [...byOwner.values()].sort((a, b) => a.owner.localeCompare(b.owner));
   }, [opportunities, data, applied, period]);
+
+  // Live search narrows the grid, its totals and the downloads together.
+  const rows = useMemo(() => filterReportRows(allRows, search, row => row.owner), [allRows, search]);
 
   const totals = rows.reduce(
     (sum, row) => ({
@@ -184,6 +189,7 @@ export function OpportunityOwnerReport() {
           onExcel={() => downloadExcel(buildExport())}
           onPdf={() => downloadPdf(buildExport())}
           exportDisabled={rows.length === 0}
+          search={{ value: search, onChange: setSearch, placeholder: "Search owner" }}
         />
 
         {error ? (

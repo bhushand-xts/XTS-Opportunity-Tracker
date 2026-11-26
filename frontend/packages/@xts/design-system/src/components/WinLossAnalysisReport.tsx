@@ -7,6 +7,7 @@ import {
   DEFAULT_REPORT_FILTERS,
   REPORT_CARD_SHADOW,
   ReportCardHeader,
+  filterReportRows,
   ReportFiltersCard,
   isWithinReportRange,
   isoReportDate,
@@ -99,6 +100,7 @@ export function WinLossAnalysisReport() {
   );
 
   const [applied, setApplied] = useState<ReportFilterValues>(DEFAULT_REPORT_FILTERS);
+  const [search, setSearch] = useState("");
 
   const opportunities = useMemo(
     () => (data?.opportunities ?? []).filter((opportunity) => opportunity.isActive !== false),
@@ -107,7 +109,7 @@ export function WinLossAnalysisReport() {
   const owners = useMemo(() => reportOwnerOptions(opportunities, data?.userList ?? []), [opportunities, data]);
   const period = useMemo(() => resolveReportRange(applied), [applied]);
 
-  const rows = useMemo<WinLossRow[]>(() => {
+  const allRows = useMemo<WinLossRow[]>(() => {
     return opportunities
       .filter(
         (opportunity) =>
@@ -127,6 +129,9 @@ export function WinLossAnalysisReport() {
       // Most recently closed first.
       .sort((a, b) => b.closedAt - a.closedAt || a.opportunity.localeCompare(b.opportunity));
   }, [opportunities, applied, period]);
+
+  // Live search narrows the grid, its totals and the downloads together.
+  const rows = useMemo(() => filterReportRows(allRows, search, row => `${row.opportunity} ${row.client} ${row.result} ${row.comment ?? ""}`), [allRows, search]);
 
   const totals = rows.reduce(
     (sum, row) => ({
@@ -171,6 +176,7 @@ export function WinLossAnalysisReport() {
           onExcel={() => downloadExcel(buildExport())}
           onPdf={() => downloadPdf(buildExport())}
           exportDisabled={rows.length === 0}
+          search={{ value: search, onChange: setSearch, placeholder: "Search opportunity, client or comment" }}
         />
 
         {error ? (

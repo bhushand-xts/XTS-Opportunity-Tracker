@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarRange, ChevronDown, FileSpreadsheet, FileText, Filter, type LucideIcon } from "lucide-react";
+import { CalendarRange, ChevronDown, FileSpreadsheet, FileText, Filter, Search, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
@@ -295,6 +295,39 @@ export function ReportFiltersCard({
 }
 
 /** Light card header: icon + title, and optionally the period and Excel / PDF buttons. */
+export interface ReportSearchProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}
+
+/** Live search over the rows already in the grid; sits in the grid's header bar. */
+export function ReportSearch({ value, onChange, placeholder = "Search…" }: ReportSearchProps) {
+  return (
+    <div className="relative w-full sm:w-60">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        type="search"
+        aria-label={placeholder}
+        placeholder={placeholder}
+        className="h-8 bg-background pl-8 text-sm"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+/** Rows whose text contains every word typed in the search box (case-insensitive). */
+export function filterReportRows<T>(rows: T[], search: string, text: (row: T) => string): T[] {
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return rows;
+  return rows.filter((row) => {
+    const haystack = text(row).toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  });
+}
+
 export function ReportCardHeader({
   icon: Icon,
   title,
@@ -302,6 +335,7 @@ export function ReportCardHeader({
   onExcel,
   onPdf,
   exportDisabled,
+  search,
 }: {
   icon: LucideIcon;
   title: ReactNode;
@@ -309,11 +343,14 @@ export function ReportCardHeader({
   onExcel?: () => void;
   onPdf?: () => void;
   exportDisabled?: boolean;
+  /** When given, a search box is shown in the header, before the date range. */
+  search?: ReportSearchProps;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 px-6 py-3.5" style={REPORT_CARD_HEADER_STYLE}>
       <Icon className="size-5 shrink-0 text-primary" strokeWidth={2.5} fill="currentColor" fillOpacity={0.2} />
       <h2 className="flex-1 text-[15px] font-semibold tracking-tight text-foreground">{title}</h2>
+      {search && <div className="mr-2 w-full sm:w-auto"><ReportSearch {...search} /></div>}
       {period && (
         <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <CalendarRange className="size-3.5" />

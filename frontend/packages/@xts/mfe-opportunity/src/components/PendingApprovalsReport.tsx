@@ -1,6 +1,6 @@
 import { gql, useQuery } from '@apollo/client';
 import { useMemo, useState } from 'react';
-import { Eye, Filter, Search, Table2 } from 'lucide-react';
+import { Eye, Filter, Table2 } from 'lucide-react';
 import {
   Button, Input, Label, ReportCardHeader, REPORT_CARD_SHADOW,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -169,12 +169,11 @@ export function PendingApprovalsReport() {
           </Select>
         </div>
         <Button type="submit" className="h-9 px-6" disabled={customInvalid}>Apply</Button>
-        <div className="relative w-full sm:w-60 sm:flex-none"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search pending approvals" className="h-9 pl-9" placeholder="Search opportunity or approver…" value={search} onChange={event => setSearch(event.target.value)} /></div>
         {customError && <p className="w-full text-sm text-destructive">{customError}</p>}
       </form>
     </div>
     <div className={`flex min-h-0 flex-1 flex-col overflow-hidden card-surface ${REPORT_CARD_SHADOW}`}>
-      <ReportCardHeader icon={Table2} title="Pending Approvals" period={appliedPeriod} onExcel={() => downloadExcel(exportTable())} onPdf={() => downloadPdf(exportTable())} exportDisabled={rows.length === 0} />
+      <ReportCardHeader icon={Table2} title="Pending Approvals" period={appliedPeriod} onExcel={() => downloadExcel(exportTable())} onPdf={() => downloadPdf(exportTable())} exportDisabled={rows.length === 0} search={{ value: search, onChange: setSearch, placeholder: 'Search opportunity or approver' }} />
       <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
         <div className="flex h-full min-w-[1180px] flex-col">
           <Table className="w-full table-fixed"><colgroup><col style={{ width: 76 }} /><col style={{ width: 300 }} /><col style={{ width: 300 }} /><col style={{ width: 220 }} /><col style={{ width: 180 }} /><col style={{ width: 130 }} /><col style={{ width: 60 }} /></colgroup><TableHeader><TableRow style={{ background: 'linear-gradient(90deg, hsl(var(--primary) / 0.12), hsl(var(--primary) / 0.04))' }}>

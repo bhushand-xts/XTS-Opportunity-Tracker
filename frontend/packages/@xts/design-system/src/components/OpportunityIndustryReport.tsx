@@ -7,6 +7,7 @@ import {
   DEFAULT_REPORT_FILTERS,
   REPORT_CARD_SHADOW,
   ReportCardHeader,
+  filterReportRows,
   ReportFiltersCard,
   isWithinReportRange,
   isoReportDate,
@@ -92,6 +93,7 @@ export function OpportunityIndustryReport() {
   );
 
   const [applied, setApplied] = useState<ReportFilterValues>(DEFAULT_REPORT_FILTERS);
+  const [search, setSearch] = useState("");
 
   const opportunities = useMemo(
     () => (data?.opportunities ?? []).filter((opportunity) => opportunity.isActive !== false),
@@ -100,7 +102,7 @@ export function OpportunityIndustryReport() {
   const owners = useMemo(() => reportOwnerOptions(opportunities, data?.userList ?? []), [opportunities, data]);
   const period = useMemo(() => resolveReportRange(applied), [applied]);
 
-  const rows = useMemo<IndustryRow[]>(() => {
+  const allRows = useMemo<IndustryRow[]>(() => {
     const byIndustry = new Map<string, IndustryRow>();
     for (const opportunity of opportunities) {
       if (applied.ownerIds.length > 0 && (opportunity.ownerId == null || !applied.ownerIds.includes(opportunity.ownerId))) continue;
@@ -125,6 +127,9 @@ export function OpportunityIndustryReport() {
     // Largest industries first, like the dashboard card.
     return [...byIndustry.values()].sort((a, b) => b.count - a.count || a.industry.localeCompare(b.industry));
   }, [opportunities, applied, period]);
+
+  // Live search narrows the grid, its totals and the downloads together.
+  const rows = useMemo(() => filterReportRows(allRows, search, row => row.industry), [allRows, search]);
 
   const totals = rows.reduce(
     (sum, row) => ({
@@ -174,6 +179,7 @@ export function OpportunityIndustryReport() {
           onExcel={() => downloadExcel(buildExport())}
           onPdf={() => downloadPdf(buildExport())}
           exportDisabled={rows.length === 0}
+          search={{ value: search, onChange: setSearch, placeholder: "Search industry" }}
         />
 
         {error ? (
