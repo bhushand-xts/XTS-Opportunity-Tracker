@@ -102,7 +102,7 @@ function SolicitationPanel({ opportunity: o }: { opportunity: OpportunityDetail 
 /** Compact scope card; full summary text plus the styled Alignment/Risks lists (same look as the Scope tab) live in the drawer. */
 function ScopeSummaryPanel({ o }: { o: OpportunityDetail }) {
   const scope = o.scope;
-  return <Panel title="Saved scope summary" tone="rose" accentIcon headerRight={<div className="flex shrink-0 items-center gap-2">
+  return <Panel title="Saved scope summary" tone="rose" accentIcon className="opp-scope-summary" headerRight={<div className="flex shrink-0 items-center gap-2">
     {scope && <DetailDrawer title="Scope & assessment" description="Full scope summary, alignment and risk items as saved.">
       <Panel title="Scope" tone="violet" icon={ClipboardList} accentIcon><p className="whitespace-pre-wrap break-words text-sm">{scope.summary || 'Not provided'}</p></Panel><div className="mt-4"><ScopeReadOnly scope={scope} /></div>
     </DetailDrawer>}
@@ -218,16 +218,28 @@ export function OpportunityDetailsPage({ review = false }: { review?: boolean })
   const [estimationLayout, setEstimationLayout] = useState<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     if (!estimationLayout) return;
-    const resize = () => {
+    let frame = 0;
+    const measure = () => {
       const height = Math.max(280, Math.floor(window.innerHeight - Math.max(12, estimationLayout.getBoundingClientRect().top) - 16));
-      estimationLayout.style.setProperty('--opp-estimation-height', `${height}px`);
+      const nextHeight = `${height}px`;
+      if (estimationLayout.style.getPropertyValue('--opp-estimation-height') !== nextHeight) {
+        estimationLayout.style.setProperty('--opp-estimation-height', nextHeight);
+      }
+    };
+    const resize = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
     };
     resize();
-    const observer = new ResizeObserver(resize);
-    const page = estimationLayout.closest('.opp-page');
-    page?.querySelectorAll('.opp-detail-heading, .opp-detail-toolbar').forEach(element => observer.observe(element));
     window.addEventListener('resize', resize);
-    return () => { observer.disconnect(); window.removeEventListener('resize', resize); estimationLayout.style.removeProperty('--opp-estimation-height'); };
+    return () => {
+      window.removeEventListener('resize', resize);
+      if (frame) cancelAnimationFrame(frame);
+      estimationLayout.style.removeProperty('--opp-estimation-height');
+    };
   }, [estimationLayout]);
   const estimationDraft = useRef<(() => Estimation) | null>(null);
   const registerDraft = useCallback((reader: (() => Estimation) | null) => { estimationDraft.current = reader; }, []);

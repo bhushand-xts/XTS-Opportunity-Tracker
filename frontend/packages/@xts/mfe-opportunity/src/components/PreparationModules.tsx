@@ -433,7 +433,7 @@ export function EstimationModule({
     setBaseline(JSON.stringify({ assumptions: version.estimation.assumptions, grid: estimationGrid(new Set(restored.phaseIds), new Set(restored.roleCodes), Object.fromEntries(restored.durations.map(item => [item.phaseId, item.weeks])), Object.fromEntries(restored.allocations.map(item => [cellKey(item.phaseId, item.roleCode), item.effort]))) }));
     setRateOverrides({}); setRateTarget(ceoRatesView ? version : null);
     setSubmissionAttempted(false);
-    if (!quiet) toast.info('Estimate opened with its saved rates. Choose Update to save changes to this estimate.');
+    // if (!quiet) toast.info('Estimate opened with its saved rates. Choose Update to save changes to this estimate.', { duration: 1200 });
     return true;
   }
 
@@ -492,7 +492,7 @@ export function EstimationModule({
         {calculationError && <Notice error={calculationError} />}{mutation.error && <Notice error={mutation.error} />}
       </div>
     <SavedEstimationVersions sidebarTarget={sidebarTarget} opportunityId={o.id} revision={draft.revision} editable={editable} saving={mutation.saving || !masters} dirty={dirty} onSave={saveNamedVersion} onLoad={loadVersion} selectedVersion={selectedVersion} onSelectVersion={selectVersion} selectionLocked={o.stageId === 4 && [8, 9].includes(o.subStageId ?? 0)} submittedOnly={!canViewAllEstimations}
-      submitAction={showActions && o.allowedActions.includes('SUBMIT_ESTIMATE') ? <div className={sidebarTarget ? 'w-full [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-full [&_button]:!whitespace-normal' : 'shrink-0 [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-auto [&_button]:!whitespace-nowrap'}><ReviewActions opportunity={o} onSaved={onSubmitted} variant="toolbar" selectedVersion={mutation.saving ? null : selectedVersion} getEstimation={() => {
+      submitAction={showActions && o.allowedActions.includes('SUBMIT_ESTIMATE') ? (hasUnsavedName, currentName) => <div className={sidebarTarget ? 'w-full [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-full [&_button]:!whitespace-normal' : 'shrink-0 [&_button]:!h-9 [&_button]:!min-h-9 [&_button]:!w-auto [&_button]:!whitespace-nowrap'}><ReviewActions opportunity={o} onSaved={onSubmitted} variant="toolbar" selectedVersion={mutation.saving ? null : selectedVersion} hasUnsavedChanges={dirty || hasUnsavedName} estimationName={hasUnsavedName ? currentName : selectedVersion?.name} getEstimation={() => {
         setSubmissionAttempted(true);
         if (!masters || mutation.saving) throw new Error('Wait for the estimate to finish loading or saving before submitting.');
         if (calculationError) throw new Error(calculationError);

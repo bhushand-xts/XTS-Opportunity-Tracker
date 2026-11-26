@@ -1,5 +1,6 @@
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { gql, useQuery } from "@apollo/client";
+import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
 import {
   type LucideIcon,
@@ -33,6 +34,7 @@ import { OPPORTUNITY_INDUSTRY_REPORT_MENU_KEY, OPPORTUNITY_INDUSTRY_REPORT_PATH 
 import { OPPORTUNITY_OWNER_REPORT_MENU_KEY, OPPORTUNITY_OWNER_REPORT_PATH } from "./OpportunityOwnerReport";
 import { OPPORTUNITY_CLIENT_REPORT_MENU_KEY, OPPORTUNITY_CLIENT_REPORT_PATH } from "./OpportunityClientReport";
 import { WIN_LOSS_REPORT_MENU_KEY, WIN_LOSS_REPORT_PATH } from "./WinLossAnalysisReport";
+import { SALES_CONVERSION_REPORT_MENU_KEY } from "./SalesConversionReport";
 
 // stageHistory is a per-opportunity field resolver (see
 // opportunity.resolver.ts), so it works on the bulk `opportunities` query
@@ -146,14 +148,16 @@ const FY_MONTH_LABELS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
 function currentFinancialYear(reference = new Date()) {
   const startYear = reference.getMonth() >= 3 ? reference.getFullYear() : reference.getFullYear() - 1;
   const start = new Date(startYear, 3, 1, 0, 0, 0, 0);
-  const end = new Date(startYear + 1, 2, 31, 23, 59, 59, 999);
+  // Use the following April as an exclusive bound. That includes all of
+  // March 31, even if the database timestamp has sub-millisecond precision.
+  const endExclusive = new Date(startYear + 1, 3, 1, 0, 0, 0, 0);
   const label = `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
-  return { startYear, start, end, label };
+  return { startYear, start, endExclusive, label };
 }
 
 function isWithinFinancialYear(dateString: string, fy: ReturnType<typeof currentFinancialYear>) {
   const timestamp = new Date(dateString).getTime();
-  return !Number.isNaN(timestamp) && timestamp >= fy.start.getTime() && timestamp <= fy.end.getTime();
+  return !Number.isNaN(timestamp) && timestamp >= fy.start.getTime() && timestamp < fy.endExclusive.getTime();
 }
 
 // Conversion = Won ÷ (Won + Lost): only closed deals count.
@@ -169,9 +173,14 @@ function isAtApprovalGate(opportunity: ReportOpportunity) {
 
 function daysSince(dateString: string | null) {
   if (!dateString) return 0;
-  const timestamp = new Date(dateString).getTime();
-  if (Number.isNaN(timestamp)) return 0;
-  return Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
+  const reachedAt = new Date(dateString);
+  if (Number.isNaN(reachedAt.getTime())) return 0;
+  const now = new Date();
+  // Count local calendar-day boundaries, not completed 24-hour periods.
+  // For example, an approval sent yesterday at 6 PM is 1 day pending today.
+  const reachedDay = Date.UTC(reachedAt.getFullYear(), reachedAt.getMonth(), reachedAt.getDate());
+  const currentDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.floor((currentDay - reachedDay) / 86_400_000));
 }
 
 function ownerName(users: ReportUser[], ownerId: number | null) {
@@ -402,6 +411,7 @@ function StatTile({
   accent,
   subValue,
   subLabel,
+  to,
   delay = 0,
 }: {
   label: string;
@@ -411,16 +421,15 @@ function StatTile({
   /** A secondary figure under the main number, e.g. the dollar value behind a count. */
   subValue?: string;
   subLabel?: string;
+  to?: string;
   delay?: number;
 }) {
-  return (
-    <div
-      className={`${TILE_ROOT} ${CARD_SHADOW}`}
-      style={{
-        animationDelay: `${delay}ms`,
-        background: `linear-gradient(135deg, ${accent.bg}, hsl(var(--card)) 75%)`,
-      }}
-    >
+  const className = `${TILE_ROOT} ${CARD_SHADOW}${to ? " cursor-pointer transition-shadow hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" : ""}`;
+  const style = {
+    animationDelay: `${delay}ms`,
+    background: `linear-gradient(135deg, ${accent.bg}, hsl(var(--card)) 75%)`,
+  };
+  const content = <>
       <TileHeader label={label} icon={Icon} accent={accent} />
       <div className="flex flex-1 flex-col items-center justify-center pt-3 text-center">
         <p className="text-[28px] font-semibold leading-none tracking-tight tabular-nums">{value}</p>
@@ -434,8 +443,9 @@ function StatTile({
           </div>
         )}
       </div>
-    </div>
-  );
+    </>;
+  return to ? <Link to={to} className={className} style={style} aria-label={`${label}: ${value}. Open Opportunity Summary Report`}>{content}</Link>
+    : <div className={className} style={style}>{content}</div>;
 }
 
 // Breakdown rows: stage in blue, sub-stage as a purple tag, count in the
@@ -780,9 +790,13 @@ function BarListCard({
 function PendingApprovalsCard({
   rows,
   delay = 0,
+  onOpen,
+  openLabel,
 }: {
   rows: Array<{ opportunityId: number; name: string; daysWaiting: number }>;
   delay?: number;
+  onOpen?: () => void;
+  openLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -793,6 +807,8 @@ function PendingApprovalsCard({
       className={expanded ? "" : CARD_HEIGHT}
       expanded={expanded}
       onToggleExpanded={() => setExpanded((value) => !value)}
+      onOpen={onOpen}
+      openLabel={openLabel}
     >
       {rows.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">Nothing waiting right now.</p>
@@ -937,7 +953,7 @@ export function DashboardContent() {
       style={{ background: "linear-gradient(160deg, hsl(var(--stage-1) / 0.05), transparent 35%, hsl(var(--stage-5) / 0.05))" }}
     >
       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Total opportunities" value={String(metrics.total)} icon={Handshake} accent={ACCENT.blue} delay={0} />
+        <StatTile label="Total opportunities" value={String(metrics.total)} icon={Handshake} accent={ACCENT.blue} delay={0} to="/reports/opportunity_summary" />
         <StatTile label="Won" value={String(metrics.wonCount)} icon={Trophy} accent={ACCENT.green} delay={40} />
         <StatTile label="Lost" value={String(metrics.lostCount)} icon={XCircle} accent={ACCENT.red} delay={80} />
         <BreakdownStatTile
@@ -1031,11 +1047,20 @@ export function DashboardContent() {
           rows={metrics.conversionByOwner}
           valueFormatter={(value) => `${value.toFixed(1)}%`}
           delay={120}
+          {...(hasMenuAccess(SALES_CONVERSION_REPORT_MENU_KEY) && {
+            onOpen: () => navigate("/reports/sales-conversion"),
+            openLabel: "Open the Sales Conversion Report",
+          })}
         />
-        <PendingApprovalsCard rows={metrics.pendingWithWait} delay={180} />
+        <PendingApprovalsCard
+          rows={metrics.pendingWithWait}
+          delay={180}
+          onOpen={() => navigate('/reports/opportunity_pending_approval')}
+          openLabel="Open the Pending Approvals Report"
+        />
       </div>
 
-      <ReportCard title={`Opportunities created per month (${metrics.fyLabel})`} icon={TrendingUp} delay={240}>
+      <ReportCard title={`Opportunities created per month (${metrics.fyLabel})`} icon={TrendingUp} delay={240} onOpen={() => navigate('/reports/trend_report')} openLabel="Open the Trend Report">
           <ChartContainer config={MONTH_CHART_CONFIG} className="aspect-auto h-[300px] w-full">
             <BarChart data={metrics.createdPerMonth} margin={{ left: 0, right: 12, top: 20 }} barCategoryGap="22%">
               <defs>

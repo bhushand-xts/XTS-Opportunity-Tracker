@@ -72,6 +72,7 @@ interface IndustryRow {
 }
 
 const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: "Sr. No.", align: "center", excelWidth: 9, pdfWeight: 0.7 },
   { header: "Industry", align: "left", excelWidth: 32, pdfWeight: 2.8 },
   { header: "Opportunity Count", align: "right", excelWidth: 19, pdfWeight: 1.5 },
   { header: "Won", align: "right", excelWidth: 10, pdfWeight: 0.8 },
@@ -143,8 +144,8 @@ export function OpportunityIndustryReport() {
     title: "Opportunity by Industry Report",
     subtitle: reportFilterSummary(applied, owners, period),
     columns: EXPORT_COLUMNS,
-    rows: rows.map((row) => [row.industry, row.count, row.won, row.lost, row.noBid, row.open, row.wonValue, row.lostValue]),
-    totalRow: ["Total", totals.count, totals.won, totals.lost, totals.noBid, totals.open, totals.wonValue, totals.lostValue],
+    rows: rows.map((row, index) => [index + 1, row.industry, row.count, row.won, row.lost, row.noBid, row.open, row.wonValue, row.lostValue]),
+    totalRow: ["", "Total", totals.count, totals.won, totals.lost, totals.noBid, totals.open, totals.wonValue, totals.lostValue],
     fileName: `Opportunity_by_Industry_Report_${isoReportDate(period.start)}_to_${isoReportDate(period.end)}`,
   });
 
@@ -192,6 +193,7 @@ export function OpportunityIndustryReport() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                <TableHead className="text-center">Sr. No.</TableHead>
                 <TableHead className="pl-6">Industry</TableHead>
                 <TableHead className="text-right">Opportunity Count</TableHead>
                 <TableHead className="text-right">Won</TableHead>
@@ -203,8 +205,9 @@ export function OpportunityIndustryReport() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {rows.map((row, index) => (
                 <TableRow key={row.industry}>
+                  <TableCell className="text-center tabular-nums">{index + 1}</TableCell>
                   <TableCell className="pl-6 font-medium">{row.industry}</TableCell>
                   <TableCell className={numberCell}>{row.count}</TableCell>
                   <TableCell className={numberCell}>{row.won}</TableCell>
@@ -218,6 +221,7 @@ export function OpportunityIndustryReport() {
             </TableBody>
             <TableFooter>
               <TableRow>
+                <TableCell />
                 <TableCell className="pl-6 font-semibold">Total</TableCell>
                 <TableCell className={totalCell}>{totals.count}</TableCell>
                 <TableCell className={totalCell}>{totals.won}</TableCell>

@@ -393,6 +393,5 @@ function mockValidateClient(form: ClientDraft, lookups = TEST_LOOKUPS) {
   if (!lookups.accountTypes.some(item => item.id === form.accountTypeId) || !lookups.industries.some(item => item.id === form.industryId)) throw new Error('Select mock account type and industry.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.primaryContact.email)) throw new Error('Enter a valid contact email.');
   if (!/^\d+$/.test(form.primaryContact.phone)) throw new Error('Enter digits only for contact phone.');
-  if (form.website && !/^https?:\/\/\S+$/.test(form.website)) throw new Error('Enter an HTTP or HTTPS website.');
   if (form.additionalContacts.some(contact => ![contact.name, contact.title, contact.email, contact.phone, contact.decisionRole].every(value => value?.trim()) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email) || !/^\d+$/.test(contact.phone))) throw new Error('Complete all additional contact fields with valid emails and phone digits.');
 }

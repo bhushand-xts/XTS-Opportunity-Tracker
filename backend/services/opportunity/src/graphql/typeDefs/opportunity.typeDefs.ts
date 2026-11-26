@@ -63,8 +63,8 @@ export const opportunityTypeDefs = `#graphql
     workflowReasonCodeId: Int
     clientName: String
     accountTypeId: Int
-    industryId: Int
     accountType: String
+    industryId: Int
     sector: String
     website: String
     city: String
@@ -140,8 +140,8 @@ export const opportunityTypeDefs = `#graphql
     clientId: Int!
     clientName: String!
     accountTypeId: Int
-    industryId: Int
     accountType: String
+    industryId: Int
     sector: String
     website: String
     city: String

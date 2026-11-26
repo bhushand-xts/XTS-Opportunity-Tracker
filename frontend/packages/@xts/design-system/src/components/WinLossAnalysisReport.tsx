@@ -77,6 +77,7 @@ interface WinLossRow {
 }
 
 const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: "Sr. No.", align: "center", excelWidth: 9, pdfWeight: 0.7 },
   { header: "Opportunity", align: "left", excelWidth: 30, pdfWeight: 2.2 },
   { header: "Client", align: "left", excelWidth: 26, pdfWeight: 2 },
   { header: "Value", align: "right", excelWidth: 16, pdfWeight: 1.2, currency: true },
@@ -143,8 +144,8 @@ export function WinLossAnalysisReport() {
     title: "Win/Loss Analysis Report",
     subtitle: reportFilterSummary(applied, owners, period),
     columns: EXPORT_COLUMNS,
-    rows: rows.map((row) => [row.opportunity, row.client, row.value, row.result, row.comment]),
-    totalRow: ["Total", "", totals.wonValue + totals.lostValue, "", totalLabel],
+    rows: rows.map((row, index) => [index + 1, row.opportunity, row.client, row.value, row.result, row.comment]),
+    totalRow: ["", "Total", "", totals.wonValue + totals.lostValue, "", totalLabel],
     fileName: `Win_Loss_Analysis_Report_${isoReportDate(period.start)}_to_${isoReportDate(period.end)}`,
   });
 
@@ -189,6 +190,7 @@ export function WinLossAnalysisReport() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                <TableHead className="text-center">Sr. No.</TableHead>
                 <TableHead className="pl-6">Opportunity</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead className="text-right">Value</TableHead>
@@ -197,8 +199,9 @@ export function WinLossAnalysisReport() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {rows.map((row, index) => (
                 <TableRow key={row.opportunityId}>
+                  <TableCell className="text-center tabular-nums">{index + 1}</TableCell>
                   <TableCell className="pl-6 font-medium">{row.opportunity}</TableCell>
                   <TableCell>{row.client}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatMoney(row.value)}</TableCell>
@@ -215,6 +218,7 @@ export function WinLossAnalysisReport() {
             </TableBody>
             <TableFooter>
               <TableRow>
+                <TableCell />
                 <TableCell className="pl-6 font-semibold">Total</TableCell>
                 <TableCell />
                 <TableCell className="text-right font-semibold tabular-nums">{formatMoney(totals.wonValue + totals.lostValue)}</TableCell>

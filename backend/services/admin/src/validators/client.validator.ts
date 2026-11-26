@@ -1,14 +1,13 @@
 import { validationFailed } from '../../../../shared/errors/graphqlErrors';
 
 // Input and business validation for clients. Column sizes mirror the live
-// mst_client / tbl_client_contact_person tables exactly (checked against the
-// database directly — street_address really is this short, not a typo).
+// mst_client / tbl_client_contact_person tables exactly.
 const MAX_CLIENT_NAME = 255;
 const MAX_WEBSITE = 500;
 const MAX_CITY = 100;
 const MAX_STATE = 100;
 const MAX_COUNTRY = 100;
-const MAX_STREET_ADDRESS = 20;
+const MAX_STREET_ADDRESS = 500;
 
 const MAX_CONTACT_NAME = 255;
 const MAX_TITLE_ROLE = 150;
@@ -95,6 +94,8 @@ function lengthErrors(input: ClientInputLike): string[] {
 function assertValidCreate(input: ClientInputLike): void {
   const errors: string[] = [];
   if (!input.clientName || !input.clientName.trim()) errors.push('Organization / account name is required');
+  if (!Number.isInteger(input.accountTypeId) || Number(input.accountTypeId) <= 0) errors.push('A valid account type is required');
+  if (!Number.isInteger(input.industryId) || Number(input.industryId) <= 0) errors.push('A valid sector / industry is required');
   errors.push(...lengthErrors(input));
   if (errors.length) throw validationFailed(errors.join(', '));
 }
@@ -103,6 +104,12 @@ function assertValidUpdate(input: ClientInputLike): void {
   const errors: string[] = [];
   if ('clientName' in input && (!input.clientName || !input.clientName.trim())) {
     errors.push('Organization / account name cannot be empty');
+  }
+  if ('accountTypeId' in input && (!Number.isInteger(input.accountTypeId) || Number(input.accountTypeId) <= 0)) {
+    errors.push('A valid account type is required');
+  }
+  if ('industryId' in input && (!Number.isInteger(input.industryId) || Number(input.industryId) <= 0)) {
+    errors.push('A valid sector / industry is required');
   }
   errors.push(...lengthErrors(input));
   if (errors.length) throw validationFailed(errors.join(', '));

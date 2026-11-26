@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Contact,
   FileQuestion,
+  FileText,
   FlaskConical,
   GitBranch,
   Kanban,
@@ -564,7 +565,8 @@ function ReportsMenuLink({
   const reportsMenu = (data?.menus ?? []).find((menu) => menu.menuKey === "reports");
   const tree = reportsMenu ? filterAccessibleTree(reportsMenu, hasMenuAccess) : null;
   const reports = tree?.children ?? [];
-  if (!tree || reports.length === 0) return null;
+  const hasSummaryReport = reports.some((report) => report.routePath === "/reports/opportunity_summary");
+  if (!tree) return null;
 
   return (
     <Collapsible open={reportsOpen} onOpenChange={setReportsOpen} className="group/reports">
@@ -591,6 +593,14 @@ function ReportsMenuLink({
                 </SidebarMenuSubItem>
               );
             })}
+            {!hasSummaryReport && <SidebarMenuSubItem>
+              <SidebarMenuSubButton asChild isActive={pathname === "/reports/opportunity_summary"}>
+                <Link to="/reports/opportunity_summary" title="Opportunity Summary">
+                  <FileText className="size-4 shrink-0" style={navIconStyle(3 + reports.length)} />
+                  <span>Opportunity Summary</span>
+                </Link>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>}
           </SidebarMenuSub>
         </CollapsibleContent>
       </SidebarMenuItem>
@@ -644,10 +654,10 @@ function AppSidebar({
   // own section and closes the others; opening one by hand closes the rest.
   type SidebarSection = "opportunities" | "reports" | "admin";
   const routeSection: SidebarSection | null =
-    pathname === "/opportunity" || pathname.startsWith("/opportunity/")
-      ? "opportunities"
-      : pathname === "/reports" || pathname.startsWith("/reports/")
-        ? "reports"
+    pathname.startsWith("/opportunity/reports/") || pathname === "/reports" || pathname.startsWith("/reports/")
+      ? "reports"
+      : pathname === "/opportunity" || pathname.startsWith("/opportunity/")
+        ? "opportunities"
         : onAdmin
           ? "admin"
           : null;
@@ -817,7 +827,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
       <SidebarProvider>
         <AppSidebar can={can} hasMenuAccess={hasMenuAccess} pathname={location.pathname} />
         <SidebarInset>
-          <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-card px-3 sm:gap-4 sm:px-5">
+          <header className="relative z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-card px-3 sm:gap-4 sm:px-5">
             <MobileSidebarTrigger />
             <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight">{pageTitle}</h1>
             <div className="flex shrink-0 items-center gap-1 ml-auto">
@@ -866,7 +876,7 @@ export function AppShell({ actions, children }: { actions?: ReactNode; children:
               Tip: use the search bar above to jump straight to an opportunity, customer, or contact.
             </div>
           )}
-          <main className="min-w-0 flex-1">{children}</main>
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</main>
         </SidebarInset>
       </SidebarProvider>
       <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />

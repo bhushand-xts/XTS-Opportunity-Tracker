@@ -46,6 +46,9 @@ export function App() {
                   <Route path="/reports/opportunity-owner" element={<OpportunityOwnerReport />} />
                   <Route path="/reports/opportunity-client" element={<OpportunityClientReport />} />
                   <Route path="/reports/win-loss-analysis" element={<WinLossAnalysisReport />} />
+                  <Route path="/reports/opportunity_summary" element={<OpportunityMFE />} />
+                  <Route path="/reports/opportunity_pending_approval" element={<OpportunityMFE />} />
+                  <Route path="/reports/trend_report" element={<OpportunityMFE />} />
                   <Route path="/admin/*" element={<AdminMFE />} />
                   <Route path="/opportunity/*" element={<OpportunityMFE />} />
                   <Route path="/opportunities/*" element={<OpportunityRouteAlias />} />

@@ -85,6 +85,7 @@ interface ClientRow {
 }
 
 const EXPORT_COLUMNS: ExportColumn[] = [
+  { header: "Sr. No.", align: "center", excelWidth: 9, pdfWeight: 0.7 },
   { header: "Client", align: "left", excelWidth: 30, pdfWeight: 2.6 },
   { header: "Total Opportunities", align: "right", excelWidth: 20, pdfWeight: 1.6 },
   { header: "Open", align: "right", excelWidth: 10, pdfWeight: 0.8 },
@@ -183,8 +184,8 @@ export function OpportunityClientReport() {
     title: "Opportunity by Client Report",
     subtitle: reportFilterSummary(applied, owners, period, clients),
     columns: EXPORT_COLUMNS,
-    rows: rows.map((row) => [row.client, row.total, row.open, row.won, row.lost, row.noBid, row.wonValue, row.lostValue]),
-    totalRow: ["Total", totals.total, totals.open, totals.won, totals.lost, totals.noBid, totals.wonValue, totals.lostValue],
+    rows: rows.map((row, index) => [index + 1, row.client, row.total, row.open, row.won, row.lost, row.noBid, row.wonValue, row.lostValue]),
+    totalRow: ["", "Total", totals.total, totals.open, totals.won, totals.lost, totals.noBid, totals.wonValue, totals.lostValue],
     fileName: `Opportunity_by_Client_Report_${isoReportDate(period.start)}_to_${isoReportDate(period.end)}`,
   });
 
@@ -232,6 +233,7 @@ export function OpportunityClientReport() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                <TableHead className="text-center">Sr. No.</TableHead>
                 <TableHead className="pl-6">Client</TableHead>
                 <TableHead className="text-right">Total Opportunities</TableHead>
                 <TableHead className="text-right">Open</TableHead>
@@ -243,8 +245,9 @@ export function OpportunityClientReport() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {rows.map((row, index) => (
                 <TableRow key={row.clientId}>
+                  <TableCell className="text-center tabular-nums">{index + 1}</TableCell>
                   <TableCell className="pl-6 font-medium">{row.client}</TableCell>
                   <TableCell className={numberCell}>{row.total}</TableCell>
                   <TableCell className={numberCell}>{row.open}</TableCell>
@@ -258,6 +261,7 @@ export function OpportunityClientReport() {
             </TableBody>
             <TableFooter>
               <TableRow>
+                <TableCell />
                 <TableCell className="pl-6 font-semibold">Total</TableCell>
                 <TableCell className={totalCell}>{totals.total}</TableCell>
                 <TableCell className={totalCell}>{totals.open}</TableCell>
