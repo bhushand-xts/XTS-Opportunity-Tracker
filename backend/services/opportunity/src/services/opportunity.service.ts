@@ -49,10 +49,11 @@ async function notifyOpportunityCreated(opportunityId: number, userId: number) {
       repository.findSalesHeadRoleId(),
     ]);
     if (!opportunity) return;
-    const [owner, salesHeads, stageName, currencyCode] = await Promise.all([
+    const [owner, salesHeads, stageName, subStageName, currencyCode] = await Promise.all([
       opportunity.ownerId ? userService.findUser(opportunity.ownerId) : Promise.resolve(null),
       salesHeadRoleId ? userService.findActiveUsersByRole(salesHeadRoleId) : Promise.resolve([]),
       repository.findStageName(opportunity.stageId),
+      repository.findSubStageName(opportunity.subStageId),
       repository.findCurrencyCode(opportunity.currencyId),
     ]);
     // Notifies Sales Head only — not the owner, since the owner is often the
@@ -70,6 +71,7 @@ async function notifyOpportunityCreated(opportunityId: number, userId: number) {
       estimatedValue: opportunity.estimatedValue,
       currency: currencyCode,
       stageName,
+      subStageName,
       expectedCloseDate: opportunity.expectedCloseDate,
       createdByName: userName(creator),
       createdAt: opportunity.createdDt,
@@ -101,7 +103,11 @@ function downstreamOfStage(stageId: number | null): 'CREATOR' | WorkflowRole {
 
 // Best-effort: the transition is already saved by the time this runs, so a
 // notification failure never undoes the decision.
-async function notifyWorkflowTransition(opportunityId: number, userId: number, previousStageId: number | null, comment: string | null) {
+// `notifyCurrentReviewer`: send to the role that acts on the opportunity's
+// current stage even when the stage didn't change — used when saved
+// corrections return an opportunity to its reviewer (Sales Head / CEO).
+async function notifyWorkflowTransition(opportunityId: number, userId: number, previousStageId: number | null, comment: string | null,
+  notifyCurrentReviewer = false) {
   try {
     const [opportunity, actor] = await Promise.all([
       repository.findById(opportunityId),
@@ -110,7 +116,7 @@ async function notifyWorkflowTransition(opportunityId: number, userId: number, p
     if (!opportunity) return;
     const oldRole = actorRoleForStage(previousStageId);
     const newRole = actorRoleForStage(opportunity.stageId);
-    const advancing = newRole !== null && newRole !== oldRole;
+    const advancing = newRole !== null && (newRole !== oldRole || notifyCurrentReviewer);
     const target = advancing ? newRole : downstreamOfStage(previousStageId);
 
     let recipients: { email: string; name: string }[];
@@ -371,6 +377,7 @@ async function updateRfpIntakeOpportunity(
 
   const updated = await repository.updateRfpIntakeOpportunity(opportunityId, input, userId, workflowAudit(access), access.review);
   if (!updated) throw notFound("Opportunity not found.");
+  notifyIfReturnedForReview(opportunityId, userId, current, updated);
   return updated;
 }
 
@@ -631,9 +638,21 @@ async function update(
     workflowAudit(access),
     access.review
   );
+  notifyIfReturnedForReview(opportunityId, userId, current, updated);
   const sourceDocumentId = (input as OpportunityInput & { sourceDocumentId?: string | null }).sourceDocumentId;
   if (sourceDocumentId !== undefined) await attachSourceDocument(opportunityId, userId, sourceDocumentId);
   return updated;
+}
+
+// Saving corrections on an opportunity sent back for changes returns it to
+// its reviewer (Changes Requested → Pending Review) without going through a
+// workflow action, so it gets the same status email here.
+function notifyIfReturnedForReview(opportunityId: number, userId: number,
+  before: { stageId: number | null; subStageId: number | null },
+  after: { stageId?: number | null; subStageId?: number | null } | null | undefined) {
+  if (!after || (after.stageId === before.stageId && after.subStageId === before.subStageId)) return;
+  const reviewer = after.stageId === 2 ? 'CEO' : 'Sales Head';
+  void notifyWorkflowTransition(opportunityId, userId, before.stageId, `Opportunity updated and sent to ${reviewer} for review.`, true);
 }
 
 async function validateActiveOwner(ownerId: number | null | undefined) {

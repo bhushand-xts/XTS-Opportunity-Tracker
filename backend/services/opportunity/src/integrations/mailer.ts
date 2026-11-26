@@ -29,6 +29,7 @@ export interface OpportunityCreatedDetails {
   estimatedValue: number | null;
   currency: string | null;
   stageName: string | null;
+  subStageName?: string | null;
   expectedCloseDate: string | null;
   createdByName: string;
   createdAt: string;
@@ -49,11 +50,50 @@ const dateTime = (value: string) => {
   return `${datePart}, ${timePart}`;
 };
 
+// Status shown the way the app shows it: the stage in bold blue, the
+// sub-stage as a purple pill beside it. Inline styles only, so it renders in
+// every mail client.
+const STAGE_STYLE = 'color:#3b4fd8; font-size:14px; font-weight:bold;';
+const SUB_STAGE_STYLE =
+  'display:inline-block; margin-left:6px; padding:2px 10px; border-radius:999px; background-color:#ede9fe; ' +
+  'color:#6d28d9; font-size:12px; font-weight:bold; line-height:18px; vertical-align:middle;';
+const statusHtml = (stageName: string | null, subStageName: string | null) =>
+  `<span style="${STAGE_STYLE}">${escapeHtml(stageName ?? 'Not specified')}</span>` +
+  (subStageName ? `<span style="${SUB_STAGE_STYLE}">${escapeHtml(subStageName)}</span>` : '');
+const statusText = (stageName: string | null, subStageName: string | null) =>
+  `${stageName ?? 'Not specified'}${subStageName ? ` (${subStageName})` : ''}`;
+
+/** A details-table row: label, plain-text value, and optional HTML for the email body. */
+type DetailRow = [label: string, text: string, html?: string];
+
+const detailsTable = (rows: DetailRow[]) => {
+  const lastIndex = rows.length - 1;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+              ${rows.map(([label, value, html], index) => `
+                <tr bgcolor="${index % 2 === 0 ? '#f8fafc' : '#ffffff'}" style="background-color:${index % 2 === 0 ? '#f8fafc' : '#ffffff'};">
+                  <td style="padding:12px 16px; font-size:13px; color:#64748b; width:42%; vertical-align:top; ${index !== lastIndex ? 'border-bottom:1px solid #e2e8f0;' : ''}">${escapeHtml(label)}</td>
+                  <td style="padding:12px 16px; font-size:13px; color:#0f172a; font-weight:bold; ${index !== lastIndex ? 'border-bottom:1px solid #e2e8f0;' : ''}">${html ?? escapeHtml(value)}</td>
+                </tr>`).join('')}
+            </table>`;
+};
+
+/** Highlighted "Current status" block shown under the opportunity name. */
+const statusBanner = (stageName: string | null, subStageName: string | null) =>
+  `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px 0;">
+              <tr>
+                <td bgcolor="#f5f3ff" style="background-color:#f5f3ff; border:1px solid #ddd6fe; border-left:4px solid #6d28d9; border-radius:8px; padding:12px 16px;">
+                  <p style="margin:0 0 6px 0; font-size:11px; font-weight:bold; letter-spacing:1px; color:#64748b; text-transform:uppercase;">Current status</p>
+                  ${statusHtml(stageName, subStageName)}
+                </td>
+              </tr>
+            </table>`;
+
 async function sendOpportunityCreatedEmail(recipients: OpportunityCreatedRecipient[], details: OpportunityCreatedDetails): Promise<void> {
   const mailer = getTransporter();
   if (!mailer || recipients.length === 0) return;
   const subject = `New Opportunity Created: ${details.opportunityName} by ${details.createdByName}`;
-  const rows: [string, string][] = [
+  const subStageName = details.subStageName ?? null;
+  const rows: DetailRow[] = [
     ['Opportunity number', details.opportunityNumber],
     ['Opportunity name', details.opportunityName],
     ['Account', details.accountName ?? 'Not specified'],
@@ -61,10 +101,9 @@ async function sendOpportunityCreatedEmail(recipients: OpportunityCreatedRecipie
     ['Owner', details.ownerName],
     ['Amount', money(details.estimatedValue, details.currency)],
     ['Expected close date', date(details.expectedCloseDate)],
-    ['Stage', details.stageName ?? 'Not specified'],
+    ['Status', statusText(details.stageName, subStageName), statusHtml(details.stageName, subStageName)],
     ['Created on', dateTime(details.createdAt)],
   ];
-  const lastIndex = rows.length - 1;
   await Promise.all(recipients.map(recipient => mailer.sendMail({
     from: env.smtp!.from,
     to: recipient.email,
@@ -94,20 +133,15 @@ async function sendOpportunityCreatedEmail(recipients: OpportunityCreatedRecipie
         <tr>
           <td style="padding:28px 28px 8px 28px;">
             <p style="margin:0 0 4px 0; font-size:12px; font-weight:bold; letter-spacing:1px; color:#6366f1; text-transform:uppercase;">New opportunity created</p>
-            <p style="margin:0 0 20px 0; font-size:20px; font-weight:bold; color:#0f172a;">${escapeHtml(details.opportunityName)}</p>
+            <p style="margin:0 0 16px 0; font-size:20px; font-weight:bold; color:#0f172a;">${escapeHtml(details.opportunityName)}</p>
+            ${statusBanner(details.stageName, subStageName)}
             <p style="margin:0 0 4px 0; font-size:14px; color:#334155;">Hi ${escapeHtml(recipient.name)},</p>
             <p style="margin:0 0 20px 0; font-size:14px; color:#334155; line-height:1.5;">A new opportunity has been created by <strong>${escapeHtml(details.createdByName)}</strong> and is ready for your review.</p>
           </td>
         </tr>
         <tr>
           <td style="padding:0 28px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
-              ${rows.map(([label, value], index) => `
-                <tr bgcolor="${index % 2 === 0 ? '#f8fafc' : '#ffffff'}" style="background-color:${index % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-                  <td style="padding:12px 16px; font-size:13px; color:#64748b; width:42%; ${index !== lastIndex ? 'border-bottom:1px solid #e2e8f0;' : ''}">${escapeHtml(label)}</td>
-                  <td style="padding:12px 16px; font-size:13px; color:#0f172a; font-weight:bold; ${index !== lastIndex ? 'border-bottom:1px solid #e2e8f0;' : ''}">${escapeHtml(value)}</td>
-                </tr>`).join('')}
-            </table>
+            ${detailsTable(rows)}
           </td>
         </tr>
         <tr>
@@ -146,18 +180,16 @@ async function sendOpportunityStatusChangedEmail(recipients: OpportunityCreatedR
   const mailer = getTransporter();
   if (!mailer || recipients.length === 0) return;
   const subject = `Opportunity Update: ${details.opportunityName} — ${details.stageName ?? 'Status changed'}`;
-  const rows: [string, string][] = [
+  const rows: DetailRow[] = [
     ['Opportunity number', details.opportunityNumber],
     ['Opportunity name', details.opportunityName],
     ['Account', details.accountName ?? 'Not specified'],
     ['Amount', money(details.estimatedValue, details.currency)],
-    ['Status', details.stageName ?? 'Not specified'],
-    ['Sub-status', details.subStageName ?? 'Not specified'],
+    ['Status', statusText(details.stageName, details.subStageName), statusHtml(details.stageName, details.subStageName)],
     ['Updated by', details.changedByName],
     ['Updated on', dateTime(details.changedAt)],
-    ...(details.comment ? [['Note', details.comment] as [string, string]] : []),
+    ...(details.comment ? [['Note', details.comment] as DetailRow] : []),
   ];
-  const lastIndex = rows.length - 1;
   await Promise.all(recipients.map(recipient => mailer.sendMail({
     from: env.smtp!.from,
     to: recipient.email,
@@ -187,20 +219,15 @@ async function sendOpportunityStatusChangedEmail(recipients: OpportunityCreatedR
         <tr>
           <td style="padding:28px 28px 8px 28px;">
             <p style="margin:0 0 4px 0; font-size:12px; font-weight:bold; letter-spacing:1px; color:#6366f1; text-transform:uppercase;">Opportunity update</p>
-            <p style="margin:0 0 20px 0; font-size:20px; font-weight:bold; color:#0f172a;">${escapeHtml(details.opportunityName)}</p>
+            <p style="margin:0 0 16px 0; font-size:20px; font-weight:bold; color:#0f172a;">${escapeHtml(details.opportunityName)}</p>
+            ${statusBanner(details.stageName, details.subStageName)}
             <p style="margin:0 0 4px 0; font-size:14px; color:#334155;">Hi ${escapeHtml(recipient.name)},</p>
             <p style="margin:0 0 20px 0; font-size:14px; color:#334155; line-height:1.5;"><strong>${escapeHtml(details.changedByName)}</strong> updated this opportunity and it is ready for your review.</p>
           </td>
         </tr>
         <tr>
           <td style="padding:0 28px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
-              ${rows.map(([label, value], index) => `
-                <tr bgcolor="${index % 2 === 0 ? '#f8fafc' : '#ffffff'}" style="background-color:${index % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-                  <td style="padding:12px 16px; font-size:13px; color:#64748b; width:42%; vertical-align:top; ${index !== lastIndex ? 'border-bottom:1px solid #e2e8f0;' : ''}">${escapeHtml(label)}</td>
-                  <td style="padding:12px 16px; font-size:13px; color:#0f172a; font-weight:bold; ${index !== lastIndex ? 'border-bottom:1px solid #e2e8f0;' : ''}">${escapeHtml(value)}</td>
-                </tr>`).join('')}
-            </table>
+            ${detailsTable(rows)}
           </td>
         </tr>
         <tr>
