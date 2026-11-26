@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "@/lib/auth";
+import { consumeSessionExpired, SESSION_EXPIRED_MESSAGE, useAuth } from "@/lib/auth";
 import { LoginView, type LoginMode } from "./LoginView";
 
 /**
@@ -20,7 +20,10 @@ export function LoginGate() {
   const [lastName, setLastName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mode, setMode] = useState<LoginMode>("signin");
-  const [error, setError] = useState<string>();
+  // Arriving here because the login ran out: say so on the sign-in form.
+  const [error, setError] = useState<string | undefined>(() =>
+    consumeSessionExpired() ? SESSION_EXPIRED_MESSAGE : undefined
+  );
   const [busy, setBusy] = useState(false);
   const [resetToken, setResetToken] = useState<string>();
   const [resetEmailSent, setResetEmailSent] = useState(false);

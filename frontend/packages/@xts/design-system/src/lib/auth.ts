@@ -18,7 +18,7 @@
  */
 import { useMutation } from "@apollo/client";
 import { useSyncExternalStore } from "react";
-import { getApolloClient } from "@xts/api-client";
+import { checkSession, getApolloClient, SESSION_EXPIRED_EVENT } from "@xts/api-client";
 import type { AuthPayload } from "@xts/api-contracts";
 import {
   CHANGE_PASSWORD,
@@ -63,6 +63,27 @@ type AuthResult = { ok: true } | { ok: false; error: string };
 
 const EMPTY_STATE: AuthState = { session: null, profile: null, roleId: null, roleName: null, access: {} };
 const STORAGE_KEY = "authState";
+// Set when the login ran out, so the login screen can say why it is showing.
+const SESSION_EXPIRED_KEY = "sessionExpired";
+export const SESSION_EXPIRED_MESSAGE = "Your session has expired. Please sign in again.";
+
+/** True after the login expired, until the user signs in again. */
+export function consumeSessionExpired(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(SESSION_EXPIRED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function clearSessionExpired() {
+  try {
+    window.sessionStorage.removeItem(SESSION_EXPIRED_KEY);
+  } catch {
+    // Nothing to clear without storage.
+  }
+}
 
 function stateFromPayload({ user, token }: AuthPayload): AuthState {
   return {
@@ -123,6 +144,7 @@ function getSnapshot() {
 
 function persistSession(payload: AuthPayload) {
   const next = stateFromPayload(payload);
+  clearSessionExpired();
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   setState(next);
   void resolveRoleName(next.session!.userId, next.roleId);
@@ -179,6 +201,26 @@ if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY) return;
     setState(event.newValue ? normalizeState(JSON.parse(event.newValue)) : EMPTY_STATE);
+  });
+
+  // The server no longer accepts the stored login: sign out, which makes
+  // AuthGate show the login screen, and leave a note for it to explain why.
+  // The demo SSO identity has no server session, so it is left alone.
+  window.addEventListener(SESSION_EXPIRED_EVENT, () => {
+    if (!state.session || state.session.userId === "sso-demo") return;
+    try {
+      window.sessionStorage.setItem(SESSION_EXPIRED_KEY, "1");
+    } catch {
+      // Without storage the user still lands on the login screen, just without the note.
+    }
+    window.localStorage.removeItem(STORAGE_KEY);
+    setState(EMPTY_STATE);
+  });
+
+  // Catch a login that ran out while the page was closed or in the background.
+  if (state.session) void checkSession();
+  window.addEventListener("focus", () => {
+    if (state.session) void checkSession();
   });
 
   // Resolve a missing role name and refresh grants on every page load so

@@ -1,5 +1,6 @@
-import { ApolloClient, HttpLink, InMemoryCache, type NormalizedCacheObject } from "@apollo/client";
+import { ApolloClient, ApolloLink, HttpLink, InMemoryCache, type NormalizedCacheObject } from "@apollo/client";
 import { setContext } from "@apollo/client/link/context";
+import { onError } from "@apollo/client/link/error";
 
 // The gateway endpoint. Overridable via frontend/.env's GRAPHQL_API_URL
 // (see frontend/.env.example) — injected at build time by each app's webpack
@@ -33,9 +34,49 @@ const authLink = setContext((_operation, { headers }) => {
   };
 });
 
+/** Fired on window when the stored login token is no longer valid. The auth
+ * store in @xts/design-system listens for it and signs the user out, which
+ * puts them back on the login screen. */
+export const SESSION_EXPIRED_EVENT = "xts:session-expired";
+
+let sessionCheck: Promise<void> | undefined;
+
+/**
+ * Asks the gateway who the stored token belongs to. `currentUserId` is null
+ * only when the token is unknown or expired, so that answer (and nothing
+ * else: a network failure or a server error is not an expired session) fires
+ * SESSION_EXPIRED_EVENT. Concurrent calls share one request.
+ */
+export function checkSession(): Promise<void> {
+  const token = readAuthToken();
+  if (!token || typeof window === "undefined") return Promise.resolve();
+  sessionCheck ??= fetch(GRAPHQL_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ query: "{ currentUserId }" }),
+  })
+    .then((response) => (response.ok ? response.json() : undefined))
+    .then((result: { data?: { currentUserId?: number | null } } | undefined) => {
+      if (result?.data && result.data.currentUserId === null && readAuthToken() === token) {
+        window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+      }
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      sessionCheck = undefined;
+    });
+  return sessionCheck;
+}
+
+// Any failed request may be the first sign of an expired login, so check.
+const sessionCheckLink = onError(({ graphQLErrors, networkError }) => {
+  const unauthorized = Boolean(networkError && "statusCode" in networkError && networkError.statusCode === 401);
+  if (graphQLErrors?.length || unauthorized) void checkSession();
+});
+
 export function createApolloClient(): ApolloClient<NormalizedCacheObject> {
   return new ApolloClient({
-    link: authLink.concat(new HttpLink({ uri: GRAPHQL_API_URL })),
+    link: ApolloLink.from([sessionCheckLink, authLink, new HttpLink({ uri: GRAPHQL_API_URL })]),
     cache: new InMemoryCache({
       // These backend types identify themselves by `menuId` / `permissionId`
       // rather than the `id` Apollo looks for by default.
